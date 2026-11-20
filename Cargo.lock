@@ -1620,7 +1620,6 @@ dependencies = [
 name = "pathon-platform-winit"
 version = "0.0.1"
 dependencies = [
- "log",
  "pathon-platform",
  "raw-window-handle",
  "winit",

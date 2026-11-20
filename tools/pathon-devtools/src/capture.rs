@@ -110,7 +110,7 @@ fn view_snapshot(index: usize, capture: &GraphCapture) -> ViewSnapshot {
                 size: resource.desc.map(|desc| (desc.size.width, desc.size.height)),
                 mips: resource.desc.map_or(0, |desc| desc.mip_level_count),
                 layers: resource.desc.map_or(0, |desc| desc.array_layers()),
-                usage: resource.desc.map(|desc| usage_names(desc.usage)).unwrap_or_default(),
+                usage: resource.desc.map_or_default(|desc| usage_names(desc.usage)),
                 alias_group,
                 lifetime: resource.lifetime,
                 versions: resource.versions,

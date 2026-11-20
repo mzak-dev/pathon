@@ -1,31 +1,57 @@
-use std::hash::{DefaultHasher, Hash, Hasher};
-
 use pathon_diag::Diagnostic;
 
 use crate::compile::CompiledGraph;
-use crate::graph::{FrameGraph, FrameSizes, ResourceKind};
+use crate::graph::{FrameGraph, FrameSizes, PassAccess, PassDesc, ResourceKind, ResourceNode};
 
 // Everything compilation depends on: passes, their accesses and ordering constraints, resource descriptions and
-// frame sizes. Imported texture ids are left out on purpose — a window hands out a new id every frame.
-fn structural_key(graph: &FrameGraph, sizes: FrameSizes) -> u64 {
-    let mut hasher = DefaultHasher::new();
-    sizes.hash(&mut hasher);
-    graph.resources.len().hash(&mut hasher);
-    for resource in &graph.resources {
-        resource.name.hash(&mut hasher);
-        resource.producers.hash(&mut hasher);
-        match resource.kind {
-            ResourceKind::Transient(desc) => (0_u8, desc).hash(&mut hasher),
-            // Initial and final states only feed the barrier plan, which is rebuilt in `execute` every frame.
-            ResourceKind::Imported { desc, .. } => (1_u8, desc).hash(&mut hasher),
+// frame sizes. Imported texture ids and access states are left out on purpose — a window hands out a new texture id
+// every frame, and states only feed the barrier plan, which `execute` rebuilds anyway.
+#[derive(Clone, Debug)]
+struct Structure {
+    sizes: FrameSizes,
+    resources: Vec<ResourceNode>,
+    passes: Vec<(PassDesc, Vec<PassAccess>)>,
+}
+
+fn same_resource(cached: &ResourceNode, current: &ResourceNode) -> bool {
+    let same_kind = match (cached.kind, current.kind) {
+        (ResourceKind::Transient(a), ResourceKind::Transient(b)) => a == b,
+        (ResourceKind::Imported { desc: a, .. }, ResourceKind::Imported { desc: b, .. }) => a == b,
+        _ => false,
+    };
+    same_kind && cached.name == current.name && cached.producers == current.producers
+}
+
+impl Structure {
+    fn of(graph: &FrameGraph, sizes: FrameSizes) -> Self {
+        Self {
+            sizes,
+            resources: graph.resources.clone(),
+            passes: graph
+                .passes
+                .iter()
+                .map(|pass| (pass.desc.clone(), pass.accesses.clone()))
+                .collect(),
         }
     }
-    graph.passes.len().hash(&mut hasher);
-    for pass in &graph.passes {
-        pass.desc.hash(&mut hasher);
-        pass.accesses.hash(&mut hasher);
+
+    // Exact comparison rather than a hash: hashing every pass costs about as much as compiling (measured), and a
+    // collision would silently reuse the wrong plan.
+    fn matches(&self, graph: &FrameGraph, sizes: FrameSizes) -> bool {
+        self.sizes == sizes
+            && self.resources.len() == graph.resources.len()
+            && self.passes.len() == graph.passes.len()
+            && self
+                .passes
+                .iter()
+                .zip(&graph.passes)
+                .all(|((desc, accesses), pass)| *accesses == pass.accesses && *desc == pass.desc)
+            && self
+                .resources
+                .iter()
+                .zip(&graph.resources)
+                .all(|(cached, current)| same_resource(cached, current))
     }
-    hasher.finish()
 }
 
 // M2-07: a stable scene rebuilds the same graph every frame, so its compilation (validation, culling, ordering,
@@ -33,7 +59,7 @@ fn structural_key(graph: &FrameGraph, sizes: FrameSizes) -> u64 {
 // renderer keeps one cache per view.
 #[derive(Debug, Default)]
 pub struct GraphCache {
-    cached: Option<(u64, CompiledGraph)>,
+    cached: Option<(Structure, CompiledGraph)>,
     compilations: u64,
 }
 
@@ -48,12 +74,14 @@ impl GraphCache {
         graph: &FrameGraph,
         sizes: FrameSizes,
     ) -> Result<(&CompiledGraph, bool), Vec<Diagnostic>> {
-        let key = structural_key(graph, sizes);
-        let hit = matches!(&self.cached, Some((cached, _)) if *cached == key);
+        let hit = self
+            .cached
+            .as_ref()
+            .is_some_and(|(structure, _)| structure.matches(graph, sizes));
         if !hit {
             let compiled = graph.compile(sizes)?;
             self.compilations += 1;
-            self.cached = Some((key, compiled));
+            self.cached = Some((Structure::of(graph, sizes), compiled));
         }
         let (_, compiled) = self.cached.as_ref().expect("filled above on a miss");
         Ok((compiled, !hit))

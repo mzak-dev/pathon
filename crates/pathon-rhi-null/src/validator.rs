@@ -1,6 +1,7 @@
 use pathon_rhi_types::{
     Access, BindGroupId, BufferId, BufferUsage, Command, CommandList, DepthAccess, Extent3d, LoadOp, ResourceRef,
     RhiError, StoreOp, SubresourceRange, TextureCopy, TextureDimension, TextureId, TextureUsage, TextureViewId,
+    Transfer,
 };
 
 use crate::device::{BindingUse, State};
@@ -153,47 +154,9 @@ impl<'state> Validator<'state> {
                 self.draw_or_dispatch(PassKind::Render)?;
             }
             Command::Dispatch { .. } => self.draw_or_dispatch(PassKind::Compute)?,
-            Command::CopyBufferToBuffer {
-                src,
-                src_offset,
-                dst,
-                dst_offset,
-                size,
-            } => {
-                self.require_pass(PassKind::None, "buffer copy")?;
-                self.copy_buffer_data(src, src_offset, dst, dst_offset, size)?;
-            }
-            Command::CopyBufferToTexture { src, dst, size } => {
-                self.require_pass(PassKind::None, "buffer to texture copy")?;
-                self.buffer_usage(src.buffer, BufferUsage::COPY_SRC)?;
-                self.copy_texture(dst, size, Access::COPY_DST, TextureUsage::COPY_DST)?;
-            }
-            Command::CopyTextureToBuffer { src, dst, size } => {
-                self.require_pass(PassKind::None, "texture to buffer copy")?;
-                self.copy_texture(src, size, Access::COPY_SRC, TextureUsage::COPY_SRC)?;
-                self.buffer_usage(dst.buffer, BufferUsage::COPY_DST)?;
-            }
-            Command::CopyTextureToTexture { src, dst, size } => {
-                self.require_pass(PassKind::None, "texture to texture copy")?;
-                self.copy_texture(src, size, Access::COPY_SRC, TextureUsage::COPY_SRC)?;
-                self.copy_texture(dst, size, Access::COPY_DST, TextureUsage::COPY_DST)?;
-            }
-            Command::ResolveQueries {
-                query_set,
-                queries,
-                dst,
-                ..
-            } => {
-                self.require_pass(PassKind::None, "query resolve")?;
-                let count = *self
-                    .state
-                    .query_sets
-                    .get(query_set)
-                    .ok_or(RhiError::InvalidHandle("query set"))?;
-                if queries.end > count {
-                    return Err(structure_error("query resolve range exceeds the query set"));
-                }
-                self.buffer_usage(dst, BufferUsage::QUERY_RESOLVE)?;
+            Command::Transfer(transfer) => {
+                self.require_pass(PassKind::None, "transfer")?;
+                self.transfer(*transfer)?;
             }
             Command::PushDebugGroup(_) => self.debug_depth += 1,
             Command::PopDebugGroup => {
@@ -215,6 +178,49 @@ impl<'state> Validator<'state> {
                     }
                 }
                 external.callback.call(&mut ());
+            }
+        }
+        Ok(())
+    }
+
+    fn transfer(&mut self, transfer: Transfer) -> Result<(), RhiError> {
+        match transfer {
+            Transfer::BufferToBuffer {
+                src,
+                src_offset,
+                dst,
+                dst_offset,
+                size,
+            } => {
+                self.copy_buffer_data(src, src_offset, dst, dst_offset, size)?;
+            }
+            Transfer::BufferToTexture { src, dst, size } => {
+                self.buffer_usage(src.buffer, BufferUsage::COPY_SRC)?;
+                self.copy_texture(dst, size, Access::COPY_DST, TextureUsage::COPY_DST)?;
+            }
+            Transfer::TextureToBuffer { src, dst, size } => {
+                self.copy_texture(src, size, Access::COPY_SRC, TextureUsage::COPY_SRC)?;
+                self.buffer_usage(dst.buffer, BufferUsage::COPY_DST)?;
+            }
+            Transfer::TextureToTexture { src, dst, size } => {
+                self.copy_texture(src, size, Access::COPY_SRC, TextureUsage::COPY_SRC)?;
+                self.copy_texture(dst, size, Access::COPY_DST, TextureUsage::COPY_DST)?;
+            }
+            Transfer::ResolveQueries {
+                query_set,
+                queries,
+                dst,
+                ..
+            } => {
+                let count = *self
+                    .state
+                    .query_sets
+                    .get(query_set)
+                    .ok_or(RhiError::InvalidHandle("query set"))?;
+                if queries.end > count {
+                    return Err(structure_error("query resolve range exceeds the query set"));
+                }
+                self.buffer_usage(dst, BufferUsage::QUERY_RESOLVE)?;
             }
         }
         Ok(())

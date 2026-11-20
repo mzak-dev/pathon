@@ -191,9 +191,9 @@ pub enum Command {
         buffer: BufferId,
         access: Access,
     },
-    BeginRenderPass(RenderPassDesc),
+    BeginRenderPass(Box<RenderPassDesc>),
     EndRenderPass,
-    BeginComputePass(ComputePassDesc),
+    BeginComputePass(Box<ComputePassDesc>),
     EndComputePass,
     SetRenderPipeline(RenderPipelineId),
     SetComputePipeline(ComputePipelineId),
@@ -231,24 +231,33 @@ pub enum Command {
         y: u32,
         z: u32,
     },
-    CopyBufferToBuffer {
+    // Rare and large, so boxed: the common commands (binds, draws) stay small.
+    Transfer(Box<Transfer>),
+    PushDebugGroup(&'static str),
+    PopDebugGroup,
+    External(Box<ExternalCommand>),
+}
+
+#[derive(Debug)]
+pub enum Transfer {
+    BufferToBuffer {
         src: BufferId,
         src_offset: u64,
         dst: BufferId,
         dst_offset: u64,
         size: u64,
     },
-    CopyBufferToTexture {
+    BufferToTexture {
         src: BufferCopy,
         dst: TextureCopy,
         size: Extent3d,
     },
-    CopyTextureToBuffer {
+    TextureToBuffer {
         src: TextureCopy,
         dst: BufferCopy,
         size: Extent3d,
     },
-    CopyTextureToTexture {
+    TextureToTexture {
         src: TextureCopy,
         dst: TextureCopy,
         size: Extent3d,
@@ -259,9 +268,6 @@ pub enum Command {
         dst: BufferId,
         dst_offset: u64,
     },
-    PushDebugGroup(&'static str),
-    PopDebugGroup,
-    External(ExternalCommand),
 }
 
 #[derive(Debug, Default)]
@@ -303,17 +309,17 @@ impl CommandList {
     }
 
     pub fn render_pass(&mut self, desc: RenderPassDesc) -> RenderPassEncoder<'_> {
-        self.push(Command::BeginRenderPass(desc));
+        self.push(Command::BeginRenderPass(Box::new(desc)));
         RenderPassEncoder { list: self }
     }
 
     pub fn compute_pass(&mut self, desc: ComputePassDesc) -> ComputePassEncoder<'_> {
-        self.push(Command::BeginComputePass(desc));
+        self.push(Command::BeginComputePass(Box::new(desc)));
         ComputePassEncoder { list: self }
     }
 
     pub fn copy_buffer_to_buffer(&mut self, src: BufferId, src_offset: u64, dst: BufferId, dst_offset: u64, size: u64) {
-        self.push(Command::CopyBufferToBuffer {
+        self.transfer(Transfer::BufferToBuffer {
             src,
             src_offset,
             dst,
@@ -323,19 +329,19 @@ impl CommandList {
     }
 
     pub fn copy_buffer_to_texture(&mut self, src: BufferCopy, dst: TextureCopy, size: Extent3d) {
-        self.push(Command::CopyBufferToTexture { src, dst, size });
+        self.transfer(Transfer::BufferToTexture { src, dst, size });
     }
 
     pub fn copy_texture_to_buffer(&mut self, src: TextureCopy, dst: BufferCopy, size: Extent3d) {
-        self.push(Command::CopyTextureToBuffer { src, dst, size });
+        self.transfer(Transfer::TextureToBuffer { src, dst, size });
     }
 
     pub fn copy_texture_to_texture(&mut self, src: TextureCopy, dst: TextureCopy, size: Extent3d) {
-        self.push(Command::CopyTextureToTexture { src, dst, size });
+        self.transfer(Transfer::TextureToTexture { src, dst, size });
     }
 
     pub fn resolve_queries(&mut self, query_set: QuerySetId, queries: Range<u32>, dst: BufferId, dst_offset: u64) {
-        self.push(Command::ResolveQueries {
+        self.transfer(Transfer::ResolveQueries {
             query_set,
             queries,
             dst,
@@ -352,7 +358,11 @@ impl CommandList {
     }
 
     pub fn external(&mut self, command: ExternalCommand) {
-        self.push(Command::External(command));
+        self.push(Command::External(Box::new(command)));
+    }
+
+    fn transfer(&mut self, transfer: Transfer) {
+        self.push(Command::Transfer(Box::new(transfer)));
     }
 }
 
@@ -431,5 +441,20 @@ impl ComputePassEncoder<'_> {
 impl Drop for ComputePassEncoder<'_> {
     fn drop(&mut self) {
         self.list.push(Command::EndComputePass);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ADR-0009: every pack records thousands of these per frame; keep the common ones small.
+    #[test]
+    fn command_stays_within_32_bytes() {
+        assert!(
+            std::mem::size_of::<Command>() <= 32,
+            "Command is {} bytes",
+            std::mem::size_of::<Command>()
+        );
     }
 }

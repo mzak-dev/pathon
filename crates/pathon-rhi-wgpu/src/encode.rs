@@ -1,6 +1,6 @@
 use pathon_rhi_types::{
     BufferCopy, BufferId, Command, CommandList, ComputePassDesc, DepthAccess, Extent3d, LoadOp, RenderPassDesc,
-    RhiError, StoreOp, TextureCopy, TextureViewId,
+    RhiError, StoreOp, TextureCopy, TextureViewId, Transfer,
 };
 
 use crate::convert;
@@ -66,8 +66,18 @@ fn encode_command(
         // wgpu tracks resource states itself; the plan only feeds validation on the null backend.
         Command::TextureAccess { .. } | Command::BufferAccess { .. } => {}
         Command::BeginRenderPass(desc) => encode_render_pass(objects, encoder, &desc, rest)?,
-        Command::BeginComputePass(desc) => encode_compute_pass(objects, encoder, desc, rest)?,
-        Command::CopyBufferToBuffer {
+        Command::BeginComputePass(desc) => encode_compute_pass(objects, encoder, *desc, rest)?,
+        Command::Transfer(transfer) => encode_transfer(objects, encoder, *transfer)?,
+        Command::PushDebugGroup(label) => encoder.push_debug_group(label),
+        Command::PopDebugGroup => encoder.pop_debug_group(),
+        other => return Err(structure_error(format!("{other:?} recorded outside a pass"))),
+    }
+    Ok(())
+}
+
+fn encode_transfer(objects: &Objects, encoder: &mut wgpu::CommandEncoder, transfer: Transfer) -> Result<(), RhiError> {
+    match transfer {
+        Transfer::BufferToBuffer {
             src,
             src_offset,
             dst,
@@ -82,16 +92,16 @@ fn encode_command(
                 size,
             );
         }
-        Command::CopyBufferToTexture { src, dst, size } => {
+        Transfer::BufferToTexture { src, dst, size } => {
             encoder.copy_buffer_to_texture(buffer_copy(objects, src)?, texture_copy(objects, dst)?, extent(size));
         }
-        Command::CopyTextureToBuffer { src, dst, size } => {
+        Transfer::TextureToBuffer { src, dst, size } => {
             encoder.copy_texture_to_buffer(texture_copy(objects, src)?, buffer_copy(objects, dst)?, extent(size));
         }
-        Command::CopyTextureToTexture { src, dst, size } => {
+        Transfer::TextureToTexture { src, dst, size } => {
             encoder.copy_texture_to_texture(texture_copy(objects, src)?, texture_copy(objects, dst)?, extent(size));
         }
-        Command::ResolveQueries {
+        Transfer::ResolveQueries {
             query_set,
             queries,
             dst,
@@ -103,9 +113,6 @@ fn encode_command(
                 .ok_or(RhiError::InvalidHandle("query set"))?;
             encoder.resolve_query_set(query_set, queries, buffer(objects, dst)?, dst_offset);
         }
-        Command::PushDebugGroup(label) => encoder.push_debug_group(label),
-        Command::PopDebugGroup => encoder.pop_debug_group(),
-        other => return Err(structure_error(format!("{other:?} recorded outside a pass"))),
     }
     Ok(())
 }

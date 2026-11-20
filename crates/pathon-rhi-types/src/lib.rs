@@ -22,7 +22,7 @@ pub use caps::{AdapterInfo, Backend, Caps, DeviceType, Features, FormatCaps, Lim
 pub use command::{
     Color, ColorAttachment, Command, CommandList, ComputePassDesc, ComputePassEncoder, DeclaredAccess, DepthAccess,
     DepthAttachment, ExternalCallback, ExternalCommand, LoadOp, PassTimestamps, RenderPassDesc, RenderPassEncoder,
-    ResourceRef, ScissorRect, StoreOp, Viewport,
+    ResourceRef, ScissorRect, StoreOp, Transfer, Viewport,
 };
 pub use desc::{
     AddressMode, BufferCopy, BufferDesc, BufferUsage, CompareFunction, Extent3d, FilterMode, Origin3d, QuerySetDesc,

@@ -1,0 +1,24 @@
+[package]
+name = "pathon"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+crossbeam-channel = { workspace = true, optional = true }
+log.workspace = true
+pathon-api.workspace = true
+pathon-core.workspace = true
+pathon-diag.workspace = true
+pathon-platform = { workspace = true, optional = true }
+pathon-platform-winit = { workspace = true, optional = true }
+pathon-rhi.workspace = true
+
+[features]
+default = ["winit"]
+runtime = ["dep:pathon-platform", "dep:crossbeam-channel"]
+winit = ["runtime", "dep:pathon-platform-winit"]
+
+[lints]
+workspace = true

@@ -1,0 +1,23 @@
+[package]
+name = "pathon-examples"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+# Examples play the host: they may use wgpu and winit directly, like an own engine would.
+[dependencies]
+bytemuck.workspace = true
+log.workspace = true
+pathon.workspace = true
+pathon-rhi-wgpu.workspace = true
+pathon-test.workspace = true
+wgpu.workspace = true
+winit.workspace = true
+
+[features]
+gpu-tests = []
+
+[lints]
+workspace = true

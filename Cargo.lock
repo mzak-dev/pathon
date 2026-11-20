@@ -1214,6 +1214,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "pathon-examples"
+version = "0.0.1"
+dependencies = [
+ "bytemuck",
+ "log",
+ "pathon",
+ "pathon-rhi-wgpu",
+ "pathon-test",
+ "wgpu",
+ "winit",
+]
+
+[[package]]
 name = "pathon-graph"
 version = "0.0.1"
 dependencies = [

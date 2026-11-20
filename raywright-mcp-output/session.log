@@ -1,0 +1,2 @@
+1795211019 tool app_launch {"exe":"C:\\Users\\matis\\Documents\\Programming\\pathon-renderer\\target\\debug\\vertical_slice.exe"}
+1795211019 error C:\Users\matis\Documents\Programming\pathon-renderer\target\debug\vertical_slice.exe is not allowed; start the server with --allow-exe C:\Users\matis\Documents\Programming\pathon-renderer\target\debug\vertical_slice.exe or use a profile

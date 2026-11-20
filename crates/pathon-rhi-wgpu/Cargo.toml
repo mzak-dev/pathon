@@ -1,0 +1,18 @@
+[package]
+name = "pathon-rhi-wgpu"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+log.workspace = true
+pathon-rhi-types.workspace = true
+raw-window-handle.workspace = true
+wgpu.workspace = true
+
+[features]
+gpu-tests = []
+
+[lints]
+workspace = true

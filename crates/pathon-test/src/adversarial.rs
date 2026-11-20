@@ -39,16 +39,16 @@ impl RenderFeature for GeometryPack {
     }
 
     fn role(&self) -> Option<Role> {
-        Some(Role::Geometry)
+        Some(Role::GEOMETRY)
     }
 
     fn record(&mut self, ctx: &mut RecordCtx<'_>) -> Result<(), RhiError> {
         let hdr = ctx
-            .create_slot_texture(Slot::Hdr, "hdr")
+            .create_slot_texture(Slot::HDR, "hdr")
             .expect("hdr has a contract format");
-        let produce_roughness = ctx.view().is_requested(Slot::Roughness);
+        let produce_roughness = ctx.view().is_requested(Slot::ROUGHNESS);
         let roughness = produce_roughness
-            .then(|| ctx.create_slot_texture(Slot::Roughness, "roughness"))
+            .then(|| ctx.create_slot_texture(Slot::ROUGHNESS, "roughness"))
             .flatten();
         let color = self.color;
         let mut pass = ctx.graph().add_pass(PassDesc::new(self.name, Stage::Opaque));
@@ -70,9 +70,9 @@ impl RenderFeature for GeometryPack {
             }));
             Ok(())
         });
-        ctx.set_slot(Slot::Hdr, hdr);
+        ctx.set_slot(Slot::HDR, hdr);
         if let Some(roughness) = roughness {
-            ctx.set_slot(Slot::Roughness, roughness);
+            ctx.set_slot(Slot::ROUGHNESS, roughness);
         }
         Ok(())
     }
@@ -105,7 +105,7 @@ impl RenderFeature for UpscalerPack {
     }
 
     fn role(&self) -> Option<Role> {
-        Some(Role::TemporalResolve)
+        Some(Role::TEMPORAL_RESOLVE)
     }
 
     fn prepare_view(&mut self, ctx: &mut PrepareCtx<'_>) {
@@ -129,7 +129,7 @@ impl RenderFeature for UpscalerPack {
     }
 
     fn record(&mut self, ctx: &mut RecordCtx<'_>) -> Result<(), RhiError> {
-        let (Some(hdr), Some(output)) = (ctx.slot(Slot::Hdr), ctx.slot(Slot::Output)) else {
+        let (Some(hdr), Some(output)) = (ctx.slot(Slot::HDR), ctx.slot(Slot::OUTPUT)) else {
             return Ok(());
         };
         let observed = Arc::clone(&self.observed_render_size);
@@ -144,7 +144,7 @@ impl RenderFeature for UpscalerPack {
                 .copy_texture_to_texture(TextureCopy::whole(source), TextureCopy::whole(destination), size);
             Ok(())
         });
-        ctx.set_slot(Slot::Output, destination);
+        ctx.set_slot(Slot::OUTPUT, destination);
         Ok(())
     }
 }
@@ -163,11 +163,11 @@ impl RenderFeature for OnDemandConsumer {
     }
 
     fn prepare_view(&mut self, ctx: &mut PrepareCtx<'_>) {
-        ctx.request(Slot::Roughness);
+        ctx.request(Slot::ROUGHNESS);
     }
 
     fn record(&mut self, ctx: &mut RecordCtx<'_>) -> Result<(), RhiError> {
-        let (Some(roughness), Some(hdr)) = (ctx.slot(Slot::Roughness), ctx.slot(Slot::Hdr)) else {
+        let (Some(roughness), Some(hdr)) = (ctx.slot(Slot::ROUGHNESS), ctx.slot(Slot::HDR)) else {
             return Ok(());
         };
         let mut pass = ctx
@@ -185,7 +185,7 @@ impl RenderFeature for OnDemandConsumer {
             }));
             Ok(())
         });
-        ctx.set_slot(Slot::Hdr, hdr);
+        ctx.set_slot(Slot::HDR, hdr);
         Ok(())
     }
 }
@@ -210,7 +210,7 @@ impl RenderFeature for VendorDummy {
     }
 
     fn record(&mut self, ctx: &mut RecordCtx<'_>) -> Result<(), RhiError> {
-        let Some(hdr) = ctx.slot(Slot::Hdr) else {
+        let Some(hdr) = ctx.slot(Slot::HDR) else {
             return Ok(());
         };
         let called = Arc::clone(&self.called);
@@ -231,7 +231,7 @@ impl RenderFeature for VendorDummy {
             });
             Ok(())
         });
-        ctx.set_slot(Slot::Hdr, hdr);
+        ctx.set_slot(Slot::HDR, hdr);
         Ok(())
     }
 }

@@ -1,4 +1,4 @@
-use pathon_api::{Negotiation, RenderFeature, Requirements, Role, SetupCtx, TaskPool};
+use pathon_api::{Negotiation, RenderFeature, Requirements, Role, SetupCtx, Shared, TaskPool};
 use pathon_diag::Diagnostic;
 use pathon_graph::{OrderNode, sort_nodes};
 use pathon_rhi::{Backend, Caps, DeviceApi, DeviceRequest};
@@ -83,11 +83,11 @@ impl Registry {
     }
 
     // Phase 2, on the real capabilities, then order, roles and setup.
-    pub(crate) fn activate(&mut self, device: &dyn DeviceApi, task_pool: &dyn TaskPool) {
+    pub(crate) fn activate(&mut self, device: &dyn DeviceApi, task_pool: &dyn TaskPool, shared: &mut Shared) {
         self.negotiate(device.caps());
         self.sort();
         self.assign_roles();
-        let mut ctx = SetupCtx::new(device, task_pool);
+        let mut ctx = SetupCtx::new(device, task_pool, shared);
         for index in self.order.clone() {
             if let Err(error) = self.entries[index].feature.setup(&mut ctx) {
                 let name = self.entries[index].feature.name();
@@ -100,8 +100,8 @@ impl Registry {
         self.order.retain(|index| self.entries[*index].status.is_active());
     }
 
-    pub(crate) fn reset(&mut self, device: &dyn DeviceApi, task_pool: &dyn TaskPool) {
-        let mut ctx = SetupCtx::new(device, task_pool);
+    pub(crate) fn reset(&mut self, device: &dyn DeviceApi, task_pool: &dyn TaskPool, shared: &mut Shared) {
+        let mut ctx = SetupCtx::new(device, task_pool, shared);
         for index in self.order.clone() {
             if let Err(error) = self.entries[index].feature.on_device_reset(&mut ctx) {
                 let name = self.entries[index].feature.name();
@@ -190,7 +190,7 @@ impl Registry {
                     index,
                     Diagnostic::warning(
                         "F0102",
-                        format!("'{name}' claims role {role:?}, already held by '{holder}'"),
+                        format!("'{name}' claims role '{}', already held by '{holder}'", role.name()),
                     )
                     .with_hint("unregister one of the features"),
                 );
@@ -201,7 +201,7 @@ impl Registry {
         self.order.retain(|index| self.entries[*index].status.is_active());
         self.temporal_owner = holders
             .iter()
-            .find(|(role, _)| *role == Role::TemporalResolve)
+            .find(|(role, _)| *role == Role::TEMPORAL_RESOLVE)
             .map(|(_, index)| *index);
     }
 

@@ -7,13 +7,25 @@ use pathon_rhi_types::{Backend, Caps, Features, MaybeSend, RhiError};
 use crate::context::{PrepareCtx, RecordCtx, SetupCtx};
 use crate::view::ViewCtx;
 
-// A role has one active holder per renderer; a second claimant is disabled with F0102.
+// A role has one active holder per renderer; a second claimant is disabled with F0102. Packs may define their own
+// (`Role::new("sky")`). `TEMPORAL_RESOLVE` is the one role the core treats specially: its holder sets render size and
+// jitter.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub enum Role {
-    Geometry,
-    Shadows,
-    TemporalResolve,
-    Tonemap,
+pub struct Role(&'static str);
+
+impl Role {
+    pub const GEOMETRY: Self = Self("geometry");
+    pub const SHADOWS: Self = Self("shadows");
+    pub const TEMPORAL_RESOLVE: Self = Self("temporal_resolve");
+    pub const TONEMAP: Self = Self("tonemap");
+
+    pub const fn new(name: &'static str) -> Self {
+        Self(name)
+    }
+
+    pub const fn name(self) -> &'static str {
+        self.0
+    }
 }
 
 // Phase 1: known before the device exists, so the device can be created with what packs need.

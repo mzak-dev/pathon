@@ -1,7 +1,8 @@
+use std::any::Any;
 use std::sync::Arc;
 
-use pathon_api::{RenderFeature, SerialTaskPool, TaskPool};
-use pathon_rhi::{Color, Device, DeviceRequest};
+use pathon_api::{Pack, PackRegistrar, RenderFeature, SerialTaskPool, Shared, TaskPool};
+use pathon_rhi::{Color, Device, DeviceRequest, MaybeSend};
 
 use crate::error::RenderError;
 use crate::registry::Registry;
@@ -10,6 +11,7 @@ use crate::renderer::{DeviceOwnership, Renderer};
 pub struct RendererBuilder {
     request: DeviceRequest,
     features: Vec<Box<dyn RenderFeature>>,
+    shared: Shared,
     task_pool: Arc<dyn TaskPool>,
     device: Option<Arc<Device>>,
     frames_in_flight: u64,
@@ -34,6 +36,7 @@ impl Default for RendererBuilder {
                 ..DeviceRequest::default()
             },
             features: Vec::new(),
+            shared: Shared::new(),
             task_pool: Arc::new(SerialTaskPool),
             device: None,
             frames_in_flight: 2,
@@ -44,6 +47,7 @@ impl Default for RendererBuilder {
 
 struct Prepared {
     registry: Registry,
+    shared: Shared,
     request: DeviceRequest,
     borrowed: Option<Arc<Device>>,
     task_pool: Arc<dyn TaskPool>,
@@ -53,7 +57,8 @@ struct Prepared {
 
 impl Prepared {
     fn finish(mut self, device: Arc<Device>, ownership: DeviceOwnership) -> Renderer {
-        self.registry.activate(device.as_ref(), self.task_pool.as_ref());
+        self.registry
+            .activate(device.as_ref(), self.task_pool.as_ref(), &mut self.shared);
         Renderer::new(
             device,
             ownership,
@@ -61,6 +66,7 @@ impl Prepared {
             self.task_pool,
             self.frames_in_flight,
             self.clear_color,
+            self.shared,
         )
     }
 }
@@ -73,6 +79,22 @@ impl RendererBuilder {
     #[must_use]
     pub fn with_feature(mut self, feature: impl RenderFeature + 'static) -> Self {
         self.features.push(Box::new(feature));
+        self
+    }
+
+    // A pack may bring several features and the data they share (e.g. PBR: prepass, lighting, IBL).
+    #[must_use]
+    pub fn with_pack(mut self, pack: impl Pack) -> Self {
+        let mut registrar = PackRegistrar::new();
+        pack.register(&mut registrar);
+        registrar.merge_into(&mut self.features, &mut self.shared);
+        self
+    }
+
+    // Data for packs that the application provides up front; it can change it later through `Renderer::shared_mut`.
+    #[must_use]
+    pub fn with_shared<T: Any + MaybeSend>(mut self, value: T) -> Self {
+        self.shared.insert(value);
         self
     }
 
@@ -120,6 +142,7 @@ impl RendererBuilder {
         registry.merge_requirements(&mut request);
         Prepared {
             registry,
+            shared: self.shared,
             request,
             borrowed: self.device,
             task_pool: self.task_pool,

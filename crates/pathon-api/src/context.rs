@@ -3,6 +3,7 @@ use pathon_diag::Diagnostic;
 use pathon_graph::{FrameGraph, GraphTextureDesc, TextureHandle};
 use pathon_rhi_types::{Caps, DeviceApi, PhysicalSize};
 
+use crate::shared::Shared;
 use crate::slot::{Slot, Slots};
 use crate::task_pool::TaskPool;
 use crate::view::ViewCtx;
@@ -10,6 +11,7 @@ use crate::view::ViewCtx;
 pub struct SetupCtx<'frame> {
     device: &'frame dyn DeviceApi,
     task_pool: &'frame dyn TaskPool,
+    shared: &'frame mut Shared,
 }
 
 impl std::fmt::Debug for SetupCtx<'_> {
@@ -21,8 +23,12 @@ impl std::fmt::Debug for SetupCtx<'_> {
 }
 
 impl<'frame> SetupCtx<'frame> {
-    pub fn new(device: &'frame dyn DeviceApi, task_pool: &'frame dyn TaskPool) -> Self {
-        Self { device, task_pool }
+    pub fn new(device: &'frame dyn DeviceApi, task_pool: &'frame dyn TaskPool, shared: &'frame mut Shared) -> Self {
+        Self {
+            device,
+            task_pool,
+            shared,
+        }
     }
 
     pub fn device(&self) -> &'frame dyn DeviceApi {
@@ -35,6 +41,10 @@ impl<'frame> SetupCtx<'frame> {
 
     pub fn task_pool(&self) -> &'frame dyn TaskPool {
         self.task_pool
+    }
+
+    pub fn shared(&mut self) -> &mut Shared {
+        self.shared
     }
 }
 
@@ -49,15 +59,24 @@ pub struct TemporalSettings {
 pub struct PrepareCtx<'frame> {
     view: &'frame mut ViewCtx,
     owns_temporal: bool,
+    shared: &'frame Shared,
 }
 
 impl<'frame> PrepareCtx<'frame> {
-    pub fn new(view: &'frame mut ViewCtx, owns_temporal: bool) -> Self {
-        Self { view, owns_temporal }
+    pub fn new(view: &'frame mut ViewCtx, owns_temporal: bool, shared: &'frame Shared) -> Self {
+        Self {
+            view,
+            owns_temporal,
+            shared,
+        }
     }
 
     pub fn view(&self) -> &ViewCtx {
         self.view
+    }
+
+    pub fn shared(&self) -> &Shared {
+        self.shared
     }
 
     pub fn request(&mut self, slot: Slot) {
@@ -84,6 +103,7 @@ pub struct RecordCtx<'frame> {
     view: &'frame ViewCtx,
     device: &'frame dyn DeviceApi,
     diagnostics: &'frame mut Vec<Diagnostic>,
+    shared: &'frame mut Shared,
 }
 
 impl std::fmt::Debug for RecordCtx<'_> {
@@ -102,6 +122,7 @@ impl<'frame> RecordCtx<'frame> {
         view: &'frame ViewCtx,
         device: &'frame dyn DeviceApi,
         diagnostics: &'frame mut Vec<Diagnostic>,
+        shared: &'frame mut Shared,
     ) -> Self {
         Self {
             graph,
@@ -109,7 +130,16 @@ impl<'frame> RecordCtx<'frame> {
             view,
             device,
             diagnostics,
+            shared,
         }
+    }
+
+    pub fn shared(&self) -> &Shared {
+        self.shared
+    }
+
+    pub fn shared_mut(&mut self) -> &mut Shared {
+        self.shared
     }
 
     pub fn graph(&mut self) -> &mut FrameGraph {
@@ -135,8 +165,11 @@ impl<'frame> RecordCtx<'frame> {
             && actual != Some(expected)
         {
             self.diagnostics.push(
-                Diagnostic::error("G0005", format!("slot {slot:?} expects {expected:?}, got {actual:?}"))
-                    .with_hint("create the texture with Slot::format() or RecordCtx::create_slot_texture()"),
+                Diagnostic::error(
+                    "G0005",
+                    format!("slot '{}' expects {expected:?}, got {actual:?}", slot.name()),
+                )
+                .with_hint("create the texture with Slot::format() or RecordCtx::create_slot_texture()"),
             );
             return false;
         }
@@ -164,8 +197,8 @@ mod tests {
 
     #[test]
     fn every_slot_but_output_has_a_contract_format() {
-        for slot in Slot::ALL {
-            assert_eq!(slot.format().is_none(), slot == Slot::Output, "{slot:?}");
+        for slot in Slot::BUILT_IN {
+            assert_eq!(slot.format().is_none(), slot == Slot::OUTPUT, "{slot:?}");
         }
     }
 
@@ -176,16 +209,17 @@ mod tests {
         let mut slots = Slots::new();
         let view = ViewCtx::new(ViewId(0), PhysicalSize::new(4, 4), Camera::default());
         let mut diagnostics = Vec::new();
-        let mut ctx = RecordCtx::new(&mut graph, &mut slots, &view, &device, &mut diagnostics);
+        let mut shared = Shared::new();
+        let mut ctx = RecordCtx::new(&mut graph, &mut slots, &view, &device, &mut diagnostics, &mut shared);
 
         let wrong = ctx
             .graph()
             .create_texture("ao", GraphTextureDesc::render(Format::Rgba8Unorm));
-        assert!(!ctx.set_slot(Slot::Ao, wrong));
-        let right = ctx.create_slot_texture(Slot::Ao, "ao").expect("ao has a format");
-        assert!(ctx.set_slot(Slot::Ao, right));
+        assert!(!ctx.set_slot(Slot::AO, wrong));
+        let right = ctx.create_slot_texture(Slot::AO, "ao").expect("ao has a format");
+        assert!(ctx.set_slot(Slot::AO, right));
 
-        assert_eq!(slots.get(Slot::Ao), Some(right));
+        assert_eq!(slots.get(Slot::AO), Some(right));
         assert_eq!(diagnostics.len(), 1);
         assert_eq!(diagnostics[0].code, "G0005");
     }
@@ -199,9 +233,9 @@ mod tests {
             mip_bias: -0.5,
         };
 
-        assert!(!PrepareCtx::new(&mut view, false).set_temporal(settings));
+        assert!(!PrepareCtx::new(&mut view, false, &Shared::new()).set_temporal(settings));
         assert_eq!(view.render_size, PhysicalSize::new(100, 100));
-        assert!(PrepareCtx::new(&mut view, true).set_temporal(settings));
+        assert!(PrepareCtx::new(&mut view, true, &Shared::new()).set_temporal(settings));
         assert_eq!(view.render_size, PhysicalSize::new(67, 67));
     }
 }

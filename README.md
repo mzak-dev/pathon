@@ -43,8 +43,10 @@ flowchart LR
 ## Modularność
 
 - **Kontrakt w jednym crate'cie.** `RenderFeature`: `requirements()` przed utworzeniem urządzenia, `negotiate(&Caps)` po nim (pełna ścieżka, fallback albo wyłączenie z diagnostyką), `setup`, `prepare_view`, `record` ([pathon-api](docs/crates/pathon-api.md)).
-- **Sloty zamiast zależności między paczkami.** Paczki wymieniają się teksturami przez nazwane sloty (`Depth`, `Normals`, `Motion`, `Hdr`, `Ao`, `Output`…) o stałym [kontrakcie formatów i konwencji](docs/slots.md). SSAO nie wie, kto narysował głębię.
-- **Role.** Jedna aktywna paczka na rolę (geometria, rozdzielczość temporalna, tonemapping) — podmiana TAA na FSR albo własnej geometrii na meshlety to zmiana jednej paczki.
+- **Sloty zamiast zależności między paczkami.** Paczki wymieniają się teksturami przez nazwane sloty o stałym [kontrakcie formatów i konwencji](docs/slots.md) — wbudowane (`Slot::DEPTH`, `Slot::NORMALS`, `Slot::HDR`, `Slot::OUTPUT`…) albo własne (`Slot::new("outline.mask", Format::R8Unorm)`). SSAO nie wie, kto narysował głębię.
+- **Dane współdzielone.** Bufory sceny, listy świateł czy ustawienia przechodzą między paczkami — i od aplikacji do paczek — przez `Shared`, kluczowane typem. Paczki nie zależą od swoich crate'ów nawzajem.
+- **Role.** Jedna aktywna paczka na rolę — wbudowaną (geometria, rozdzielczość temporalna, tonemapping) albo własną (`Role::new("sky")`). Podmiana TAA na FSR albo geometrii rastrowej na meshlety to zmiana jednej paczki.
+- **Paczka to zestaw.** `Pack` instaluje naraz kilka klas renderujących razem z ich wspólnymi danymi (np. PBR: prepass + oświetlenie + IBL); pojedynczy `RenderFeature` też jest paczką.
 - **Kolejność bez kolejności rejestracji.** Etap, `before` / `after`, priorytet; remis kończy się ostrzeżeniem, nie losowym wynikiem.
 - **Caps zamiast tierów.** Paczka prosi o konkretne bity (`SHADER_INT64_ATOMIC_MIN_MAX`, `RAY_QUERY`…) i sama decyduje o fallbacku na słabszym sprzęcie.
 - **Wymienne zaplecze.** RHI to osobna warstwa z backendem wgpu i backendem null; kolejne backendy (ash, Metal, Godot) nie zmieniają paczek.
@@ -79,7 +81,7 @@ impl RenderFeature for Tint {
     }
 
     fn record(&mut self, ctx: &mut RecordCtx<'_>) -> Result<(), RhiError> {
-        let Some(output) = ctx.slot(Slot::Output) else {
+        let Some(output) = ctx.slot(Slot::OUTPUT) else {
             return Ok(());
         };
         let mut pass = ctx.graph().add_pass(PassDesc::new("tint", Stage::PostProcess));
@@ -94,14 +96,14 @@ impl RenderFeature for Tint {
             }));
             Ok(())
         });
-        ctx.set_slot(Slot::Output, output);
+        ctx.set_slot(Slot::OUTPUT, output);
         Ok(())
     }
 }
 ```
 
 ```rust
-let mut renderer = Renderer::builder().with_feature(Tint).build()?;
+let mut renderer = Renderer::builder().with_pack(Tint).build()?;
 let target = renderer.add_offscreen_target(PhysicalSize::new(1280, 720), Format::Rgba8Unorm)?;
 renderer.render_frame(&FrameInput {
     views: vec![ViewInput { target, camera: Camera::default() }],

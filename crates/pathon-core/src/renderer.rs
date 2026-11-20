@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use pathon_api::{PrepareCtx, RecordCtx, Slot, Slots, TaskPool, ViewCtx, ViewId};
+use pathon_api::{PrepareCtx, RecordCtx, Shared, Slot, Slots, TaskPool, ViewCtx, ViewId};
 use pathon_diag::Diagnostic;
 use pathon_graph::{FrameGraph, FrameSizes, GraphStats, PassDesc, Stage, TextureHandle, TexturePool};
 use pathon_resources::DeferredRelease;
@@ -48,6 +48,7 @@ pub struct Renderer {
     frame: u64,
     clear_color: Color,
     on_reupload: Option<ReuploadFn>,
+    shared: Shared,
 }
 
 impl std::fmt::Debug for Renderer {
@@ -72,6 +73,7 @@ impl Renderer {
         task_pool: Arc<dyn TaskPool>,
         frames_in_flight: u64,
         clear_color: Color,
+        shared: Shared,
     ) -> Self {
         Self {
             device,
@@ -84,7 +86,17 @@ impl Renderer {
             frame: 0,
             clear_color,
             on_reupload: None,
+            shared,
         }
+    }
+
+    // Data packs share with each other and with the application (scene, lights, settings), keyed by type.
+    pub fn shared(&self) -> &Shared {
+        &self.shared
+    }
+
+    pub fn shared_mut(&mut self) -> &mut Shared {
+        &mut self.shared
     }
 
     pub fn device(&self) -> &Arc<Device> {
@@ -345,7 +357,7 @@ impl Renderer {
         view_ctx.delta_seconds = input.delta_seconds;
         for feature_index in &self.registry.order {
             let owns_temporal = self.registry.temporal_owner == Some(*feature_index);
-            let mut ctx = PrepareCtx::new(&mut view_ctx, owns_temporal);
+            let mut ctx = PrepareCtx::new(&mut view_ctx, owns_temporal, &self.shared);
             self.registry.entries[*feature_index].feature.prepare_view(&mut ctx);
         }
 
@@ -371,8 +383,9 @@ impl Renderer {
                 &view_ctx,
                 self.device.as_ref(),
                 &mut diagnostics,
+                &mut self.shared,
             );
-            ctx.set_slot(Slot::Output, cleared);
+            ctx.set_slot(Slot::OUTPUT, cleared);
             for feature_index in &self.registry.order {
                 if let Err(error) = self.registry.entries[*feature_index].feature.record(&mut ctx) {
                     failed.push((*feature_index, error));
@@ -521,7 +534,8 @@ impl Renderer {
                 self.targets.remove(id);
             }
         }
-        self.registry.reset(self.device.as_ref(), self.task_pool.as_ref());
+        self.registry
+            .reset(self.device.as_ref(), self.task_pool.as_ref(), &mut self.shared);
         if let Some(callback) = &mut self.on_reupload {
             callback(&self.device);
         }

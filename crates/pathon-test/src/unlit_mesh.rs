@@ -189,7 +189,7 @@ impl RenderFeature for UnlitMeshPack {
     }
 
     fn record(&mut self, ctx: &mut RecordCtx<'_>) -> Result<(), RhiError> {
-        let Some(output) = ctx.slot(Slot::Output) else {
+        let Some(output) = ctx.slot(Slot::OUTPUT) else {
             return Ok(());
         };
         let format = ctx
@@ -253,7 +253,7 @@ impl RenderFeature for UnlitMeshPack {
             render.draw_indexed(0..36, 0, 0..1);
             Ok(())
         });
-        ctx.set_slot(Slot::Output, color);
+        ctx.set_slot(Slot::OUTPUT, color);
         Ok(())
     }
 }

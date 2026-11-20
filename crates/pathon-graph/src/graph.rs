@@ -194,6 +194,7 @@ pub(crate) struct PassNode {
 pub struct FrameGraph {
     pub(crate) resources: Vec<ResourceNode>,
     pub(crate) passes: Vec<PassNode>,
+    pub(crate) capture: bool,
 }
 
 impl std::fmt::Debug for FrameGraph {
@@ -202,6 +203,7 @@ impl std::fmt::Debug for FrameGraph {
         f.debug_struct("FrameGraph")
             .field("resources", &self.resources)
             .field("passes", &passes)
+            .field("capture", &self.capture)
             .finish()
     }
 }
@@ -252,6 +254,11 @@ impl FrameGraph {
             record: None,
         });
         PassBuilder { graph: self, pass }
+    }
+
+    // Ask `execute` for a `GraphCapture` (tools only; it allocates).
+    pub fn set_capture(&mut self, enabled: bool) {
+        self.capture = enabled;
     }
 
     pub fn pass_count(&self) -> usize {

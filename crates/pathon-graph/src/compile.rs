@@ -20,6 +20,8 @@ pub struct CompiledGraph {
     pub(crate) usages: Vec<TextureUsage>,
     // First and last position in `order` at which a resource is touched.
     pub(crate) lifetimes: Vec<Option<(usize, usize)>>,
+    // Dependencies between live passes (data and before/after), by pass index.
+    pub(crate) edges: Vec<(usize, usize)>,
     pub(crate) warnings: Vec<Diagnostic>,
     pub(crate) stats: GraphStats,
 }
@@ -27,6 +29,10 @@ pub struct CompiledGraph {
 impl CompiledGraph {
     pub fn order(&self) -> &[&'static str] {
         &self.names
+    }
+
+    pub fn edges(&self) -> &[(usize, usize)] {
+        &self.edges
     }
 
     pub fn warnings(&self) -> &[Diagnostic] {
@@ -69,7 +75,7 @@ impl FrameGraph {
         }
         let live = self.live_passes();
         let mut warnings = Vec::new();
-        let order = self.order(&live, &mut warnings)?;
+        let (order, edges) = self.order(&live, &mut warnings)?;
 
         let mut usages = vec![TextureUsage::empty(); self.resources.len()];
         let mut lifetimes: Vec<Option<(usize, usize)>> = vec![None; self.resources.len()];
@@ -102,6 +108,7 @@ impl FrameGraph {
             sizes,
             usages,
             lifetimes,
+            edges,
             warnings,
             stats,
         })
@@ -195,7 +202,12 @@ impl FrameGraph {
         resource.producers.get(version as usize).copied().flatten()
     }
 
-    fn order(&self, live: &[bool], warnings: &mut Vec<Diagnostic>) -> Result<Vec<usize>, Vec<Diagnostic>> {
+    #[expect(clippy::type_complexity, reason = "order plus the edges it was derived from")]
+    fn order(
+        &self,
+        live: &[bool],
+        warnings: &mut Vec<Diagnostic>,
+    ) -> Result<(Vec<usize>, Vec<(usize, usize)>), Vec<Diagnostic>> {
         let mut data_edges = Vec::new();
         for (index, pass) in self.passes.iter().enumerate() {
             for access in &pass.accesses {
@@ -230,6 +242,33 @@ impl FrameGraph {
             .collect();
         let (order, order_warnings) = sort_nodes(&nodes, &data_edges)?;
         warnings.extend(order_warnings);
-        Ok(order)
+        let mut edges: Vec<(usize, usize)> = data_edges
+            .into_iter()
+            .filter(|(from, to)| from != to && live[*from] && live[*to])
+            .collect();
+        for (index, pass) in self.passes.iter().enumerate() {
+            for name in &pass.desc.after {
+                edges.extend(self.live_named(live, name).map(|other| (other, index)));
+            }
+            for name in &pass.desc.before {
+                edges.extend(self.live_named(live, name).map(|other| (index, other)));
+            }
+        }
+        edges.retain(|(from, to)| live[*from] && live[*to]);
+        edges.sort_unstable();
+        edges.dedup();
+        Ok((order, edges))
+    }
+
+    fn live_named<'graph>(
+        &'graph self,
+        live: &'graph [bool],
+        name: &'graph str,
+    ) -> impl Iterator<Item = usize> + 'graph {
+        self.passes
+            .iter()
+            .enumerate()
+            .filter(move |(index, pass)| live[*index] && pass.desc.name == name)
+            .map(|(index, _)| index)
     }
 }

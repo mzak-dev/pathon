@@ -1,10 +1,11 @@
 use pathon_diag::Diagnostic;
 use pathon_resources::DeferredRelease;
 use pathon_rhi_types::{
-    Access, BindGroupDesc, BindGroupId, CommandList, DeviceApi, Resource, RhiError, SubresourceRange, TextureDesc,
-    TextureDimension, TextureId, TextureUsage, TextureViewDesc, TextureViewId,
+    Access, BindGroupDesc, BindGroupId, Command, CommandList, DeviceApi, Resource, RhiError, SubresourceRange,
+    TextureDesc, TextureDimension, TextureId, TextureUsage, TextureViewDesc, TextureViewId,
 };
 
+use crate::capture::{AccessCapture, BarrierCapture, GraphCapture, PassCapture, ResourceCapture};
 use crate::compile::{CompiledGraph, GraphStats};
 use crate::graph::{FrameGraph, PassAccess, PassNode, ResourceKind, TextureHandle};
 use crate::pool::TexturePool;
@@ -20,6 +21,7 @@ pub struct Execution {
     pub commands: CommandList,
     pub stats: GraphStats,
     pub warnings: Vec<Diagnostic>,
+    pub capture: Option<GraphCapture>,
 }
 
 pub struct PassContext<'exec> {
@@ -162,14 +164,19 @@ impl FrameGraph {
             }
         }
 
+        let mut capture = self.capture.then(|| self.begin_capture(compiled, &physical));
         let mut commands = CommandList::new();
         let mut frame_resources = Vec::new();
         let mut passes: Vec<Option<PassNode>> = self.passes.into_iter().map(Some).collect();
         for index in &compiled.order {
             let pass = passes[*index].take().expect("each pass appears once in the order");
             commands.push_debug_group(pass.desc.name);
+            let barriers_start = commands.commands().len();
             for (texture, needed) in needed_states(&pass.accesses, &physical) {
                 tracker.transition(texture, &needed, &mut commands);
+            }
+            if let Some(capture) = &mut capture {
+                capture.passes[*index].barriers = barriers_since(&commands, barriers_start);
             }
             if let Some(record) = pass.record {
                 let mut context = PassContext {
@@ -184,12 +191,17 @@ impl FrameGraph {
             commands.pop_debug_group();
         }
 
+        let final_start = commands.commands().len();
         for (resource, texture) in self.resources.iter().zip(&physical) {
             if let (ResourceKind::Imported { final_access, .. }, Some(texture)) = (resource.kind, texture) {
                 let count = (texture.desc.mip_level_count * texture.desc.array_layers()) as usize;
                 tracker.transition(*texture, &vec![final_access; count], &mut commands);
                 pool.release_views_of(texture.texture, release, frame);
             }
+        }
+        if let Some(capture) = &mut capture {
+            capture.final_barriers = barriers_since(&commands, final_start);
+            capture.stats.physical_textures = physical_count;
         }
         for resource in frame_resources {
             release.release(frame, resource);
@@ -204,9 +216,79 @@ impl FrameGraph {
             commands,
             stats,
             warnings: compiled.warnings.clone(),
+            capture,
         })
     }
 
+    fn begin_capture(&self, compiled: &CompiledGraph, physical: &[Option<PhysicalTexture>]) -> GraphCapture {
+        let mut positions = vec![None; self.passes.len()];
+        for (position, index) in compiled.order.iter().enumerate() {
+            positions[*index] = Some(position);
+        }
+        let passes = self
+            .passes
+            .iter()
+            .zip(positions)
+            .map(|(pass, order)| PassCapture {
+                name: pass.desc.name,
+                stage: pass.desc.stage,
+                priority: pass.desc.priority,
+                order,
+                side_effect: pass.desc.side_effect,
+                accesses: pass
+                    .accesses
+                    .iter()
+                    .map(|access| AccessCapture {
+                        resource: access.resource as usize,
+                        read_version: access.read_version,
+                        write_version: access.write_version,
+                        access: access.access,
+                        range: access.range,
+                    })
+                    .collect(),
+                barriers: Vec::new(),
+            })
+            .collect();
+        let resources = self
+            .resources
+            .iter()
+            .zip(physical)
+            .zip(&compiled.lifetimes)
+            .map(|((resource, physical), lifetime)| ResourceCapture {
+                name: resource.name,
+                imported: matches!(resource.kind, ResourceKind::Imported { .. }),
+                desc: physical.map(|physical| physical.desc),
+                physical: physical.map(|physical| physical.texture),
+                lifetime: *lifetime,
+                versions: resource.producers.len(),
+            })
+            .collect();
+        GraphCapture {
+            passes,
+            resources,
+            edges: compiled.edges.clone(),
+            final_barriers: Vec::new(),
+            stats: compiled.stats,
+            warnings: compiled.warnings.clone(),
+        }
+    }
+}
+
+fn barriers_since(commands: &CommandList, start: usize) -> Vec<BarrierCapture> {
+    commands.commands()[start..]
+        .iter()
+        .filter_map(|command| match command {
+            Command::TextureAccess { texture, range, access } => Some(BarrierCapture {
+                texture: *texture,
+                range: *range,
+                access: *access,
+            }),
+            _ => None,
+        })
+        .collect()
+}
+
+impl FrameGraph {
     // Transient textures with identical descriptions and disjoint lifetimes share one physical texture.
     fn allocate(
         &self,

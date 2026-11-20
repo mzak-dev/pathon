@@ -313,3 +313,85 @@ fn structural_change_recompiles() {
     assert!(fresh);
     assert_eq!(compiled.order().last(), Some(&"readback"));
 }
+
+#[test]
+fn capture_describes_order_culling_dependencies_aliasing_and_barriers() {
+    let device = NullDevice::new();
+    let mut pool = TexturePool::new();
+    let mut graph = FrameGraph::new();
+    graph.set_capture(true);
+    let output = import_output(&mut graph, &device);
+    let desc = GraphTextureDesc::render(Format::Rgba8Unorm);
+
+    let first = graph.create_texture("t1", desc);
+    let mut pass = graph.add_pass(PassDesc::new("t1", Stage::Opaque));
+    let first = pass.write(first, Access::COLOR_ATTACHMENT);
+    pass.record(clear(first));
+
+    let mut previous = first;
+    for (priority, name) in [(1, "t2"), (2, "t3")] {
+        let texture = graph.create_texture(name, desc);
+        let mut pass = graph.add_pass(PassDesc::new(name, Stage::Opaque).priority(priority));
+        let source = pass.read(previous, Access::COPY_SRC);
+        let written = pass.write(texture, Access::COPY_DST);
+        pass.record(copy(source, written));
+        previous = written;
+    }
+    let mut pass = graph.add_pass(PassDesc::new("to output", Stage::Tonemap));
+    let source = pass.read(previous, Access::COPY_SRC);
+    let written = pass.write(output, Access::COPY_DST);
+    pass.record(copy(source, written));
+
+    let unused = graph.create_texture("unused", desc);
+    let mut pass = graph.add_pass(PassDesc::new("unused producer", Stage::Opaque));
+    let unused = pass.write(unused, Access::COLOR_ATTACHMENT);
+    pass.record(clear(unused));
+
+    let capture = run(graph, &device, &mut pool, 0).capture.expect("capture was enabled");
+    let orders: Vec<_> = capture.passes.iter().map(|pass| (pass.name, pass.order)).collect();
+    assert_eq!(
+        orders,
+        [
+            ("t1", Some(0)),
+            ("t2", Some(1)),
+            ("t3", Some(2)),
+            ("to output", Some(3)),
+            ("unused producer", None)
+        ]
+    );
+    assert_eq!(capture.edges, [(0, 1), (1, 2), (2, 3)]);
+
+    let physical = |name: &str| {
+        let resource = capture.resources.iter().find(|resource| resource.name == name);
+        resource.and_then(|resource| resource.physical)
+    };
+    assert_eq!(physical("t1"), physical("t3"), "disjoint lifetimes alias");
+    assert_ne!(physical("t1"), physical("t2"));
+    assert_eq!(physical("unused"), None);
+    assert_eq!(capture.stats.physical_textures, 2);
+
+    let to_output = &capture.passes[3];
+    assert!(
+        to_output
+            .barriers
+            .iter()
+            .any(|barrier| Some(barrier.texture) == physical("output") && barrier.access == Access::COPY_DST)
+    );
+    assert!(
+        capture
+            .final_barriers
+            .iter()
+            .any(|barrier| Some(barrier.texture) == physical("output") && barrier.access == Access::SHADER_READ)
+    );
+}
+
+#[test]
+fn capture_is_off_by_default() {
+    let device = NullDevice::new();
+    let mut graph = FrameGraph::new();
+    let output = import_output(&mut graph, &device);
+    let mut pass = graph.add_pass(PassDesc::new("clear", Stage::Opaque));
+    let written = pass.write(output, Access::COLOR_ATTACHMENT);
+    pass.record(clear(written));
+    assert_eq!(run(graph, &device, &mut TexturePool::new(), 0).capture, None);
+}

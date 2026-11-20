@@ -35,3 +35,7 @@ Przed każdym passem graf porównuje potrzebny `Access` każdego subresource'u z
 ## Nagrywanie
 
 `PassBuilder::record` dostaje `PassContext`: `texture()`, `view()` (widoki keszowane w puli), `commands()`, `device()` i `create_bind_group()` (zwalniana po klatce). Cache skompilowanego grafu (M2-07) i historia (M2-08) są poza ścieżką minimalną — kompilacja co klatkę jest tania przy obecnych rozmiarach grafu.
+
+## Capture
+
+`FrameGraph::set_capture(true)` dokłada do `Execution` obraz wykonanego grafu (`GraphCapture`): passy z kolejnością albo informacją o wycięciu, dostępy z wersjami, krawędzie zależności, teksturę fizyczną każdego zasobu (aliasing), bariery przed każdym passem i na końcu klatki. Domyślnie wyłączony, bo alokuje.

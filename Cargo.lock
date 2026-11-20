@@ -461,6 +461,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "pathon-diag"
+version = "0.0.1"
+dependencies = [
+ "log",
+ "pathon-rhi-types",
+]
+
+[[package]]
 name = "pathon-rhi"
 version = "0.0.1"
 dependencies = [

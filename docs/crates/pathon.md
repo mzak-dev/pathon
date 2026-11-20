@@ -11,7 +11,7 @@ Bez features fasada to sam renderer — tak używają jej hosty (Bevy, Godot), k
 
 ## Runner
 
-```rust,ignore
+```text
 pathon::runtime::run(WinitPlatform::new(), Renderer::builder().with_feature(…), windows, |frame| views)
 ```
 

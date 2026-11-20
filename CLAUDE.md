@@ -1,6 +1,6 @@
 # pathon
 
-Modularny renderer w Rust (wgpu 30) do użycia we własnym silniku, zamiast renderera Bevy i w Godocie.
+Ultra-modularny i wydajny silnik renderowania w Rust (wgpu 30), rozszerzany paczkami. Rdzeń składa klatkę z tego, co zadeklarują paczki, i nie zna żadnej techniki renderowania; nie ma też własnej pętli ani wątku, więc działa samodzielnie, we własnym silniku, w Bevy i w Godocie.
 
 - **Plan:** `docs/plan-implementacji.md` — kolejność tasków, zasady obowiązujące w każdym tasku i granice zależności. „Gotowe gdy” to definicja ukończenia tasku; po ukończeniu odhacz go w planie.
 - **Decyzje:** `docs/adr/` — przeczytaj ADR, zanim zmienisz obszar, którego dotyczy: licencja, wątki, hosty, shadery, logowanie, pula wątków. Nowa decyzja architektoniczna = nowy ADR z kolejnym numerem.

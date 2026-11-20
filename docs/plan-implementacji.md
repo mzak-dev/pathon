@@ -1,6 +1,7 @@
 # pathon — plan implementacji
 
 > Stan na 20.11.2026 (po review własnym i review Fable; dodane hosty: własny silnik, Bevy, Godot) · wgpu 30 · winit 0.30 · Rust 1.97
+> Cel: ultra-modularny i wydajny silnik renderowania — mały rdzeń (RHI, graf klatki, rejestr paczek), a każda technika renderowania jest paczką.
 > Architektura: dokument „pathon — architektura i implementacja” + canvas „pathon — modularny renderer w Rust”.
 
 ## Zasady, które obowiązują w każdym tasku

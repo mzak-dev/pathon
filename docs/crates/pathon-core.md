@@ -1,6 +1,8 @@
 # pathon-core
 
-`Renderer` — rdzeń, który nie wie, kto jest hostem (ADR-0005, M2-11). Nie ma pętli, okna, wątku, ECS ani systemu assetów; host go woła, dostarcza czas i widoki, może mieć własne urządzenie i własne cele renderu.
+`Renderer` — rdzeń silnika (M2-11). Składa klatkę z paczek: rejestruje je, negocjuje z nimi możliwości GPU, ustala kolejność i role, a co klatkę buduje i wykonuje graf z ich passów. Sam nie zna żadnej techniki renderowania.
+
+Nie ma też pętli, okna, wątku, ECS ani systemu assetów (ADR-0005): wołający podaje czas i widoki, a urządzenie i cele renderu mogą należeć do niego.
 
 ## Trzy możliwości
 

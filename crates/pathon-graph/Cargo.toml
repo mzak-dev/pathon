@@ -12,7 +12,12 @@ pathon-resources.workspace = true
 pathon-rhi-types.workspace = true
 
 [dev-dependencies]
+divan.workspace = true
 pathon-rhi-null.workspace = true
 
 [lints]
 workspace = true
+
+[[bench]]
+name = "compile"
+harness = false

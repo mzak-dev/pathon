@@ -27,6 +27,7 @@ pathon-test = { path = "crates/pathon-test" }
 bitflags = "2.13"
 bytemuck = { version = "1.25", features = ["derive"] }
 crossbeam-channel = "0.5"
+divan = "0.1"
 glam = { version = "0.34", features = ["bytemuck"] }
 log = "0.4"
 raw-window-handle = "0.6"

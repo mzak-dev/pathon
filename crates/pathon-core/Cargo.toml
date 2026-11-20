@@ -15,6 +15,7 @@ pathon-rhi.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+divan.workspace = true
 bytemuck.workspace = true
 pathon-test.workspace = true
 raw-window-handle.workspace = true
@@ -24,3 +25,7 @@ gpu-tests = []
 
 [lints]
 workspace = true
+
+[[bench]]
+name = "frame"
+harness = false

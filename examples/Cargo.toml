@@ -22,3 +22,10 @@ gpu-tests = []
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+divan.workspace = true
+
+[[bench]]
+name = "recording"
+harness = false

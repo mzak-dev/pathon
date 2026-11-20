@@ -1,0 +1,19 @@
+[package]
+name = "pathon-api"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+glam.workspace = true
+pathon-diag.workspace = true
+pathon-graph.workspace = true
+pathon-resources.workspace = true
+pathon-rhi-types.workspace = true
+
+[dev-dependencies]
+pathon-rhi-null.workspace = true
+
+[lints]
+workspace = true

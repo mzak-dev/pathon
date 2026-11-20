@@ -482,6 +482,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "pathon-core"
+version = "0.0.1"
+dependencies = [
+ "bytemuck",
+ "pathon-api",
+ "pathon-diag",
+ "pathon-graph",
+ "pathon-resources",
+ "pathon-rhi",
+ "pathon-test",
+ "raw-window-handle",
+ "thiserror",
+]
+
+[[package]]
 name = "pathon-diag"
 version = "0.0.1"
 dependencies = [
@@ -542,6 +557,14 @@ dependencies = [
  "pathon-rhi-types",
  "raw-window-handle",
  "wgpu",
+]
+
+[[package]]
+name = "pathon-test"
+version = "0.0.1"
+dependencies = [
+ "bytemuck",
+ "pathon-api",
 ]
 
 [[package]]

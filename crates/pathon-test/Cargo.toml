@@ -1,0 +1,15 @@
+[package]
+name = "pathon-test"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+# A regular pack: depends on pathon-api only (plus plain data crates).
+[dependencies]
+bytemuck.workspace = true
+pathon-api.workspace = true
+
+[lints]
+workspace = true

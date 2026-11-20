@@ -1,0 +1,265 @@
+use pathon_rhi_null::NullDevice;
+use pathon_rhi_types::{
+    Access, BindGroupDesc, BindGroupEntry, BindGroupLayoutDesc, BindGroupLayoutEntry, BindingResource, BindingType,
+    Color, ColorAttachment, CommandList, ComputePassDesc, ComputePipelineDesc, DeviceApi, Format, RenderPassDesc,
+    RhiError, ShaderModuleDesc, ShaderStage, ShaderStages, StorageAccess, SubresourceRange, SurfaceConfig, TextureDesc,
+    TextureId, TextureUsage, TextureViewDesc, TextureViewDimension,
+};
+
+fn code(result: Result<(), RhiError>) -> &'static str {
+    result.expect_err("validation should fail").code()
+}
+
+fn render_target(device: &NullDevice) -> TextureId {
+    let desc = TextureDesc::new_2d(
+        "target",
+        4,
+        4,
+        Format::Rgba8Unorm,
+        TextureUsage::RENDER_TARGET | TextureUsage::SAMPLED | TextureUsage::COPY_SRC,
+    );
+    device.create_texture(&desc).expect("texture")
+}
+
+fn clear_pass(device: &NullDevice, texture: TextureId, list: &mut CommandList) {
+    let view = device
+        .create_texture_view(texture, &TextureViewDesc::default())
+        .expect("view");
+    let _pass = list.render_pass(RenderPassDesc {
+        label: "clear",
+        color: vec![ColorAttachment::clear(view, Color::BLACK)],
+        depth: None,
+        timestamps: None,
+    });
+}
+
+#[test]
+fn attachment_without_barrier_is_rejected() {
+    let device = NullDevice::new();
+    let texture = render_target(&device);
+    let mut list = CommandList::new();
+    clear_pass(&device, texture, &mut list);
+
+    assert_eq!(code(device.submit(list)), "R0101");
+}
+
+#[test]
+fn attachment_after_barrier_is_accepted() {
+    let device = NullDevice::new();
+    let texture = render_target(&device);
+    let mut list = CommandList::new();
+    list.texture_access(texture, SubresourceRange::ALL, Access::COLOR_ATTACHMENT);
+    clear_pass(&device, texture, &mut list);
+    list.texture_access(texture, SubresourceRange::ALL, Access::SHADER_READ);
+
+    device.submit(list).expect("valid list");
+}
+
+#[test]
+fn loading_a_never_written_attachment_is_rejected() {
+    let device = NullDevice::new();
+    let texture = render_target(&device);
+    let view = device
+        .create_texture_view(texture, &TextureViewDesc::default())
+        .expect("view");
+    let mut list = CommandList::new();
+    list.texture_access(texture, SubresourceRange::ALL, Access::COLOR_ATTACHMENT);
+    drop(list.render_pass(RenderPassDesc {
+        label: "load",
+        color: vec![ColorAttachment::load(view)],
+        depth: None,
+        timestamps: None,
+    }));
+
+    assert_eq!(code(device.submit(list)), "R0102");
+}
+
+#[test]
+fn reading_hi_z_mip_before_it_is_written_is_rejected() {
+    let device = NullDevice::new();
+    let hi_z = device
+        .create_texture(
+            &TextureDesc::new_2d(
+                "hi-z",
+                8,
+                8,
+                Format::R32Float,
+                TextureUsage::STORAGE | TextureUsage::SAMPLED,
+            )
+            .with_mips(3),
+        )
+        .expect("texture");
+    let layout = device
+        .create_bind_group_layout(&BindGroupLayoutDesc {
+            label: "downsample",
+            entries: vec![
+                BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::texture_2d(),
+                },
+                BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::StorageTexture {
+                        access: StorageAccess::WriteOnly,
+                        format: Format::R32Float,
+                        dimension: TextureViewDimension::D2,
+                    },
+                },
+            ],
+        })
+        .expect("layout");
+    let source = device
+        .create_texture_view(hi_z, &TextureViewDesc::single_mip(1))
+        .expect("view");
+    let destination = device
+        .create_texture_view(hi_z, &TextureViewDesc::single_mip(2))
+        .expect("view");
+    let group = device
+        .create_bind_group(&BindGroupDesc {
+            label: "downsample mip 2",
+            layout,
+            entries: vec![
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::TextureView(source),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: BindingResource::TextureView(destination),
+                },
+            ],
+        })
+        .expect("bind group");
+    let module = device
+        .create_shader_module(&ShaderModuleDesc {
+            label: "downsample",
+            wgsl: "fn main() {}",
+        })
+        .expect("module");
+    let pipeline = device
+        .create_compute_pipeline(&ComputePipelineDesc {
+            label: "downsample",
+            bind_group_layouts: vec![layout],
+            shader: ShaderStage {
+                module,
+                entry_point: "main",
+            },
+        })
+        .expect("pipeline");
+
+    let mut list = CommandList::new();
+    list.texture_access(hi_z, SubresourceRange::mip(1), Access::SHADER_READ);
+    list.texture_access(hi_z, SubresourceRange::mip(2), Access::SHADER_WRITE);
+    {
+        let mut pass = list.compute_pass(ComputePassDesc {
+            label: "downsample",
+            timestamps: None,
+        });
+        pass.set_pipeline(pipeline);
+        pass.set_bind_group(0, group);
+        pass.dispatch(1, 1, 1);
+    }
+
+    assert_eq!(code(device.submit(list)), "R0102");
+}
+
+#[test]
+fn draw_outside_render_pass_is_rejected() {
+    let device = NullDevice::new();
+    let mut list = CommandList::new();
+    drop(list.compute_pass(ComputePassDesc {
+        label: "empty",
+        timestamps: None,
+    }));
+    list.push(pathon_rhi_types::Command::Draw {
+        vertices: 0..3,
+        instances: 0..1,
+    });
+
+    assert_eq!(code(device.submit(list)), "R0104");
+}
+
+#[test]
+fn two_writes_in_one_state_are_rejected() {
+    let device = NullDevice::new();
+    let texture = render_target(&device);
+    let mut list = CommandList::new();
+    list.texture_access(
+        texture,
+        SubresourceRange::ALL,
+        Access::COLOR_ATTACHMENT | Access::COPY_DST,
+    );
+
+    assert_eq!(code(device.submit(list)), "R0103");
+}
+
+#[test]
+fn surface_frame_must_reach_present_state() {
+    let device = NullDevice::new();
+    let window = NoWindow;
+    let target = pathon_rhi_types::SurfaceTarget::new(
+        std::sync::Arc::new(window),
+        pathon_rhi_types::PhysicalSize::new(4, 4),
+        1.0,
+    );
+    let surface = device.create_surface(&target).expect("surface");
+    device
+        .configure_surface(
+            surface,
+            &SurfaceConfig {
+                size: target.size,
+                present_mode: pathon_rhi_types::PresentMode::default(),
+                format: None,
+            },
+        )
+        .expect("configure");
+
+    let frame = device.acquire_surface(surface).expect("frame");
+    assert_eq!(
+        device.present_surface(surface).expect_err("not written").code(),
+        "R0106"
+    );
+
+    let frame_again = device.acquire_surface(surface).expect("frame");
+    assert_ne!(frame.texture, frame_again.texture);
+    let mut list = CommandList::new();
+    list.texture_access(frame_again.texture, SubresourceRange::ALL, Access::COLOR_ATTACHMENT);
+    clear_pass_on_view(frame_again.view, &mut list);
+    list.texture_access(frame_again.texture, SubresourceRange::ALL, Access::PRESENT);
+    device.submit(list).expect("valid list");
+    device.present_surface(surface).expect("presentable");
+}
+
+#[test]
+fn lost_device_rejects_submissions() {
+    let device = NullDevice::new();
+    device.simulate_device_loss();
+
+    assert!(device.is_lost());
+    assert_eq!(code(device.submit(CommandList::new())), "R0006");
+}
+
+fn clear_pass_on_view(view: pathon_rhi_types::TextureViewId, list: &mut CommandList) {
+    drop(list.render_pass(RenderPassDesc {
+        label: "clear",
+        color: vec![ColorAttachment::clear(view, Color::BLACK)],
+        depth: None,
+        timestamps: None,
+    }));
+}
+
+struct NoWindow;
+
+impl raw_window_handle::HasWindowHandle for NoWindow {
+    fn window_handle(&self) -> Result<raw_window_handle::WindowHandle<'_>, raw_window_handle::HandleError> {
+        Err(raw_window_handle::HandleError::Unavailable)
+    }
+}
+
+impl raw_window_handle::HasDisplayHandle for NoWindow {
+    fn display_handle(&self) -> Result<raw_window_handle::DisplayHandle<'_>, raw_window_handle::HandleError> {
+        Err(raw_window_handle::HandleError::Unavailable)
+    }
+}

@@ -1,0 +1,28 @@
+[package]
+name = "pathon-devtools"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+crossbeam-channel.workspace = true
+log.workspace = true
+pathon-api.workspace = true
+pathon-core.workspace = true
+pathon-diag.workspace = true
+pathon-graph.workspace = true
+pathon-rhi.workspace = true
+pathon-test.workspace = true
+ratatui.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[[bin]]
+name = "pathon-devtools"
+path = "src/main.rs"
+
+[lints]
+workspace = true

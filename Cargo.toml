@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/*", "examples", "xtask"]
+members = ["crates/*", "examples", "tools/*", "xtask"]
 
 [workspace.package]
 version = "0.0.1"
@@ -23,6 +23,7 @@ pathon-rhi-null = { path = "crates/pathon-rhi-null" }
 pathon-rhi-types = { path = "crates/pathon-rhi-types" }
 pathon-rhi-wgpu = { path = "crates/pathon-rhi-wgpu" }
 pathon-test = { path = "crates/pathon-test" }
+pathon-devtools = { path = "tools/pathon-devtools" }
 
 bitflags = "2.13"
 bytemuck = { version = "1.25", features = ["derive"] }
@@ -30,7 +31,10 @@ crossbeam-channel = "0.5"
 divan = "0.1"
 glam = { version = "0.34", features = ["bytemuck"] }
 log = "0.4"
+# Without "underline-color": its weak `ratatui-termwiz?/` feature makes cargo metadata list termwiz (WTFPL) as resolved.
+ratatui = { version = "0.30", default-features = false, features = ["crossterm", "layout-cache"] }
 raw-window-handle = "0.6"
+serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 wgpu = { version = "30", default-features = false, features = [

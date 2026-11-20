@@ -1,0 +1,242 @@
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+use pathon_api::Camera;
+use pathon_core::{FeatureStatus, FrameInput, RenderError, Renderer, RendererBuilder, ViewInput};
+use pathon_rhi::{
+    Access, Backend, Color, Device, DeviceApi, DeviceRequest, Extent3d, Format, PhysicalSize, SurfaceTarget,
+};
+use pathon_test::{GeometryPack, OnDemandConsumer, UnlitMeshPack, UpscalerPack, VendorDummy};
+
+const SIZE: PhysicalSize = PhysicalSize::new(64, 32);
+
+fn null_builder() -> RendererBuilder {
+    Renderer::builder().with_device_request(DeviceRequest {
+        backend: Some(Backend::Null),
+        ..DeviceRequest::default()
+    })
+}
+
+fn one_view(renderer: &mut Renderer, format: Format) -> FrameInput {
+    let target = renderer.add_offscreen_target(SIZE, format).expect("offscreen target");
+    FrameInput {
+        views: vec![ViewInput {
+            target,
+            camera: Camera::default(),
+        }],
+        ..FrameInput::default()
+    }
+}
+
+fn status_of(renderer: &Renderer, name: &str) -> FeatureStatus {
+    renderer
+        .features()
+        .into_iter()
+        .find(|(feature, _)| *feature == name)
+        .map(|(_, status)| status)
+        .expect("feature")
+}
+
+#[test]
+fn renderer_is_send_so_hosts_can_move_it_to_their_render_thread() {
+    fn assert_send<T: Send>() {}
+    assert_send::<Renderer>();
+}
+
+#[test]
+fn empty_renderer_clears_an_offscreen_target_under_state_validation() {
+    let mut renderer = null_builder().build().expect("renderer");
+    let input = one_view(&mut renderer, Format::Rgba8Unorm);
+
+    for frame in 0..3 {
+        let report = renderer
+            .render_frame(&FrameInput {
+                frame_index: frame,
+                ..input.clone()
+            })
+            .expect("frame");
+        assert_eq!(report.views.len(), 1);
+        assert_eq!(report.views[0].passes_live, 1);
+    }
+}
+
+#[test]
+fn device_loss_rebuilds_the_device_and_asks_for_data_again() {
+    let mut renderer = null_builder()
+        .with_feature(UnlitMeshPack::new())
+        .build()
+        .expect("renderer");
+    let input = one_view(&mut renderer, Format::Rgba8Unorm);
+    let reuploads = Arc::new(AtomicUsize::new(0));
+    let counter = Arc::clone(&reuploads);
+    renderer.on_device_reset(Box::new(move |_device| {
+        counter.fetch_add(1, Ordering::SeqCst);
+    }));
+    renderer.render_frame(&input).expect("first frame");
+
+    renderer
+        .device()
+        .as_null()
+        .expect("null backend")
+        .simulate_device_loss();
+    assert!(matches!(renderer.render_frame(&input), Err(RenderError::DeviceLost)));
+
+    renderer.recover().expect("recover");
+    assert_eq!(reuploads.load(Ordering::SeqCst), 1);
+    renderer.render_frame(&input).expect("frame after recovery");
+    assert_eq!(renderer.active_features(), ["unlit mesh"]);
+}
+
+#[test]
+fn borrowed_device_is_reset_by_the_host_not_recovered() {
+    let host_device = Arc::new(Device::null());
+    let mut renderer = Renderer::builder()
+        .with_device(Arc::clone(&host_device))
+        .build()
+        .expect("renderer");
+
+    assert!(matches!(renderer.recover(), Err(RenderError::BorrowedDevice)));
+    renderer
+        .reset(Arc::new(Device::null()))
+        .expect("reset onto the host's new device");
+    let input = one_view(&mut renderer, Format::Rgba8Unorm);
+    renderer.render_frame(&input).expect("frame");
+}
+
+#[test]
+fn second_geometry_pack_loses_the_role() {
+    let renderer = null_builder()
+        .with_feature(GeometryPack::new("default geometry", Color::BLACK, 10))
+        .with_feature(GeometryPack::new("custom geometry", Color::BLACK, 0))
+        .build()
+        .expect("renderer");
+
+    assert_eq!(renderer.active_features(), ["custom geometry"]);
+    assert!(matches!(
+        status_of(&renderer, "default geometry"),
+        FeatureStatus::Disabled { code: "F0102", .. }
+    ));
+}
+
+#[test]
+fn upscaler_changes_render_size_for_everyone_else() {
+    let upscaler = UpscalerPack::new(0.5);
+    let observed = Arc::clone(&upscaler.observed_render_size);
+    let mut renderer = null_builder()
+        .with_feature(GeometryPack::new("geometry", Color::rgba(1.0, 0.0, 0.0, 1.0), 0))
+        .with_feature(upscaler)
+        .build()
+        .expect("renderer");
+    let input = one_view(&mut renderer, Format::Rgba16Float);
+
+    renderer.render_frame(&input).expect("frame");
+    assert_eq!(*observed.lock().expect("mutex"), Some(Extent3d::new_2d(32, 16)));
+}
+
+#[test]
+fn on_demand_slot_exists_only_when_requested() {
+    let live_passes = |with_consumer: bool| {
+        let mut builder = null_builder()
+            .with_feature(GeometryPack::new("geometry", Color::BLACK, 0))
+            .with_feature(UpscalerPack::new(1.0));
+        if with_consumer {
+            builder = builder.with_feature(OnDemandConsumer);
+        }
+        let mut renderer = builder.build().expect("renderer");
+        let input = one_view(&mut renderer, Format::Rgba16Float);
+        let report = renderer.render_frame(&input).expect("frame");
+        report.views[0].logical_textures
+    };
+
+    assert_eq!(live_passes(false), 1, "hdr only");
+    assert_eq!(live_passes(true), 2, "hdr and roughness");
+}
+
+#[test]
+fn vendor_dummy_runs_its_external_command() {
+    let vendor = VendorDummy::default();
+    let called: Arc<AtomicBool> = Arc::clone(&vendor.called);
+    let mut renderer = null_builder()
+        .with_feature(GeometryPack::new("geometry", Color::BLACK, 0))
+        .with_feature(vendor)
+        .with_feature(UpscalerPack::new(1.0))
+        .build()
+        .expect("renderer");
+    let input = one_view(&mut renderer, Format::Rgba16Float);
+
+    renderer.render_frame(&input).expect("frame");
+    assert!(called.load(Ordering::SeqCst));
+}
+
+#[test]
+fn record_frame_refuses_window_surfaces() {
+    let mut renderer = null_builder().build().expect("renderer");
+    let window = SurfaceTarget::new(Arc::new(NoWindow), SIZE, 1.0);
+    let target = renderer.add_window(window).expect("surface");
+    let input = FrameInput {
+        views: vec![ViewInput {
+            target,
+            camera: Camera::default(),
+        }],
+        ..FrameInput::default()
+    };
+
+    assert!(matches!(
+        renderer.record_frame(&input),
+        Err(RenderError::SurfaceInRecordFrame)
+    ));
+    renderer
+        .render_frame(&input)
+        .expect("window frames go through render_frame");
+}
+
+#[test]
+fn imported_host_texture_keeps_its_contents_for_mode_a() {
+    let device = Arc::new(Device::null());
+    let texture = device
+        .create_texture(&pathon_rhi::TextureDesc::new_2d(
+            "host color",
+            SIZE.width,
+            SIZE.height,
+            Format::Rgba8Unorm,
+            pathon_rhi::TextureUsage::RENDER_TARGET | pathon_rhi::TextureUsage::COPY_SRC,
+        ))
+        .expect("host texture");
+    let mut renderer = Renderer::builder()
+        .with_device(Arc::clone(&device))
+        .with_feature(UnlitMeshPack::new())
+        .build()
+        .expect("renderer");
+    let target = renderer
+        .import_texture(texture, Access::COLOR_ATTACHMENT, Access::COPY_SRC)
+        .expect("import");
+    let input = FrameInput {
+        views: vec![ViewInput {
+            target,
+            camera: Camera::default(),
+        }],
+        ..FrameInput::default()
+    };
+
+    let commands = renderer.record_frame(&input).expect("record");
+    let clears = commands
+        .commands()
+        .iter()
+        .filter(|command| matches!(command, pathon_rhi::Command::PushDebugGroup("clear output")))
+        .count();
+    assert_eq!(clears, 0, "pathon must not clear what the host rendered");
+}
+
+struct NoWindow;
+
+impl raw_window_handle::HasWindowHandle for NoWindow {
+    fn window_handle(&self) -> Result<raw_window_handle::WindowHandle<'_>, raw_window_handle::HandleError> {
+        Err(raw_window_handle::HandleError::Unavailable)
+    }
+}
+
+impl raw_window_handle::HasDisplayHandle for NoWindow {
+    fn display_handle(&self) -> Result<raw_window_handle::DisplayHandle<'_>, raw_window_handle::HandleError> {
+        Err(raw_window_handle::HandleError::Unavailable)
+    }
+}

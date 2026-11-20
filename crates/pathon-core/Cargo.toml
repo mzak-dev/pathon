@@ -1,0 +1,25 @@
+[package]
+name = "pathon-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+pathon-api.workspace = true
+pathon-diag.workspace = true
+pathon-graph.workspace = true
+pathon-resources.workspace = true
+pathon-rhi.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+bytemuck.workspace = true
+pathon-test.workspace = true
+raw-window-handle.workspace = true
+
+[features]
+gpu-tests = []
+
+[lints]
+workspace = true

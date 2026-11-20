@@ -461,6 +461,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "pathon-rhi"
+version = "0.0.1"
+dependencies = [
+ "bytemuck",
+ "pathon-rhi-null",
+ "pathon-rhi-types",
+ "pathon-rhi-wgpu",
+]
+
+[[package]]
 name = "pathon-rhi-null"
 version = "0.0.1"
 dependencies = [

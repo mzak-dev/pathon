@@ -1,0 +1,20 @@
+[package]
+name = "pathon-rhi"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+pathon-rhi-null.workspace = true
+pathon-rhi-types.workspace = true
+pathon-rhi-wgpu.workspace = true
+
+[dev-dependencies]
+bytemuck.workspace = true
+
+[features]
+gpu-tests = []
+
+[lints]
+workspace = true

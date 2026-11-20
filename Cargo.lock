@@ -469,6 +469,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "pathon-graph"
+version = "0.0.1"
+dependencies = [
+ "pathon-diag",
+ "pathon-resources",
+ "pathon-rhi-null",
+ "pathon-rhi-types",
+]
+
+[[package]]
 name = "pathon-resources"
 version = "0.0.1"
 dependencies = [

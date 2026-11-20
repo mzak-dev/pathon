@@ -9,7 +9,10 @@ pub struct RangeAllocator {
 }
 
 impl RangeAllocator {
-    #[expect(clippy::single_range_in_vec_init, reason = "the free list starts as one range covering the buffer")]
+    #[expect(
+        clippy::single_range_in_vec_init,
+        reason = "the free list starts as one range covering the buffer"
+    )]
     pub fn new(size: u64) -> Self {
         Self {
             size,

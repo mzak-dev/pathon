@@ -190,7 +190,8 @@ Hosty (M6, M7) nie są na ścieżce minimalnej, ale ich szew jest: M2-19 i M4-20
 - [x] **M2-04 · Czas życia i pule** ★ — interwały życia, reuse obiektów o identycznym opisie. **Gotowe gdy:** test pokazuje mniejszą liczbę alokacji niż zasobów logicznych.
 - [x] **M2-05 · Plan barier** ★ — `Access` per subresource zapisywany przez graf; walidowany przez `rhi-null` w każdym teście. **Gotowe gdy:** testy grafu przechodzą pod walidacją stanów.
 - [x] **M2-06 · Walidacja grafu** ★ — G0001 cykl, G0003 odczyt bez producenta, G0004 mieszanie render / output size. **Gotowe gdy:** każdy kod ma test.
-- [ ] **M2-07 · Cache grafu** — rekompilacja tylko przy zmianie paczek, celów, rozmiaru lub profilu. **Gotowe gdy:** licznik kompilacji w teście stabilnej sceny wynosi 1.
+- [x] **M2-07 · Cache grafu** — rekompilacja tylko przy zmianie paczek, celów, rozmiaru lub profilu. **Gotowe gdy:** licznik kompilacji w teście stabilnej sceny wynosi 1.
+  - **Stan 20.11.2026:** `GraphCache` porównuje strukturę grafu dokładnie; test stabilnej sceny: jedna kompilacja na 5 klatek, resize wymusza kolejną. Z cache 5–6× szybciej niż kompilacja ([docs/bench](bench/README.md)).
 - [ ] **M2-08 · Historia** — `g.history(slot, n)`, kluczowana per widok; pula na maksymalny rozmiar + viewport przy dynamicznej rozdzielczości; unieważnianie przy resize i cięciu kamery. **Gotowe gdy:** testy resize i zmiany render_size.
 - [x] **M2-09 · `pathon-resources`** ★
   - Handle'y generacyjne, opóźnione zwalnianie, staging ring, sub-alokacja buforów.
@@ -221,7 +222,8 @@ Hosty (M6, M7) nie są na ścieżce minimalnej, ale ich szew jest: M2-19 i M4-20
   - Clear, trójkąt, compute **oraz** tekstura z samplerem, tablica bindless, resize / present, zasób z barierami per mip.
   - Papierowe mapowanie RHI v1 na `RenderingDevice` Godota (bez kodu), żeby backend z M7 nie wymusił przebudowy API na końcu projektu.
   - **Gotowe gdy:** lista poprawek `rhi-types` wniesiona przed M3.
-- [ ] **M2-16 · Benchmark narzutu nagrywania** — ta sama scena przez API enkodera i bezpośrednio przez wgpu. **Gotowe gdy:** wynik w `docs/bench/`; jeśli narzut przekracza próg ustalony w ADR, backend wgpu przechodzi na nagrywanie bezpośrednie (bez zmian w API paczek).
+- [x] **M2-16 · Benchmark narzutu nagrywania** — ta sama scena przez API enkodera i bezpośrednio przez wgpu. **Gotowe gdy:** wynik w `docs/bench/`; jeśli narzut przekracza próg ustalony w ADR, backend wgpu przechodzi na nagrywanie bezpośrednie (bez zmian w API paczek).
+  - **Stan 20.11.2026:** narzut listy komend +4–6% (próg 15%, ADR-0009) — backend wgpu zostaje przy liście komend ([docs/bench](bench/README.md)).
 - [ ] **M2-17 · Przykład `multi-view`** — 2 okna + cel offscreen. **Gotowe gdy:** działa natywnie na 3 systemach.
 - [x] **M2-18 · Pionowy wycinek** ★
   - **Stan 20.11.2026:** test GPU (offscreen) sprawdza piksele; przykład vertical_slice z dwoma oknami uruchomiony na Windows.

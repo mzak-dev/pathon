@@ -3,7 +3,7 @@
 Ultra-modularny i wydajny silnik renderowania w Rust (wgpu 30), rozszerzany paczkami. Rdzeń składa klatkę z tego, co zadeklarują paczki, i nie zna żadnej techniki renderowania; nie ma też własnej pętli ani wątku, więc działa samodzielnie, we własnym silniku, w Bevy i w Godocie.
 
 - **Plan:** `docs/plan-implementacji.md` — kolejność tasków, zasady obowiązujące w każdym tasku i granice zależności. „Gotowe gdy” to definicja ukończenia tasku; po ukończeniu odhacz go w planie.
-- **Decyzje:** `docs/adr/` — przeczytaj ADR, zanim zmienisz obszar, którego dotyczy: licencja, wątki, hosty, shadery, logowanie, pula wątków. Nowa decyzja architektoniczna = nowy ADR z kolejnym numerem.
+- **Decyzje:** `docs/adr/` — przeczytaj ADR, zanim zmienisz obszar, którego dotyczy: licencja, wątki, hosty, shadery, logowanie, pula wątków, nagrywanie komend. Nowa decyzja architektoniczna = nowy ADR z kolejnym numerem.
 - **Rust:** skill `mzak-dev-rust-style`.
 - Dokumentacja po polsku, kod i identyfikatory po angielsku.
 

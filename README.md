@@ -57,10 +57,17 @@ flowchart LR
 - **Pamięć współdzielona w klatce.** Tekstury tymczasowe o tym samym kształcie i rozłącznych czasach życia dzielą jedną teksturę fizyczną.
 - **Zero alokacji GPU w stabilnej scenie.** Pula tekstur trzyma zasoby między klatkami; test sprawdza, że po pierwszej klatce nic nowego nie powstaje.
 - **Bariery liczone, nie pisane ręcznie.** Plan barier per mip i warstwa wynika z deklaracji passów; backend null odrzuca każdy błąd stanu w testach.
+- **Graf kompilowany raz.** Stabilna scena kompiluje graf klatki tylko w pierwszej klatce; potem rdzeń porównuje strukturę i używa gotowego planu.
 - **Jedno zgłoszenie na klatkę**, wszystkie widoki w jednej liście komend.
 - **Mały rdzeń.** Domknięcie zależności `pathon-core` to 126 crate'ów (z wgpu) i nie rośnie bez uzasadnienia — pilnuje tego CI.
 
-Pomiary narzutu (benchmark nagrywania M2-16, budżety klatki M4-17) są w planie; liczby trafią tu, gdy będą.
+Zmierzone na Ryzen 5 5600G + RX 9070 XT ([wszystkie wyniki](docs/bench/README.md)):
+
+| | |
+| --- | --- |
+| Klatka w rdzeniu, 4 paczki, 1 widok (CPU) | **6,1 µs** |
+| Graf z cache zamiast kompilacji, 64 passy | **1,2 µs** zamiast 6,8 µs |
+| Narzut listy komend pathon nad wgpu wprost, 1 000 draw calli | **+4%** |
 
 ## Twoja paczka
 

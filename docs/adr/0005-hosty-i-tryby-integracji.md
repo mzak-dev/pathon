@@ -18,7 +18,7 @@ pathon ma działać w trzech hostach: we własnym silniku, zamiast renderera Bev
 | Możliwość | Warianty |
 | --- | --- |
 | Urządzenie | pathon tworzy (`build()`) albo przyjmuje cudze (`with_device`, przez `interop::adopt`) |
-| Klatka | `render_frame()`: pathon zgłasza na kolejkę; albo `record_into(enkoder)`: nagrywa do enkodera hosta w punkcie jego klatki |
+| Klatka | `render_frame()`: pathon zgłasza na kolejkę; albo `record_frame()`: zwraca `CommandList`, którą host nagrywa do swojego enkodera (`interop::encode_into`) w punkcie swojej klatki |
 | Cele | surface, offscreen albo tekstura hosta (`import_texture`) z deklarowanym `Access` na wejściu i wyjściu |
 
 **Trzy tryby integracji**, wspólne nazwy dla wszystkich hostów:
@@ -26,7 +26,7 @@ pathon ma działać w trzech hostach: we własnym silniku, zamiast renderera Bev
 | | A: paczki w rendererze hosta | B: scena do tekstury hosta | C: jedyny renderer |
 | --- | --- | --- | --- |
 | Urządzenie | host | wspólne (w Bevy tworzy je pathon i oddaje hostowi) | pathon |
-| Zgłoszenie komend | host (`record_into`) | pathon na wspólnej kolejce (`render_frame`) albo host (`record_into`) | pathon |
+| Zgłoszenie komend | host (`record_frame`) | pathon na wspólnej kolejce (`render_frame`) albo host (`record_frame`) | pathon |
 | Acquire / present | host | host | pathon |
 | Utrata urządzenia | host, potem `reset(new_device)` | właściciel urządzenia | pathon |
 | Czas i numer klatki | host | host | host (aplikacja albo runner) |

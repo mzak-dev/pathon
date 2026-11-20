@@ -26,7 +26,7 @@ pathon ma działać we własnym silniku, zamiast renderera Bevy i w Godocie. Gen
 | Możliwość | Warianty |
 | --- | --- |
 | Urządzenie | pathon je tworzy (`build()`) **albo** przyjmuje cudze (`with_device(...)` przez `interop`) |
-| Klatka | `render_frame()` (pathon zgłasza na kolejkę) **albo** `record_into(enkoder hosta)` w punkcie klatki hosta |
+| Klatka | `render_frame()` (pathon zgłasza na kolejkę) **albo** `record_frame()` zwraca listę komend, którą host nagrywa do swojego enkodera (`interop::encode_into`) w punkcie swojej klatki |
 | Cele | surface, offscreen **albo** zaimportowana tekstura hosta z deklarowanym `Access` na wejściu i wyjściu |
 
 Tryby integracji — wspólne nazwy dla wszystkich hostów:
@@ -78,6 +78,7 @@ Hosty (M6, M7) nie są na ścieżce minimalnej, ale ich szew jest: M2-19 i M4-20
 ## M0 — Decyzje, szkielet, szew platformy
 
 - [ ] **M0-00 · Decyzje startowe (ADR)** ★
+  - **Stan 20.11.2026:** 8 ADR w docs/adr/; nazwa `pathon` wolna na crates.io, rezerwacja czeka na autora (ADR-0002).
   - Licencja (publikacja, vendoring, dystrybucja bibliotek SDK).
   - Rezerwacja nazwy `pathon` na crates.io z twojego konta.
   - **WebGL2 poza zakresem**, web tylko przez WebGPU.
@@ -88,35 +89,38 @@ Hosty (M6, M7) nie są na ścieżce minimalnej, ale ich szew jest: M2-19 i M4-20
   - Pula wątków: trait `TaskPool` z domyślną implementacją na `std::thread`, z możliwością podpięcia puli z własnego ECS albo hosta.
   - **Gotowe gdy:** 8 ADR w `docs/adr/`, nazwa zarezerwowana.
 
-- [ ] **M0-01 · Workspace Cargo** ★
+- [x] **M0-01 · Workspace Cargo** ★
   - `[workspace.dependencies]` z przypiętym `wgpu = "30"` i `winit = "0.30"`; rustfmt i clippy według mzak-dev Rust style guide.
   - Katalogi: `crates/`, `packs/`, `hosts/` (adaptery Bevy i Godota), `tools/`, `xtask/`, `examples/`, `docs/` (ADR, kody diagnostyk, strony paczek).
   - **Gotowe gdy:** `cargo check --workspace` przechodzi na pustych crate'ach.
 
-- [ ] **M0-02 · `xtask deps-check`** ★
+- [x] **M0-02 · `xtask deps-check`** ★
   - Reguły: wgpu tylko w `pathon-rhi-wgpu`; winit tylko w `pathon-platform-winit`; L2–L5 nie zależą od `pathon-platform*`; paczka zależy od `pathon-api`, a od `pathon-rhi-*::interop` tylko z `kind = "vendor"`.
   - Hosty: `bevy` tylko w `pathon-bevy`; `godot` tylko w `pathon-rhi-godot` i `pathon-godot`. Rodzaj `kind = "host"` może używać `interop` (jak paczka vendorowa). Nic poza `hosts/` nie zależy od crate'ów hostów.
   - Raport liczby crate'ów rdzenia; wzrost o więcej niż 10 wymaga uzasadnienia w PR.
   - **Gotowe gdy:** każda z reguł ma test, który celowo ją łamie i sprawdza, że CI przerywa z czytelnym komunikatem.
 
 - [ ] **M0-03 · CI** ★
+  - **Stan 20.11.2026:** workflow w .github/workflows/ci.yml; nieuruchomiony, bo repo nie ma jeszcze zdalnego origin. Raport rozmiaru WASM dojdzie z M0-06 (brak punktu wejścia wasm).
   - Macierz: Windows, Linux, macOS (Apple Silicon), `wasm32-unknown-unknown`; fmt, clippy, test, deps-check, rozmiar release WASM.
   - **Gotowe gdy:** wszystkie joby zielone na pustym workspace; raport rozmiaru WASM w podsumowaniu joba.
 
-- [ ] **M0-04 · `pathon-platform` — kontrakt platformy** ★
+- [x] **M0-04 · `pathon-platform` — kontrakt platformy** ★
   - `WindowId`, `WindowDesc`, `InputEvent`, `PlatformEvent`: Resized, ScaleChanged, RedrawRequested, Input, CloseRequested oraz **`SurfacesAvailable` / `SurfacesLost`** (zamiast polegać na `Resumed` — tak modeluje to winit 0.31).
   - Trait `App { on_event, on_frame }` i trait `Platform { run(app) }`; wiele okien od początku.
   - **Gotowe gdy:** crate kompiluje się bez żadnej biblioteki okienkowej.
 
 - [ ] **M0-05 · `pathon-platform-winit`** ★
+  - **Stan 20.11.2026:** działa na Windows (przykłady clear, vertical_slice); Linux i macOS do ręcznego sprawdzenia.
   - Implementacja `Platform` na winit 0.30; tłumaczenie zdarzeń; pętla na wątku głównym.
   - **Gotowe gdy:** okno reaguje na resize i zmianę skali na Windows, Linux (X11 i Wayland) i macOS.
 
 - [ ] **M0-06 · `pathon-platform-web`** ★
+  - **Stan 20.11.2026:** nie zaczęty.
   - Canvas, asynchroniczny start, `requestAnimationFrame`; brak WebGPU → czytelny komunikat w stronie, nie fallback.
   - **Gotowe gdy:** przykład startuje w Chrome i Safari 26; w przeglądarce bez WebGPU pokazuje komunikat.
 
-- [ ] **M0-07 · `pathon-rhi-types` v0** ★
+- [x] **M0-07 · `pathon-rhi-types` v0** ★
   - Typy bazowe: `Format`, `Usage`, `Extent3d`, `TextureDesc`, `BufferDesc`, `Caps` (bity), `RhiError`, handle'y generacyjne.
   - `SurfaceTarget` (dowolne okno `HasWindowHandle + HasDisplayHandle` + rozmiar + skala) — pasuje też do okien hostów (np. `RawHandleWrapper` w Bevy).
   - `DeviceRequest`: preferowany backend, wymagane / opcjonalne funkcje, `compatible_surface: Option<SurfaceTarget>`, hak rozszerzeń backendu.
@@ -124,40 +128,45 @@ Hosty (M6, M7) nie są na ścieżce minimalnej, ale ich szew jest: M2-19 i M4-20
   - **Gotowe gdy:** crate kompiluje się z zależnościami tylko `bitflags` i `raw-window-handle`.
 
 - [ ] **M0-08 · `pathon-rhi-wgpu`** ★
+  - **Stan 20.11.2026:** sprawdzone na Windows (test zgodności na GPU); Metal i WebGPU do sprawdzenia.
   - Urządzenie z `DeviceRequest`, asynchronicznie; konwersje typów makrem z jednej tabeli; brak `impl From<wgpu::X>` w publicznym API.
   - Moduł `interop` (surowe `wgpu::Device`, `Queue`, tekstury, enkoder) — publiczny, ale dostępny tylko paczkom vendorowym i hostom (reguła deps-check).
   - `interop::adopt(instance, adapter, device, queue)` — przyjęcie urządzenia utworzonego poza pathon; `Caps` liczone z przyjętego adaptera. W drugą stronę eksport surowych obiektów, żeby host mógł użyć urządzenia pathon.
   - **Gotowe gdy:** urządzenie powstaje na DX12, Vulkanie, Metalu i WebGPU w CI lub ręcznym teście na sprzęcie; test przyjmuje urządzenie utworzone surowym wgpu i raportuje te same `Caps`.
 
 - [ ] **M0-09 · `pathon-rhi` (fasada)** ★
+  - **Stan 20.11.2026:** natywnie sprawdzone; wasm tylko kompiluje się (cargo check).
   - `enum Device { Wgpu(..) }`, `build_async()` + natywny blokujący `build()`, re-eksport typów.
   - **Gotowe gdy:** ten sam kod tworzy urządzenie natywnie (blokująco) i na wasm (async).
 
 - [ ] **M0-10 · Przykład `clear`** ★ — **Gotowe gdy:** spełniona pierwsza część kryterium M0.
+  - **Stan 20.11.2026:** działa na Windows; Linux, macOS i Chrome do sprawdzenia.
 
-- [ ] **M0-11 · Przykład `external-window`** — okno z surowego winita albo SDL3, bez `pathon-platform`. **Gotowe gdy:** przykład rysuje.
+- [x] **M0-11 · Przykład `external-window`** — okno z surowego winita albo SDL3, bez `pathon-platform`. **Gotowe gdy:** przykład rysuje.
+  - **Stan 20.11.2026:** działa na Windows (surowy winit, bez pathon-platform).
 
 ## M1 — RHI z modelem bindowania, Caps, diagnostyka, drugi backend
 
 - [ ] **M1-01 · Caps** ★
+  - **Stan 20.11.2026:** Caps z adaptera i matryca formatów gotowe, test konwersji w obie strony; porównanie na 3 systemach i w Chrome do zrobienia.
   - Bity funkcji i limitów z adaptera, matryca formatów tekstur (BCn, ASTC, ETC2, formaty storage), nazwane profile Web / Desktop / High.
   - **Gotowe gdy:** raport `Caps` przy starcie zgadza się z `get_capabilities` / `features()` wgpu na 3 systemach i w Chrome.
 
-- [ ] **M1-02 · `pathon-diag`** ★
+- [x] **M1-02 · `pathon-diag`** ★
   - Typ `Diagnostic` w każdym buildzie; renderer w stylu rustc (miette) tylko w dev; w release tekst przez `log`.
   - Kody P / R / G / S / F, strona per kod w `docs/diag/`.
   - **Gotowe gdy:** test sprawdza, że każdy zarejestrowany kod ma stronę w dokumentacji.
 
-- [ ] **M1-03 · Device lost** ★
+- [x] **M1-03 · Device lost** ★
   - Wykrycie, pełna przebudowa urządzenia i surface'ów; callback aplikacji „wgraj dane ponownie”; `on_device_reset` w paczkach (M2-10).
   - Przy urządzeniu pożyczonym od hosta utratę obsługuje host; core daje `reset(new_device)` i ten sam callback ponownego wgrania.
   - **Gotowe gdy:** symulowana utrata urządzenia w teście kończy się działającą klatką po ponownym wgraniu danych — dla urządzenia własnego i pożyczonego.
 
-- [ ] **M1-04 · `pathon-rhi-null` z walidacją stanów** ★
+- [x] **M1-04 · `pathon-rhi-null` z walidacją stanów** ★
   - Wydaje handle'y i nic nie rysuje, ale prowadzi **maszynę stanów per subresource (mip, warstwa)** i odrzuca użycie zasobu w złym stanie `Access`.
   - **Gotowe gdy:** testy celowo psujące przejścia (np. odczyt mipa Hi-Z przed zapisem) kończą się błędem R-kodu.
 
-- [ ] **M1-05 · RHI v1: model bindowania i nagrywanie** ★
+- [x] **M1-05 · RHI v1: model bindowania i nagrywanie** ★
   - Handle'y: `TextureView`, `Sampler`, `ShaderModule` (WGSL + refleksja), `BindGroupLayout`, `BindGroup`, `RenderPipeline`, `ComputePipeline`.
   - Layouty wierzchołków, bufory vertex / index, viewport, scissor, markery debug.
   - **API nagrywania przez enkoder** (`PassEncoder`: set_pipeline, set_bind_group, draw, draw_indexed, draw_indexed_indirect, dispatch, copy). Czy backend buforuje to w `CommandList`, czy nagrywa od razu — decyzja backendu, niewidoczna dla paczek.
@@ -165,28 +174,28 @@ Hosty (M6, M7) nie są na ścieżce minimalnej, ale ich szew jest: M2-19 i M4-20
   - Timestampy jako atrybut początku i końca passa, nie komenda (na GPU Apple brak timestampów wewnątrz passów).
   - **Gotowe gdy:** M1-06 przechodzi.
 
-- [ ] **M1-06 · Test zgodności RHI** ★
+- [x] **M1-06 · Test zgodności RHI** ★
   - Kopie bufor↔tekstura, tekstura z samplerem, compute, raster trójkąta z buforem indeksów, timestampy passów; na każdym backendzie.
   - **Gotowe gdy:** zielony na `wgpu` (natywnie) i `null`.
 
 ## M2 — Frame graph, kontrakt paczki, pionowy wycinek, szew hosta, spike ash
 
-- [ ] **M2-01 · Zasoby grafu** ★
+- [x] **M2-01 · Zasoby grafu** ★
   - Transient, imported, history; każdy zapis tworzy nową wersję.
   - Import tekstury hosta z deklarowanym `Access` przed i po; graf oddaje ją w zadeklarowanym stanie końcowym.
   - **Gotowe gdy:** testy wersjonowania i importu na `null`.
-- [ ] **M2-02 · Etapy i kolejność** ★ — Stage → before / after → priorytet; kolejność rejestracji jako tie-breaker z ostrzeżeniem. **Gotowe gdy:** test z 3 paczkami na tym samym slocie daje deterministyczną kolejność niezależną od rejestracji.
-- [ ] **M2-03 · Culling passów** ★ — usuwanie passów bez konsumentów, wyjątek `side_effect`; sloty na żądanie kosztują zero. **Gotowe gdy:** test liczy passy po kompilacji.
-- [ ] **M2-04 · Czas życia i pule** ★ — interwały życia, reuse obiektów o identycznym opisie. **Gotowe gdy:** test pokazuje mniejszą liczbę alokacji niż zasobów logicznych.
-- [ ] **M2-05 · Plan barier** ★ — `Access` per subresource zapisywany przez graf; walidowany przez `rhi-null` w każdym teście. **Gotowe gdy:** testy grafu przechodzą pod walidacją stanów.
-- [ ] **M2-06 · Walidacja grafu** ★ — G0001 cykl, G0003 odczyt bez producenta, G0004 mieszanie render / output size. **Gotowe gdy:** każdy kod ma test.
+- [x] **M2-02 · Etapy i kolejność** ★ — Stage → before / after → priorytet; kolejność rejestracji jako tie-breaker z ostrzeżeniem. **Gotowe gdy:** test z 3 paczkami na tym samym slocie daje deterministyczną kolejność niezależną od rejestracji.
+- [x] **M2-03 · Culling passów** ★ — usuwanie passów bez konsumentów, wyjątek `side_effect`; sloty na żądanie kosztują zero. **Gotowe gdy:** test liczy passy po kompilacji.
+- [x] **M2-04 · Czas życia i pule** ★ — interwały życia, reuse obiektów o identycznym opisie. **Gotowe gdy:** test pokazuje mniejszą liczbę alokacji niż zasobów logicznych.
+- [x] **M2-05 · Plan barier** ★ — `Access` per subresource zapisywany przez graf; walidowany przez `rhi-null` w każdym teście. **Gotowe gdy:** testy grafu przechodzą pod walidacją stanów.
+- [x] **M2-06 · Walidacja grafu** ★ — G0001 cykl, G0003 odczyt bez producenta, G0004 mieszanie render / output size. **Gotowe gdy:** każdy kod ma test.
 - [ ] **M2-07 · Cache grafu** — rekompilacja tylko przy zmianie paczek, celów, rozmiaru lub profilu. **Gotowe gdy:** licznik kompilacji w teście stabilnej sceny wynosi 1.
 - [ ] **M2-08 · Historia** — `g.history(slot, n)`, kluczowana per widok; pula na maksymalny rozmiar + viewport przy dynamicznej rozdzielczości; unieważnianie przy resize i cięciu kamery. **Gotowe gdy:** testy resize i zmiany render_size.
-- [ ] **M2-09 · `pathon-resources`** ★
+- [x] **M2-09 · `pathon-resources`** ★
   - Handle'y generacyjne, opóźnione zwalnianie, staging ring, sub-alokacja buforów.
   - `GpuArray<T>`: tablica danych na GPU (instancje, materiały, kości, światła) jako storage buffer na każdym profilu.
   - **Gotowe gdy:** testy alokatora i zwalniania po N klatkach.
-- [ ] **M2-10 · `pathon-api`** ★
+- [x] **M2-10 · `pathon-api`** ★
   - `RenderFeature`: `requirements()` (faza 1: backend, funkcje, rozszerzenia przez hak), `negotiate(&Caps)` (faza 2), **`prepare_view()`** (przed budową grafu), `setup`, `record`, `on_resize`, `on_device_reset`.
   - Rola TemporalResolve w `prepare_view()` ustala `render_size`, sekwencję jittera i mip bias w `ViewCtx` — rdzeń je przechowuje, inne paczki tylko czytają.
   - `ViewCtx` dostaje od hosta czas i numer klatki — core nie czyta zegara.
@@ -195,14 +204,16 @@ Hosty (M6, M7) nie są na ścieżce minimalnej, ale ich szew jest: M2-19 i M4-20
   - Sloty: `depth`, `depth_pyramid`, `normals`, `motion`, `material_id`, `roughness`, `albedo` (na żądanie — SSR, DLSS RR), `reactive` (maska dla upscalerów), `diffuse` / `specular` (podział światła), `hdr`, `ao`, `exposure`, `output`.
   - **Gotowe gdy:** kontrakt slotów i konwencji opisany i pokryty testem formatów.
 - [ ] **M2-11 · `pathon-core`** ★
+  - **Stan 20.11.2026:** natywnie z runnerem (wątek pathon-render) działa; na wasm rdzeń kompiluje się, uruchomienie czeka na M0-06.
   - `Renderer::builder()…build_async()` / `build()` — bez okna; `with_device(...)` zamiast tworzenia własnego urządzenia; `add_surface`, `add_offscreen_target`, `import_texture`, `remove_*`, headless.
-  - Wejścia klatki: `render_frame()` (pathon zgłasza na własną kolejkę, robi acquire i present swoich surface'ów) oraz `record_into(enkoder hosta)` (nagrywa graf w punkcie klatki hosta, zgłasza host).
+  - Wejścia klatki: `render_frame()` (pathon zgłasza na własną kolejkę, robi acquire i present swoich surface'ów) oraz `record_frame()` (zwraca `CommandList`; host nagrywa ją do swojego enkodera przez `interop::encode_into` i zgłasza sam).
   - Core nie tworzy wątków; runner z wątkiem renderu zgodny z ADR z M0-00 żyje w fasadzie `pathon` (feature `runtime`).
   - Rejestr paczek, przydział ról (F0102), konflikt backendów (F0201).
   - **Gotowe gdy:** test potwierdza, że core nie tworzy wątków; przykład z runnerem działa natywnie na wątku renderu i w jednym wątku na wasm.
 - [ ] **M2-12 · `pathon-profile`** — timestampy passów, `tracing` + Tracy / puffin za feature. **Gotowe gdy:** zrzut z Tracy z nazwanymi passami.
 - [ ] **M2-13 · `pathon-graph-viz`** — eksport grafu do JSON i DOT. **Gotowe gdy:** DOT renderuje się w Graphviz dla przykładu z M2-18.
-- [ ] **M2-14 · `pathon-test` i paczki adwersaryjne** ★
+- [x] **M2-14 · `pathon-test` i paczki adwersaryjne** ★
+  - **Stan 20.11.2026:** zamiast paczki z hookiem materiału jest OnDemandConsumer (sloty na żądanie) — prawdziwe hooki WGSL przyjdą z M4-03.
   - Paczki testowe: podmiana roli Geometry, upscaler zmieniający `render_size`, paczka z hookiem materiału, atrapa paczki vendorowej z `Cmd::External`.
   - **Gotowe gdy:** wszystkie 4 działają bez zmian w `pathon-core` i `pathon-api`.
 - [ ] **M2-15 · Spike backendu ash (wyrzucany)**
@@ -211,13 +222,15 @@ Hosty (M6, M7) nie są na ścieżce minimalnej, ale ich szew jest: M2-19 i M4-20
   - **Gotowe gdy:** lista poprawek `rhi-types` wniesiona przed M3.
 - [ ] **M2-16 · Benchmark narzutu nagrywania** — ta sama scena przez API enkodera i bezpośrednio przez wgpu. **Gotowe gdy:** wynik w `docs/bench/`; jeśli narzut przekracza próg ustalony w ADR, backend wgpu przechodzi na nagrywanie bezpośrednie (bez zmian w API paczek).
 - [ ] **M2-17 · Przykład `multi-view`** — 2 okna + cel offscreen. **Gotowe gdy:** działa natywnie na 3 systemach.
-- [ ] **M2-18 · Pionowy wycinek** ★
+- [x] **M2-18 · Pionowy wycinek** ★
+  - **Stan 20.11.2026:** test GPU (offscreen) sprawdza piksele; przykład vertical_slice z dwoma oknami uruchomiony na Windows.
   - Jeden mesh unlit z zaszytym shaderem WGSL przechodzi przez cały stos: platforma → core → graf → RHI, w 2 oknach.
   - **Gotowe gdy:** mesh widać w obu oknach; to pierwsza prawdziwa geometria w projekcie.
-- [ ] **M2-19 · Szew hosta** ★
+- [x] **M2-19 · Szew hosta** ★
+  - **Stan 20.11.2026:** examples/tests/host_seam.rs: tryb B identyczny piksel w piksel z trybem C, tryb A rysuje na obrazie hosta.
   - Przykład `host-foreign-device`: surowa aplikacja wgpu + winit sama tworzy urządzenie, okno i pętlę, a pathon je przyjmuje (`with_device`).
   - Tryb B: wycinek z M2-18 renderuje się do tekstury hosta (`import_texture`), host ją wyświetla.
-  - Tryb A: paczka testowa z M2-14 działa jako post-process na teksturze hosta przez `record_into`.
+  - Tryb A: paczka testowa z M2-14 działa jako post-process na teksturze hosta przez `record_frame` + `interop::encode_into`.
   - **Gotowe gdy:** obraz w trybie B jest identyczny z trybem C na tym samym backendzie, a w `pathon-core` nie przybyła żadna zależność.
 
 ## M3 — Shadery
@@ -302,7 +315,7 @@ Fakty z 20.11.2026: `bevy_render` 0.20.1 zależy od wgpu 30; `RenderCreation::Ma
   - **Gotowe gdy:** ADR w `docs/adr/`.
 
 - [ ] **M6-01 · Spike (wyrzucany)**
-  - Potwierdzić w Bevy 0.20: `RenderCreation::Manual`, `RawHandleWrapper`, punkt wpięcia w render world Bevy (gdzie wołać `render_frame` / `record_into`).
+  - Potwierdzić w Bevy 0.20: `RenderCreation::Manual`, `RawHandleWrapper`, punkt wpięcia w render world Bevy (gdzie wołać `render_frame` / `record_frame`).
   - Które typy istnieją bez `bevy_render`: `Mesh` i `Image` prawdopodobnie tak; `StandardMaterial` jest w `bevy_pbr`, który zależy od `bevy_render`, więc w trybie C prawdopodobnie potrzebny własny komponent materiału.
   - **Gotowe gdy:** lista ustaleń wniesiona do M6-02…M6-05.
 
@@ -352,7 +365,7 @@ Godot 4 renderuje przez `RenderingDevice` (Vulkan, D3D12, Metal), a GDExtension 
 
 - [ ] **M7-02 · `pathon-godot` (GDExtension)**
   - Crate `cdylib` na gdext: rejestracja klas, paczki włączane features jak w fasadzie, diagnostyka `pathon-diag` do konsoli Godota (ostrzeżenia z kodem i podpowiedzią).
-  - Wątki: callback `CompositorEffect` przychodzi na wątku renderu Godota — core i tak nie tworzy wątków (ADR z M0-00), więc pathon woła tam `record_into`.
+  - Wątki: callback `CompositorEffect` przychodzi na wątku renderu Godota — core i tak nie tworzy wątków (ADR z M0-00), więc pathon woła tam `record_frame`.
   - **Gotowe gdy:** pusty efekt ładuje się w edytorze Godota na Windows, Linux i macOS.
 
 - [ ] **M7-03 · Adapter slotów**

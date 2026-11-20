@@ -6,7 +6,7 @@ Crate `examples/` gra rolę hosta, więc wolno mu używać wgpu i winit wprost (
 | --- | --- | --- | --- |
 | `clear` | M0-10 | C | runner: okno na wątku głównym, renderer bez paczek na wątku renderu |
 | `external_window` | M0-11 | C | host ma okno i pętlę (surowy winit), woła `render_frame` na swoim wątku — bez `pathon-platform` |
-| `vertical_slice` | M2-18 | C | sześcian unlit przez cały stos w dwóch oknach |
+| `vertical_slice` | M2-18 | C | sześcian unlit przez cały stos w dwóch oknach; `--devtools` udostępnia klatkę dla [devtools](devtools.md) |
 | `host_foreign_device` | M2-19 | B | host tworzy urządzenie i swapchain; pathon przyjmuje urządzenie, renderuje do tekstury hosta, host kopiuje ją na ekran |
 
 ```sh

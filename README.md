@@ -128,6 +128,13 @@ cd pathon
 cargo run -p pathon-examples --bin vertical_slice   # sześcian przez cały stos, dwa okna
 ```
 
+Podgląd klatki w terminalu ([devtools](docs/devtools.md)): interaktywny graf passów, zasoby z aliasingiem, paczki i diagnostyki.
+
+```sh
+cargo run -p pathon-devtools -- --demo                        # bez GPU, scena testowa
+cargo run -p pathon-examples --bin vertical_slice -- --devtools   # potem w drugim terminalu: cargo run -p pathon-devtools
+```
+
 ## Gdzie działa
 
 Rdzeń nie ma własnej pętli, okna, wątku ani ECS, więc ten sam silnik i te same paczki działają w różnych miejscach ([ADR-0005](docs/adr/0005-hosty-i-tryby-integracji.md)):
@@ -152,6 +159,7 @@ Rdzeń nie ma własnej pętli, okna, wątku ani ECS, więc ten sam silnik i te s
 | [`pathon-rhi-wgpu`](docs/crates/pathon-rhi-wgpu.md) | backend wgpu 30 + `interop` dla paczek vendorowych |
 | [`pathon-rhi-null`](docs/crates/pathon-rhi-null.md) | backend bez GPU, waliduje stany zasobów |
 | [`pathon-diag`](docs/crates/pathon-diag.md) | diagnostyka z kodem i [stroną dla każdego kodu](docs/diag/) |
+| [`pathon-devtools`](docs/devtools.md) | TUI (ratatui) do podglądu klatki na żywo, poza procesem renderera |
 
 ## Testy
 

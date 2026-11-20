@@ -57,7 +57,7 @@ fn run(graph: FrameGraph, device: &NullDevice, pool: &mut TexturePool, frame: u6
     let compiled = graph.compile(FrameSizes::same(SIZE)).expect("graph compiles");
     let mut release = DeferredRelease::new(2);
     let execution = graph
-        .execute(compiled, device, pool, &mut release, frame)
+        .execute(&compiled, device, pool, &mut release, frame)
         .expect("graph executes");
     release.collect(frame + 2, device);
     execution
@@ -261,4 +261,55 @@ fn unordered_passes_in_one_stage_warn_g0006() {
     }
     let compiled = graph.compile(FrameSizes::same(SIZE)).expect("compiles");
     assert!(compiled.warnings().iter().any(|warning| warning.code == "G0006"));
+}
+
+fn stable_graph(device: &NullDevice, texture: Option<(TextureId, TextureDesc)>) -> FrameGraph {
+    let mut graph = FrameGraph::new();
+    let (texture, desc) = texture.unwrap_or_else(|| output_texture(device));
+    let output = graph.import_texture("output", texture, desc, Access::empty(), Access::SHADER_READ);
+    let scene = graph.create_texture("scene", GraphTextureDesc::render(Format::Rgba8Unorm));
+    let mut pass = graph.add_pass(PassDesc::new("scene", Stage::Opaque));
+    let scene = pass.write(scene, Access::COPY_DST);
+    pass.record(|_| Ok(()));
+    let mut pass = graph.add_pass(PassDesc::new("present", Stage::Tonemap));
+    let source = pass.read(scene, Access::COPY_SRC);
+    let written = pass.write(output, Access::COPY_DST);
+    pass.record(copy(source, written));
+    graph
+}
+
+#[test]
+fn stable_graph_compiles_once_and_resizes_recompile() {
+    let device = NullDevice::new();
+    let mut cache = pathon_graph::GraphCache::new();
+    for _ in 0..5 {
+        let graph = stable_graph(&device, None);
+        cache.compile(&graph, FrameSizes::same(SIZE)).expect("compiles");
+    }
+    assert_eq!(
+        cache.compilations(),
+        1,
+        "a new texture id every frame (like a window) must not invalidate"
+    );
+
+    let graph = stable_graph(&device, None);
+    cache
+        .compile(&graph, FrameSizes::same(PhysicalSize::new(16, 16)))
+        .expect("compiles");
+    assert_eq!(cache.compilations(), 2);
+}
+
+#[test]
+fn structural_change_recompiles() {
+    let device = NullDevice::new();
+    let mut cache = pathon_graph::GraphCache::new();
+    cache
+        .compile(&stable_graph(&device, None), FrameSizes::same(SIZE))
+        .expect("compiles");
+
+    let mut graph = stable_graph(&device, None);
+    graph.add_pass(PassDesc::new("readback", Stage::Overlay).side_effect());
+    let (compiled, fresh) = cache.compile(&graph, FrameSizes::same(SIZE)).expect("compiles");
+    assert!(fresh);
+    assert_eq!(compiled.order().last(), Some(&"readback"));
 }

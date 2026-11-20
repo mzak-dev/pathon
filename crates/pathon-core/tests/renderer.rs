@@ -240,3 +240,31 @@ impl raw_window_handle::HasDisplayHandle for NoWindow {
         Err(raw_window_handle::HandleError::Unavailable)
     }
 }
+
+#[test]
+fn stable_scene_compiles_its_graph_once() {
+    let mut renderer = null_builder()
+        .with_feature(GeometryPack::new("geometry", Color::BLACK, 0))
+        .with_feature(UpscalerPack::new(0.5))
+        .with_feature(UnlitMeshPack::new())
+        .build()
+        .expect("renderer");
+    let input = one_view(&mut renderer, Format::Rgba16Float);
+
+    let compiled: Vec<usize> = (0..5)
+        .map(|frame| {
+            let input = FrameInput {
+                frame_index: frame,
+                time_seconds: frame as f64 * 0.016,
+                ..input.clone()
+            };
+            renderer.render_frame(&input).expect("frame").compiled_views
+        })
+        .collect();
+    assert_eq!(compiled, [1, 0, 0, 0, 0]);
+
+    renderer
+        .resize_target(input.views[0].target, PhysicalSize::new(48, 48))
+        .expect("resize");
+    assert_eq!(renderer.render_frame(&input).expect("frame").compiled_views, 1);
+}

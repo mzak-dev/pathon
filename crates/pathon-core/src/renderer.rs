@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use pathon_api::{PrepareCtx, RecordCtx, Shared, Slot, Slots, TaskPool, ViewCtx, ViewId};
 use pathon_diag::Diagnostic;
-use pathon_graph::{FrameGraph, FrameSizes, GraphStats, PassDesc, Stage, TextureHandle, TexturePool};
+use pathon_graph::{FrameGraph, FrameSizes, GraphCache, GraphStats, PassDesc, Stage, TextureHandle, TexturePool};
 use pathon_resources::DeferredRelease;
 use pathon_rhi::{
     Access, Color, ColorAttachment, CommandList, Device, DeviceApi, DeviceRequest, Format, PhysicalSize, Pool,
@@ -44,6 +44,7 @@ pub struct Renderer {
     task_pool: Arc<dyn TaskPool>,
     targets: Pool<TargetId, Target>,
     pool: TexturePool,
+    caches: Vec<GraphCache>,
     release: DeferredRelease,
     frame: u64,
     clear_color: Color,
@@ -82,6 +83,7 @@ impl Renderer {
             task_pool,
             targets: Pool::new(),
             pool: TexturePool::new(),
+            caches: Vec::new(),
             release: DeferredRelease::new(frames_in_flight),
             frame: 0,
             clear_color,
@@ -244,9 +246,9 @@ impl Renderer {
                 report.skipped_views += 1;
                 continue;
             };
-            report
-                .views
-                .push(self.record_view(index, view, input, output, &mut commands)?);
+            let (stats, compiled) = self.record_view(index, view, input, output, &mut commands)?;
+            report.views.push(stats);
+            report.compiled_views += usize::from(compiled);
         }
         let submitted = self.device.submit(commands);
         for surface in presents {
@@ -348,7 +350,7 @@ impl Renderer {
         input: &FrameInput,
         output: OutputTarget,
         commands: &mut CommandList,
-    ) -> Result<GraphStats, RenderError> {
+    ) -> Result<(GraphStats, bool), RenderError> {
         let output_size = PhysicalSize::new(output.desc.size.width, output.desc.size.height);
         let view_id = ViewId(u32::try_from(index).expect("fewer than u32::MAX views"));
         let mut view_ctx = ViewCtx::new(view_id, output_size, view.camera);
@@ -407,17 +409,22 @@ impl Renderer {
             render: view_ctx.render_size,
             output: output_size,
         };
-        let compiled = match graph.compile(sizes) {
-            Ok(compiled) => compiled,
+        if self.caches.len() <= index {
+            self.caches.resize_with(index + 1, GraphCache::new);
+        }
+        let (compiled, fresh) = match self.caches[index].compile(&graph, sizes) {
+            Ok(result) => result,
             Err(errors) => {
                 for error in &errors {
                     pathon_diag::emit(error);
                 }
-                return self.record_clear_only(output, commands);
+                return self.record_clear_only(output, commands).map(|stats| (stats, true));
             }
         };
-        for warning in compiled.warnings() {
-            pathon_diag::emit(warning);
+        if fresh {
+            for warning in compiled.warnings() {
+                pathon_diag::emit(warning);
+            }
         }
         match graph.execute(
             compiled,
@@ -428,12 +435,12 @@ impl Renderer {
         ) {
             Ok(execution) => {
                 commands.append(execution.commands);
-                Ok(execution.stats)
+                Ok((execution.stats, fresh))
             }
             Err(RhiError::DeviceLost) => Err(RenderError::DeviceLost),
             Err(error) => {
                 pathon_diag::emit(&Diagnostic::error("F0105", format!("a pass failed to record: {error}")));
-                self.record_clear_only(output, commands)
+                self.record_clear_only(output, commands).map(|stats| (stats, true))
             }
         }
     }
@@ -477,7 +484,7 @@ impl Renderer {
             )))
             .map_err(|mut errors| RenderError::Diagnostic(errors.remove(0)))?;
         let execution = graph.execute(
-            compiled,
+            &compiled,
             self.device.as_ref(),
             &mut self.pool,
             &mut self.release,

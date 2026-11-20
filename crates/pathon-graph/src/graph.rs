@@ -105,7 +105,7 @@ pub struct TextureHandle {
     pub(crate) version: u32,
 }
 
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct PassDesc {
     pub name: &'static str,
     pub stage: Stage,
@@ -175,7 +175,7 @@ pub(crate) struct ResourceNode {
     pub(crate) producers: Vec<Option<usize>>,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub(crate) struct PassAccess {
     pub(crate) resource: u32,
     pub(crate) read_version: Option<u32>,

@@ -22,4 +22,6 @@ pub struct FrameInput {
 pub struct FrameReport {
     pub views: Vec<GraphStats>,
     pub skipped_views: usize,
+    // Views whose frame graph had to be compiled this frame; 0 in a stable scene (M2-07).
+    pub compiled_views: usize,
 }

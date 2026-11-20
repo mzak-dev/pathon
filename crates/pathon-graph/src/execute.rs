@@ -147,14 +147,14 @@ fn needed_states(accesses: &[PassAccess], physical: &[Option<PhysicalTexture>]) 
 impl FrameGraph {
     pub fn execute(
         self,
-        compiled: CompiledGraph,
+        compiled: &CompiledGraph,
         device: &dyn DeviceApi,
         pool: &mut TexturePool,
         release: &mut DeferredRelease,
         frame: u64,
     ) -> Result<Execution, RhiError> {
         pool.begin_frame();
-        let (physical, physical_count) = self.allocate(&compiled, device, pool, frame)?;
+        let (physical, physical_count) = self.allocate(compiled, device, pool, frame)?;
         let mut tracker = StateTracker { states: Vec::new() };
         for (resource, texture) in self.resources.iter().zip(&physical) {
             if let (ResourceKind::Imported { initial, .. }, Some(texture)) = (resource.kind, texture) {
@@ -203,7 +203,7 @@ impl FrameGraph {
         Ok(Execution {
             commands,
             stats,
-            warnings: compiled.warnings,
+            warnings: compiled.warnings.clone(),
         })
     }
 

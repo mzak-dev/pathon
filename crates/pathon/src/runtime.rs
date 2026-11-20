@@ -9,9 +9,9 @@ use std::time::Instant;
 
 use crossbeam_channel::{Sender, bounded};
 use pathon_api::TaskPool;
-use pathon_core::{FrameInput, RenderError, Renderer, RendererBuilder, TargetId, ViewInput};
+use pathon_core::{FrameInput, FrameReport, RenderError, Renderer, RendererBuilder, TargetId, ViewInput};
 use pathon_platform::{App, Platform, PlatformCtx, PlatformError, PlatformEvent, PlatformWindow, WindowDesc, WindowId};
-use pathon_rhi::{DeviceRequest, PhysicalSize, SurfaceTarget, WindowSource};
+use pathon_rhi::{PhysicalSize, SurfaceTarget, WindowSource};
 
 // Ceiling: spawns threads on every call; switch to persistent workers when M4-17 measurements show the cost.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -103,8 +103,12 @@ enum State {
     Done,
 }
 
+// Runs on the render thread after every frame (e.g. pathon-devtools publishes its snapshot here).
+type FrameHook = Box<dyn FnMut(&mut Renderer, &FrameReport) + Send>;
+
 struct RunnerApp<Scene> {
     state: State,
+    hook: Option<FrameHook>,
     windows: Vec<WindowDesc>,
     scene: Scene,
     error: Arc<Mutex<Option<RunError>>>,
@@ -128,15 +132,21 @@ fn surface_target(window: &Arc<dyn PlatformWindow>) -> SurfaceTarget {
     SurfaceTarget::new(source, rhi_size(window.inner_size()), window.scale_factor())
 }
 
-fn render_loop(mut renderer: Renderer, receiver: &crossbeam_channel::Receiver<Message>) {
+fn render_loop(
+    mut renderer: Renderer,
+    receiver: &crossbeam_channel::Receiver<Message>,
+    mut hook: FrameHook,
+    error_slot: &Mutex<Option<RunError>>,
+) {
     for message in receiver {
         match message {
             Message::Frame(input) => match renderer.render_frame(&input) {
-                Ok(_) => {}
+                Ok(report) => hook(&mut renderer, &report),
                 Err(RenderError::DeviceLost) => {
                     log::warn!("device lost, rebuilding");
                     if let Err(error) = renderer.recover() {
                         log::error!("device recovery failed: {error}");
+                        *lock_error(error_slot) = Some(RunError::Render(error));
                         return;
                     }
                 }
@@ -158,21 +168,24 @@ impl<Scene: FnMut(&FrameContext<'_>) -> Vec<ViewInput>> RunnerApp<Scene> {
         for desc in &self.windows {
             created.push(ctx.create_window(desc).map_err(RunError::Platform)?);
         }
-        let request = DeviceRequest {
-            label: "pathon",
-            compatible_surface: created.first().map(surface_target),
-            ..DeviceRequest::default()
+        // One SurfaceTarget per window, so the surface made for adapter selection is the one the window keeps.
+        let targets: Vec<SurfaceTarget> = created.iter().map(surface_target).collect();
+        let builder = match targets.first() {
+            Some(first) => builder.with_compatible_surface(first.clone()),
+            None => builder,
         };
-        let mut renderer = builder.with_device_request(request).build().map_err(RunError::Render)?;
+        let mut renderer = builder.build().map_err(RunError::Render)?;
         let mut windows = Vec::with_capacity(created.len());
-        for window in &created {
-            let target = renderer.add_window(surface_target(window)).map_err(RunError::Render)?;
+        for (window, surface) in created.iter().zip(targets) {
+            let target = renderer.add_window(surface).map_err(RunError::Render)?;
             windows.push((window.id(), target, rhi_size(window.inner_size())));
         }
         let (sender, receiver) = bounded(1);
+        let hook = self.hook.take().unwrap_or_else(|| Box::new(|_, _| {}));
+        let error_slot = Arc::clone(&self.error);
         let thread = thread::Builder::new()
             .name("pathon-render".into())
-            .spawn(move || render_loop(renderer, &receiver))
+            .spawn(move || render_loop(renderer, &receiver, hook, &error_slot))
             .expect("the OS can start the render thread");
         Ok(Running {
             windows,
@@ -266,10 +279,22 @@ pub fn run(
     windows: Vec<WindowDesc>,
     scene: impl FnMut(&FrameContext<'_>) -> Vec<ViewInput> + 'static,
 ) -> Result<(), RunError> {
+    run_with_hook(platform, builder, windows, scene, |_, _| {})
+}
+
+// Like `run`, with `hook` called on the render thread after every rendered frame.
+pub fn run_with_hook(
+    platform: impl Platform,
+    builder: RendererBuilder,
+    windows: Vec<WindowDesc>,
+    scene: impl FnMut(&FrameContext<'_>) -> Vec<ViewInput> + 'static,
+    hook: impl FnMut(&mut Renderer, &FrameReport) + Send + 'static,
+) -> Result<(), RunError> {
     let error = Arc::new(Mutex::new(None));
     let now = Instant::now();
     let app = RunnerApp {
         state: State::Waiting(Some(builder)),
+        hook: Some(Box::new(hook)),
         windows,
         scene,
         error: Arc::clone(&error),

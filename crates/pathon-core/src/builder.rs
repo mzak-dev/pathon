@@ -109,6 +109,13 @@ impl RendererBuilder {
         Self { request, ..self }
     }
 
+    // Picks an adapter that can present to this window; keeps the rest of the device request.
+    #[must_use]
+    pub fn with_compatible_surface(mut self, target: pathon_rhi::SurfaceTarget) -> Self {
+        self.request.compatible_surface = Some(target);
+        self
+    }
+
     // Integration modes A and B: the host owns the device, so pack requirements can no longer shape it.
     #[must_use]
     pub fn with_device(self, device: Arc<Device>) -> Self {

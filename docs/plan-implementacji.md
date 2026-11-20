@@ -101,7 +101,7 @@ Hosty (M6, M7) nie są na ścieżce minimalnej, ale ich szew jest: M2-19 i M4-20
   - **Gotowe gdy:** każda z reguł ma test, który celowo ją łamie i sprawdza, że CI przerywa z czytelnym komunikatem.
 
 - [ ] **M0-03 · CI** ★
-  - **Stan 20.11.2026:** workflow w .github/workflows/ci.yml; nieuruchomiony, bo repo nie ma jeszcze zdalnego origin. Raport rozmiaru WASM dojdzie z M0-06 (brak punktu wejścia wasm).
+  - **Stan 20.11.2026:** pierwszy przebieg na GitHubie zielony (Windows, Linux, macOS, wasm, GPU na lavapipe, lint). Brakuje raportu rozmiaru WASM — dojdzie z M0-06 (brak punktu wejścia wasm).
   - Macierz: Windows, Linux, macOS (Apple Silicon), `wasm32-unknown-unknown`; fmt, clippy, test, deps-check, rozmiar release WASM.
   - **Gotowe gdy:** wszystkie joby zielone na pustym workspace; raport rozmiaru WASM w podsumowaniu joba.
 

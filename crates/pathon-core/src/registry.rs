@@ -1,6 +1,6 @@
 use pathon_api::{Negotiation, RenderFeature, Requirements, Role, SetupCtx, Shared, TaskPool};
 use pathon_diag::Diagnostic;
-use pathon_graph::{OrderNode, sort_nodes};
+use pathon_graph::{OrderNode, Stage, sort_nodes};
 use pathon_rhi::{Backend, Caps, DeviceApi, DeviceRequest};
 
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -14,6 +14,18 @@ impl FeatureStatus {
     pub fn is_active(&self) -> bool {
         matches!(self, Self::Active | Self::Fallback { .. })
     }
+}
+
+// What tools show about a registered feature.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct FeatureInfo {
+    pub name: &'static str,
+    pub status: FeatureStatus,
+    pub stage: Stage,
+    pub priority: i32,
+    pub role: Option<Role>,
+    // Position in frame order; `None` when not active.
+    pub order: Option<usize>,
 }
 
 pub(crate) struct FeatureEntry {
@@ -203,6 +215,21 @@ impl Registry {
             .iter()
             .find(|(role, _)| *role == Role::TEMPORAL_RESOLVE)
             .map(|(_, index)| *index);
+    }
+
+    pub(crate) fn details(&self) -> Vec<FeatureInfo> {
+        self.entries
+            .iter()
+            .enumerate()
+            .map(|(index, entry)| FeatureInfo {
+                name: entry.feature.name(),
+                status: entry.status.clone(),
+                stage: entry.feature.stage(),
+                priority: entry.feature.priority(),
+                role: entry.feature.role(),
+                order: self.order.iter().position(|active| *active == index),
+            })
+            .collect()
     }
 
     pub(crate) fn statuses(&self) -> Vec<(&'static str, FeatureStatus)> {

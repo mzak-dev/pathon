@@ -268,3 +268,37 @@ fn stable_scene_compiles_its_graph_once() {
         .expect("resize");
     assert_eq!(renderer.render_frame(&input).expect("frame").compiled_views, 1);
 }
+
+#[test]
+fn capture_is_opt_in_and_feature_details_explain_disabled_packs() {
+    let mut renderer = null_builder()
+        .with_feature(GeometryPack::new("geometry", Color::BLACK, 0))
+        .with_feature(GeometryPack::new("fallback geometry", Color::BLACK, 10))
+        .build()
+        .expect("renderer");
+    let input = one_view(&mut renderer, Format::Rgba16Float);
+    assert_eq!(renderer.render_frame(&input).expect("frame").captures.len(), 0);
+
+    renderer.set_capture(true);
+    let report = renderer.render_frame(&input).expect("frame");
+    assert_eq!(report.captures.len(), report.views.len());
+    let live = report.captures[0]
+        .passes
+        .iter()
+        .filter(|pass| pass.order.is_some())
+        .count();
+    assert_eq!(live, report.views[0].passes_live);
+
+    let details = renderer.feature_details();
+    let fallback = details
+        .iter()
+        .find(|info| info.name == "fallback geometry")
+        .expect("listed");
+    assert_eq!(fallback.order, None);
+    assert!(matches!(fallback.status, FeatureStatus::Disabled { code: "F0102", .. }));
+    assert!(
+        details
+            .iter()
+            .any(|info| info.name == "geometry" && info.order.is_some())
+    );
+}

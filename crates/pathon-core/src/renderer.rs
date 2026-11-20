@@ -2,7 +2,9 @@ use std::sync::Arc;
 
 use pathon_api::{PrepareCtx, RecordCtx, Shared, Slot, Slots, TaskPool, ViewCtx, ViewId};
 use pathon_diag::Diagnostic;
-use pathon_graph::{FrameGraph, FrameSizes, GraphCache, GraphStats, PassDesc, Stage, TextureHandle, TexturePool};
+use pathon_graph::{
+    FrameGraph, FrameSizes, GraphCache, GraphCapture, GraphStats, PassDesc, Stage, TextureHandle, TexturePool,
+};
 use pathon_resources::DeferredRelease;
 use pathon_rhi::{
     Access, Color, ColorAttachment, CommandList, Device, DeviceApi, DeviceRequest, Format, PhysicalSize, Pool,
@@ -12,7 +14,7 @@ use pathon_rhi::{
 use crate::builder::RendererBuilder;
 use crate::error::RenderError;
 use crate::frame::{FrameInput, FrameReport, ViewInput};
-use crate::registry::{FeatureStatus, Registry};
+use crate::registry::{FeatureInfo, FeatureStatus, Registry};
 use crate::target::{self, OFFSCREEN_FINAL, Target, TargetId, TargetKind};
 
 pub(crate) enum DeviceOwnership {
@@ -50,6 +52,9 @@ pub struct Renderer {
     clear_color: Color,
     on_reupload: Option<ReuploadFn>,
     shared: Shared,
+    capture: bool,
+    frame_captures: Vec<GraphCapture>,
+    frame_diagnostics: Vec<Diagnostic>,
 }
 
 impl std::fmt::Debug for Renderer {
@@ -89,7 +94,24 @@ impl Renderer {
             clear_color,
             on_reupload: None,
             shared,
+            capture: false,
+            frame_captures: Vec::new(),
+            frame_diagnostics: Vec::new(),
         }
+    }
+
+    // Tools (pathon-devtools): every `FrameReport` then carries a `GraphCapture` per view.
+    pub fn set_capture(&mut self, enabled: bool) {
+        self.capture = enabled;
+    }
+
+    pub fn feature_details(&self) -> Vec<FeatureInfo> {
+        self.registry.details()
+    }
+
+    fn report(&mut self, diagnostic: &Diagnostic) {
+        pathon_diag::emit(diagnostic);
+        self.frame_diagnostics.push(diagnostic.clone());
     }
 
     // Data packs share with each other and with the application (scene, lights, settings), keyed by type.
@@ -256,6 +278,8 @@ impl Renderer {
         }
         submitted?;
         self.end_frame();
+        report.captures = std::mem::take(&mut self.frame_captures);
+        report.diagnostics = std::mem::take(&mut self.frame_diagnostics);
         Ok(report)
     }
 
@@ -274,6 +298,8 @@ impl Renderer {
             self.record_view(index, view, input, output, &mut commands)?;
         }
         self.end_frame();
+        self.frame_captures.clear();
+        self.frame_diagnostics.clear();
         Ok(commands)
     }
 
@@ -395,15 +421,15 @@ impl Renderer {
             }
         }
         for diagnostic in &diagnostics {
-            pathon_diag::emit(diagnostic);
+            self.report(diagnostic);
         }
         for (feature_index, error) in failed {
             let name = self.registry.entries[feature_index].feature.name();
-            self.registry.disable(
-                feature_index,
-                Diagnostic::error("F0105", format!("'{name}' failed to record: {error}")),
-            );
+            let diagnostic = Diagnostic::error("F0105", format!("'{name}' failed to record: {error}"));
+            self.frame_diagnostics.push(diagnostic.clone());
+            self.registry.disable(feature_index, diagnostic);
         }
+        graph.set_capture(self.capture);
 
         let sizes = FrameSizes {
             render: view_ctx.render_size,
@@ -416,30 +442,37 @@ impl Renderer {
             Ok(result) => result,
             Err(errors) => {
                 for error in &errors {
-                    pathon_diag::emit(error);
+                    self.report(error);
                 }
                 return self.record_clear_only(output, commands).map(|stats| (stats, true));
             }
         };
-        if fresh {
-            for warning in compiled.warnings() {
-                pathon_diag::emit(warning);
-            }
-        }
-        match graph.execute(
+        let fresh_warnings = if fresh {
+            compiled.warnings().to_vec()
+        } else {
+            Vec::new()
+        };
+        let outcome = graph.execute(
             compiled,
             self.device.as_ref(),
             &mut self.pool,
             &mut self.release,
             self.frame,
-        ) {
+        );
+        for warning in &fresh_warnings {
+            self.report(warning);
+        }
+        match outcome {
             Ok(execution) => {
                 commands.append(execution.commands);
+                if let Some(capture) = execution.capture {
+                    self.frame_captures.push(capture);
+                }
                 Ok((execution.stats, fresh))
             }
             Err(RhiError::DeviceLost) => Err(RenderError::DeviceLost),
             Err(error) => {
-                pathon_diag::emit(&Diagnostic::error("F0105", format!("a pass failed to record: {error}")));
+                self.report(&Diagnostic::error("F0105", format!("a pass failed to record: {error}")));
                 self.record_clear_only(output, commands).map(|stats| (stats, true))
             }
         }

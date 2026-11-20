@@ -25,6 +25,8 @@ Dla każdego widoku z `FrameInput::views`:
 
 Paczka, której `record` zwróci błąd, jest wyłączana z F0105; reszta klatki idzie dalej.
 
+`FrameReport::diagnostics` zbiera diagnostyki z tej klatki (F0105, ostrzeżenia grafu). Po `set_capture(true)` `FrameReport::captures` ma jeden `GraphCapture` na widok, a `feature_details()` opisuje każdą paczkę (status, etap, priorytet, rola, kolejność). Z tego korzystają [devtools](../devtools.md).
+
 ## Rejestr paczek
 
 Paczki instaluje się przez `with_pack(pack)` (paczka może wnieść kilka klas i wspólne dane) albo `with_feature(feature)`. Dane dla paczek aplikacja podaje przez `with_shared(value)` i zmienia między klatkami przez `shared_mut()`.

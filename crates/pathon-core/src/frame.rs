@@ -1,5 +1,6 @@
 use pathon_api::Camera;
-use pathon_graph::GraphStats;
+use pathon_diag::Diagnostic;
+use pathon_graph::{GraphCapture, GraphStats};
 
 use crate::target::TargetId;
 
@@ -24,4 +25,8 @@ pub struct FrameReport {
     pub skipped_views: usize,
     // Views whose frame graph had to be compiled this frame; 0 in a stable scene (M2-07).
     pub compiled_views: usize,
+    // One per recorded view while `Renderer::set_capture(true)`.
+    pub captures: Vec<GraphCapture>,
+    // Every diagnostic raised while recording this frame (the log shows each only once).
+    pub diagnostics: Vec<Diagnostic>,
 }

@@ -1,0 +1,13 @@
+[package]
+name = "pathon-platform"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+raw-window-handle.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

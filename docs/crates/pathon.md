@@ -7,7 +7,7 @@ Fasada: re-eksport `Renderer` i typów z `pathon-core`, moduły `api` (kontrakt 
 - **`runtime`** — runner dla trybu C we własnym silniku (ADR-0004); natywnie także `StdTaskPool` (ADR-0008). Działa też na `wasm32` (sekcja „Runner w przeglądarce”).
 - **`winit`** (domyślny, włącza `runtime`) — `WinitPlatform` z `pathon-platform-winit`.
 
-Bez features fasada to sam renderer — tak używają jej hosty (Bevy, Godot), które mają własną pętlę i wątki.
+Bez features fasada to sam renderer — tak używają jej hosty (np. własny silnik), które mają własną pętlę i wątki.
 
 ## Runner
 

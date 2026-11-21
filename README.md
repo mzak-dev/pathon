@@ -49,7 +49,7 @@ flowchart LR
 - **Paczka to zestaw.** `Pack` instaluje naraz kilka klas renderujących razem z ich wspólnymi danymi (np. PBR: prepass + oświetlenie + IBL); pojedynczy `RenderFeature` też jest paczką.
 - **Kolejność bez kolejności rejestracji.** Etap, `before` / `after`, priorytet; remis kończy się ostrzeżeniem, nie losowym wynikiem.
 - **Caps zamiast tierów.** Paczka prosi o konkretne bity (`SHADER_INT64_ATOMIC_MIN_MAX`, `RAY_QUERY`…) i sama decyduje o fallbacku na słabszym sprzęcie.
-- **Wymienne zaplecze.** RHI to osobna warstwa z backendem wgpu i backendem null; kolejne backendy (ash, Metal, Godot) nie zmieniają paczek.
+- **Wymienne zaplecze.** RHI to osobna warstwa z backendem wgpu i backendem null; kolejne backendy (ash, Metal) nie zmieniają paczek.
 
 ## Wydajność
 
@@ -143,7 +143,6 @@ Rdzeń nie ma własnej pętli, okna, wątku ani ECS, więc ten sam silnik i te s
 | --- | --- |
 | Samodzielnie | runner z fasady `pathon`: okna na wątku głównym, render na osobnym wątku |
 | We własnym silniku | silnik woła `render_frame`, podaje swoje okno albo swoje urządzenie wgpu |
-| W Bevy (plan: M6) | zamiast `bevy_render` albo pod UI Bevy na wspólnym urządzeniu |
 | W Godocie (plan: M7) | paczki w `CompositorEffect` albo scena pathon w `Texture2DRD` |
 
 ## Crate'y
@@ -179,7 +178,7 @@ CI: Windows, Linux, macOS, `wasm32` i testy GPU na lavapipe.
 | M3 | shadery: importy, refleksja, permutacje, kompilacja w tle | ⏳ |
 | M4 | PBR, IBL, cienie, postprocess, golden images | ⏳ |
 | M5 | paczki: TAA, SSAO, FSR 1, SSS, SSR, FXAA, picking | ⏳ |
-| M6–M9 | Bevy, Godot, meshlety, RT, FSR 4, backendy natywne | ⏳ |
+| M8–M9 | meshlety, RT, FSR 4, backendy natywne (Bevy i Godot odłożone, ADR-0015) | ⏳ |
 
 Szczegóły: [plan implementacji](docs/plan-implementacji.md) · decyzje: [docs/adr](docs/adr/).
 

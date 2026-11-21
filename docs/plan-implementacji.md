@@ -22,6 +22,8 @@
 
 ## Hosty i tryby integracji
 
+> **Bevy i Godot odłożone (ADR-0015).** Kolumny Bevy i Godot w tabeli poniżej oraz etapy M6 i M7 są poza zakresem do odwołania; tryby A/B/C zostają dla własnego silnika.
+
 pathon ma działać we własnym silniku, zamiast renderera Bevy i w Godocie. Generyczność opiera się na trzech możliwościach `pathon-core` — bez traitu `Host`; każdy host to osobny crate, który z nich korzysta.
 
 | Możliwość | Warianty |
@@ -61,8 +63,8 @@ Paczka deklaruje konkretne bity (np. `SHADER_INT64_ATOMIC_MIN_MAX`), nie profil.
 | M3 | Shadery | zmiana `.wgsl` bez restartu; p99 czasu klatki w normie przy wstrzykiwaniu nowych permutacji (natywnie) |
 | M4 | Core działa | pełna klatka PBR + IBL bez paczek technologii, także w Chrome; golden images od początku etapu; test generyczności zielony; baseline wydajności w repo |
 | M5 | Pierwsze paczki i scenariusz edytora | TAA, SSAO, FSR 1, SSS, SSR, FXAA, picking bez zmian w `pathon-api` (sprawdzane automatycznie) |
-| M6 | Bevy | scena testowa przez Bevy w trybach C i B przechodzi test generyczności; paczki M5 bez zmian w kodzie |
-| M7 | Godot | paczki z M5 działają w scenie Godota bez zmian w kodzie; renderer pathon rysuje do tekstury w Godocie |
+| M6 | Bevy — odłożone (ADR-0015) | scena testowa przez Bevy w trybach C i B przechodzi test generyczności; paczki M5 bez zmian w kodzie |
+| M7 | Godot — odłożone (ADR-0015) | paczki z M5 działają w scenie Godota bez zmian w kodzie; renderer pathon rysuje do tekstury w Godocie |
 | M8 | High i vendor | meshlety (bez mesh shaderów), RT na Vulkanie, FSR 4 przez interop; ADR o backendzie natywnym |
 | M9 | Backendy natywne (warunkowo) | `pathon-rhi-vk` przechodzi test zgodności; paczki zwykłe i hosty bez zmian, vendorowe z nowym `interop` |
 
@@ -312,7 +314,7 @@ TAA najpierw; jitter i `render_size` ustala rola TemporalResolve w `prepare_view
   - Port jest młody (wiele wydań od października 2026, napisany przez agentów AI) — plan B: fork.
   - **Gotowe gdy:** golden image na Windows i macOS; fallback do FSR 1 przetestowany.
 
-## M6 — Bevy
+## M6 — Bevy (odłożone, ADR-0015)
 
 Zależy od M4 (tryby C i B) i M5 (tryb A). Idzie przed Godotem, bo Bevy 0.20 jest na wgpu 30: nie potrzebuje nowego backendu RHI, więc najtaniej sprawdza generyczność core'a.
 
@@ -350,7 +352,7 @@ Fakty z 20.11.2026: `bevy_render` 0.20.1 zależy od wgpu 30; `RenderCreation::Ma
 
 - [ ] **M6-06 · Dystrybucja** — crate `pathon-bevy` na crates.io, przykłady trybów C i B, tabela zgodności pathon ↔ Bevy ↔ wgpu w README. **Gotowe gdy:** czysty projekt Bevy z crates.io renderuje scenę testową.
 
-## M7 — Godot
+## M7 — Godot (odłożone, ADR-0015)
 
 Zależy od M5 (paczki) i szwu hosta (M2-19), nie od M6, M8 ani M9. Idzie po Bevy, bo wymaga trzeciego backendu RHI.
 

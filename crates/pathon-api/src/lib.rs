@@ -2,6 +2,7 @@
 
 mod context;
 mod feature;
+mod graph_builder;
 mod pack;
 mod shared;
 mod slot;
@@ -24,7 +25,12 @@ pub mod rhi {
 }
 
 pub mod graph {
-    pub use pathon_graph::*;
+    pub use pathon_graph::{
+        BufferHandle, GraphBufferDesc, GraphSize, GraphTextureDesc, HistoryTexture, PassBuilder, PassContext, PassDesc,
+        Stage, TextureHandle,
+    };
+
+    pub use crate::graph_builder::GraphBuilder;
 }
 
 pub mod resources {

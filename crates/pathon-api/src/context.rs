@@ -3,6 +3,7 @@ use pathon_diag::Diagnostic;
 use pathon_graph::{FrameGraph, GraphTextureDesc, TextureHandle};
 use pathon_rhi_types::{Caps, DeviceApi, PhysicalSize};
 
+use crate::graph_builder::GraphBuilder;
 use crate::shared::Shared;
 use crate::slot::{Slot, Slots};
 use crate::task_pool::TaskPool;
@@ -23,6 +24,7 @@ impl std::fmt::Debug for SetupCtx<'_> {
 }
 
 impl<'frame> SetupCtx<'frame> {
+    #[doc(hidden)]
     pub fn new(device: &'frame dyn DeviceApi, task_pool: &'frame dyn TaskPool, shared: &'frame mut Shared) -> Self {
         Self {
             device,
@@ -63,6 +65,7 @@ pub struct PrepareCtx<'frame> {
 }
 
 impl<'frame> PrepareCtx<'frame> {
+    #[doc(hidden)]
     pub fn new(view: &'frame mut ViewCtx, owns_temporal: bool, shared: &'frame Shared) -> Self {
         Self {
             view,
@@ -116,6 +119,7 @@ impl std::fmt::Debug for RecordCtx<'_> {
 }
 
 impl<'frame> RecordCtx<'frame> {
+    #[doc(hidden)]
     pub fn new(
         graph: &'frame mut FrameGraph,
         slots: &'frame mut Slots,
@@ -142,8 +146,8 @@ impl<'frame> RecordCtx<'frame> {
         self.shared
     }
 
-    pub fn graph(&mut self) -> &mut FrameGraph {
-        self.graph
+    pub fn graph(&mut self) -> GraphBuilder<'_> {
+        GraphBuilder::new(self.graph)
     }
 
     pub fn view(&self) -> &ViewCtx {

@@ -78,3 +78,40 @@ impl RenderFeature for Pack {
     }
 }
 ```
+
+## Co widzi paczka
+
+ADR-0012: `pathon_api::graph` re-eksportuje tylko to, co służy do deklarowania passów: `GraphBuilder`, `PassBuilder`, `PassContext`, `PassDesc`, `Stage`, `GraphTextureDesc`, `GraphSize`, `GraphBufferDesc`, `TextureHandle`, `BufferHandle`, `HistoryTexture`. `RecordCtx::graph()` zwraca `GraphBuilder`, który pozwala deklarować zasoby i passy oraz czytać ich opis; kompilacja, wykonanie, cache i pule należą do rdzenia, a rdzeń, devtools i testy grafu korzystają z `pathon-graph` bezpośrednio. Konstruktory kontekstów (`SetupCtx::new`, `PrepareCtx::new`, `RecordCtx::new`) są `#[doc(hidden)]` — woła je tylko rdzeń.
+
+Wnętrze grafu nie jest widoczne dla paczki:
+
+```rust,compile_fail
+use pathon_api::graph::GraphCache;
+```
+
+```rust,compile_fail
+use pathon_api::graph::ResourcePool;
+```
+
+```rust,compile_fail
+use pathon_api::graph::Stage;
+use pathon_api::rhi::RhiError;
+use pathon_api::{RecordCtx, RenderFeature};
+
+struct Pack;
+
+impl RenderFeature for Pack {
+    fn name(&self) -> &'static str {
+        "compiling-pack"
+    }
+
+    fn stage(&self) -> Stage {
+        Stage::Opaque
+    }
+
+    fn record(&mut self, ctx: &mut RecordCtx<'_>) -> Result<(), RhiError> {
+        let _ = ctx.graph().compile(todo!());
+        Ok(())
+    }
+}
+```

@@ -101,8 +101,8 @@ Hosty (M6, M7) nie są na ścieżce minimalnej, ale ich szew jest: M2-19 i M4-20
   - Raport liczby crate'ów rdzenia; wzrost o więcej niż 10 wymaga uzasadnienia w PR.
   - **Gotowe gdy:** każda z reguł ma test, który celowo ją łamie i sprawdza, że CI przerywa z czytelnym komunikatem.
 
-- [ ] **M0-03 · CI** ★
-  - **Stan 21.11.2026:** pierwszy przebieg na GitHubie zielony (Windows, Linux, macOS, GPU na lavapipe, lint). Zadanie `wasm` ma krok raportu rozmiaru (surowy i gzip, przykład `examples/web`) i lint clippy runnera; raport powstanie przy pierwszym przebiegu CI tej gałęzi.
+- [x] **M0-03 · CI** ★
+  - **Stan 21.11.2026:** pierwszy przebieg na GitHubie zielony (Windows, Linux, macOS, GPU na lavapipe, lint). Zadanie `wasm` buduje przykład `examples/web` w release, lintuje runner webowy i wpisuje rozmiar `.wasm` (surowy i gzip) do podsumowania joba — pierwszy raport w przebiegu 44922768308 (21.11.2026); lokalnie 664 KB / 273 KB.
   - Macierz: Windows, Linux, macOS (Apple Silicon), `wasm32-unknown-unknown`; fmt, clippy, test, deps-check, rozmiar release WASM.
   - **Gotowe gdy:** wszystkie joby zielone na pustym workspace; raport rozmiaru WASM w podsumowaniu joba.
 

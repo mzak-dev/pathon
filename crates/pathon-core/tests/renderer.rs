@@ -50,13 +50,8 @@ fn empty_renderer_clears_an_offscreen_target_under_state_validation() {
     let mut renderer = null_builder().build().expect("renderer");
     let input = one_view(&mut renderer, Format::Rgba8Unorm);
 
-    for frame in 0..3 {
-        let report = renderer
-            .render_frame(&FrameInput {
-                frame_index: frame,
-                ..input.clone()
-            })
-            .expect("frame");
+    for _ in 0..3 {
+        let report = renderer.render_frame(&input).expect("frame");
         assert_eq!(report.views.len(), 1);
         assert_eq!(report.views[0].passes_live, 1);
     }
@@ -297,8 +292,7 @@ fn stable_scene_compiles_its_graph_once() {
     let compiled: Vec<usize> = (0..5)
         .map(|frame| {
             let input = FrameInput {
-                frame_index: frame,
-                time_seconds: frame as f64 * 0.016,
+                time_seconds: f64::from(frame) * 0.016,
                 ..input.clone()
             };
             renderer.render_frame(&input).expect("frame").compiled_views
@@ -1359,12 +1353,88 @@ fn frames_recover_after_present_failed_following_a_successful_submit() {
     };
 
     assert!(renderer.render_frame(&input).is_err(), "presenting must fail");
+    assert_eq!(renderer.frame_index(), 1, "the list ran, so the frame counts");
     active.store(false, Ordering::SeqCst);
     for _ in 0..3 {
         renderer
             .render_frame(&input)
             .expect("the failed present did not roll back states of a list that ran");
     }
+}
+
+type SeenClocks = Arc<Mutex<Vec<(u64, u64)>>>;
+
+// Records the (frame, record epoch) every view sees.
+struct RecordsClock {
+    seen: SeenClocks,
+}
+
+impl RenderFeature for RecordsClock {
+    fn name(&self) -> &'static str {
+        "records clock"
+    }
+
+    fn stage(&self) -> Stage {
+        Stage::PostProcess
+    }
+
+    fn record(&mut self, ctx: &mut RecordCtx<'_>) -> Result<(), RhiError> {
+        let view = ctx.view();
+        self.seen.lock().expect("mutex").push((view.frame, view.record_epoch));
+        Ok(())
+    }
+}
+
+fn clock_renderer() -> (Renderer, SeenClocks) {
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let renderer = null_builder()
+        .with_feature(RecordsClock {
+            seen: Arc::clone(&seen),
+        })
+        .build()
+        .expect("renderer");
+    (renderer, seen)
+}
+
+#[test]
+fn the_frame_counts_committed_frames_and_the_record_epoch_counts_attempts() {
+    let (mut renderer, seen) = clock_renderer();
+    let healthy = one_view(&mut renderer, Format::Rgba8Unorm);
+    let failing = failing_second_view(&mut renderer, &healthy);
+
+    renderer.render_frame(&healthy).expect("first frame");
+    assert!(renderer.render_frame(&failing).is_err());
+    renderer.render_frame(&healthy).expect("frame after the failure");
+
+    assert_eq!(*seen.lock().expect("mutex"), [(0, 1), (1, 2), (1, 3)]);
+    assert_eq!(renderer.frame_index(), 2, "the abandoned attempt is not a frame");
+}
+
+#[test]
+fn every_view_of_one_attempt_shares_the_frame_and_the_epoch() {
+    let (mut renderer, seen) = clock_renderer();
+    let first = one_view(&mut renderer, Format::Rgba8Unorm);
+    let second = one_view(&mut renderer, Format::Rgba8Unorm);
+    let input = FrameInput {
+        views: [first.views, second.views].concat(),
+        ..FrameInput::default()
+    };
+
+    renderer.render_frame(&input).expect("frame");
+
+    assert_eq!(*seen.lock().expect("mutex"), [(0, 1), (0, 1)]);
+}
+
+#[test]
+fn record_frame_advances_the_clock_when_it_returns_the_list() {
+    let (mut renderer, seen) = clock_renderer();
+    let input = one_view(&mut renderer, Format::Rgba8Unorm);
+
+    renderer.record_frame(&input).expect("first list");
+    renderer.record_frame(&input).expect("second list");
+
+    assert_eq!(*seen.lock().expect("mutex"), [(0, 1), (1, 2)]);
+    assert_eq!(renderer.frame_index(), 2);
 }
 
 // `UnlitMeshPack` takes one uniform slot per record; its ring holds 64 KiB.

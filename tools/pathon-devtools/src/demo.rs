@@ -103,14 +103,14 @@ pub(crate) fn demo_renderer() -> (Renderer, FrameInput) {
 
 pub(crate) fn demo_snapshot(renderer: &mut Renderer, input: &mut FrameInput) -> Snapshot {
     let start = Instant::now();
-    input.frame_index += 1;
+    let frame_number = renderer.frame_index() + 1;
     #[expect(clippy::cast_precision_loss, reason = "frame counters stay far below f64 precision")]
-    let time = input.frame_index as f64 / 30.0;
+    let time = frame_number as f64 / 30.0;
     input.time_seconds = time;
     let report = renderer.render_frame(input).expect("the demo scene renders");
     #[expect(clippy::cast_possible_truncation, reason = "a frame time in milliseconds fits f32")]
     let frame_ms = (start.elapsed().as_secs_f64() * 1000.0) as f32;
-    snapshot(input.frame_index, frame_ms, renderer, &report)
+    snapshot(frame_number, frame_ms, renderer, &report)
 }
 
 pub fn spawn_demo(events: Sender<ClientEvent>) {

@@ -216,7 +216,7 @@ impl RenderFeature for UnlitMeshPack {
         let mut uniform_data = [0.0_f32; 32];
         uniform_data[..16].copy_from_slice(&camera.view_projection().to_cols_array());
         uniform_data[16..].copy_from_slice(&model.to_cols_array());
-        let frame_index = view.frame_index;
+        let frame_index = view.frame;
         let ring = self
             .uniforms
             .as_mut()

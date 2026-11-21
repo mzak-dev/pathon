@@ -21,7 +21,6 @@ struct Running {
 struct ExternalWindow {
     running: Option<Running>,
     start: Instant,
-    frame_index: u64,
 }
 
 impl ExternalWindow {
@@ -78,7 +77,6 @@ impl ApplicationHandler for ExternalWindow {
                 let time_seconds = self.start.elapsed().as_secs_f64();
                 let camera = pathon_examples::orbit_camera(time_seconds, size.width as f32 / size.height.max(1) as f32);
                 let input = FrameInput {
-                    frame_index: self.frame_index,
                     time_seconds,
                     delta_seconds: 0.0,
                     views: vec![ViewInput {
@@ -89,7 +87,6 @@ impl ApplicationHandler for ExternalWindow {
                 if let Err(error) = running.renderer.render_frame(&input) {
                     log::error!("frame failed: {error}");
                 }
-                self.frame_index += 1;
             }
             _ => {}
         }
@@ -108,7 +105,6 @@ fn main() {
     let mut app = ExternalWindow {
         running: None,
         start: Instant::now(),
-        frame_index: 0,
     };
     event_loop.run_app(&mut app).expect("event loop ran");
 }

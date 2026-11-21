@@ -122,7 +122,7 @@ impl Host {
         self.target = target;
     }
 
-    fn redraw(&mut self, frame_index: u64, time_seconds: f64) {
+    fn redraw(&mut self, time_seconds: f64) {
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("host background"),
         });
@@ -150,7 +150,6 @@ impl Host {
         let aspect = self.config.width as f32 / self.config.height.max(1) as f32;
         let camera = pathon_examples::orbit_camera(time_seconds, aspect);
         let input = FrameInput {
-            frame_index,
             time_seconds,
             delta_seconds: 0.0,
             views: vec![ViewInput {
@@ -188,7 +187,6 @@ impl Host {
 struct App {
     host: Option<Host>,
     start: Instant,
-    frame_index: u64,
 }
 
 impl ApplicationHandler for App {
@@ -206,8 +204,7 @@ impl ApplicationHandler for App {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(size) => host.resize(size.width, size.height),
             WindowEvent::RedrawRequested => {
-                host.redraw(self.frame_index, self.start.elapsed().as_secs_f64());
-                self.frame_index += 1;
+                host.redraw(self.start.elapsed().as_secs_f64());
             }
             _ => {}
         }
@@ -226,7 +223,6 @@ fn main() {
     let mut app = App {
         host: None,
         start: Instant::now(),
-        frame_index: 0,
     };
     event_loop.run_app(&mut app).expect("event loop ran");
 }

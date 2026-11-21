@@ -37,7 +37,10 @@ pub struct Renderer {
     targets: Pool<TargetId, Target>,
     runner: GraphRunner,
     release: DeferredRelease,
+    // Frames committed so far (ADR-0022): the clock of `release`.
     frame: u64,
+    // Record attempts started so far, abandoned ones included.
+    record_epoch: u64,
     on_reupload: Option<ReuploadFn>,
     shared: Shared,
     frame_captures: Vec<GraphCapture>,
@@ -79,6 +82,7 @@ impl Renderer {
             runner: GraphRunner::new(clear_color),
             release: DeferredRelease::new(frames_in_flight),
             frame: 0,
+            record_epoch: 0,
             on_reupload: None,
             shared,
             frame_captures: Vec::new(),
@@ -119,6 +123,11 @@ impl Renderer {
 
     pub fn device(&self) -> &Arc<Device> {
         &self.device
+    }
+
+    // Frames committed so far: a frame counts once its list was submitted (or, in mode A, returned).
+    pub fn frame_index(&self) -> u64 {
+        self.frame
     }
 
     pub fn features(&self) -> Vec<(&'static str, FeatureStatus)> {
@@ -251,6 +260,7 @@ impl Renderer {
     // Records every view, submits on the device's queue and presents window surfaces.
     pub fn render_frame(&mut self, input: &FrameInput) -> Result<FrameReport, RenderError> {
         self.ensure_device()?;
+        self.record_epoch += 1;
         let mut commands = CommandList::new();
         let mut presents = Vec::new();
         let mut report = FrameReport::default();
@@ -273,7 +283,6 @@ impl Renderer {
             self.drop_frame_results();
             return Err(error.into());
         }
-        self.end_frame();
         report.captures = std::mem::take(&mut self.frame_captures);
         report.diagnostics = std::mem::take(&mut self.frame_diagnostics);
         Ok(report)
@@ -307,13 +316,13 @@ impl Renderer {
     // Mode A: the host submits the returned list itself (e.g. through `interop::encode_into`).
     pub fn record_frame(&mut self, input: &FrameInput) -> Result<CommandList, RenderError> {
         self.ensure_device()?;
+        self.record_epoch += 1;
         let mut commands = CommandList::new();
         if let Err(error) = self.record_offscreen_views(input, &mut commands) {
             self.abandon_frame();
             return Err(error);
         }
         self.commit_frame_state();
-        self.end_frame();
         self.drop_frame_results();
         Ok(commands)
     }
@@ -365,9 +374,6 @@ impl Renderer {
             }
         }
         self.runner.commit_frame();
-    }
-
-    fn end_frame(&mut self) {
         self.release.collect(self.frame, self.device.as_ref());
         self.frame += 1;
     }
@@ -434,7 +440,8 @@ impl Renderer {
     ) -> Result<(GraphStats, bool), RenderError> {
         let output_size = PhysicalSize::new(output.desc.size.width, output.desc.size.height);
         let mut view_ctx = ViewCtx::new(view_id(view.target), output_size, view.camera);
-        view_ctx.frame_index = input.frame_index;
+        view_ctx.frame = self.frame;
+        view_ctx.record_epoch = self.record_epoch;
         view_ctx.time_seconds = input.time_seconds;
         view_ctx.delta_seconds = input.delta_seconds;
         self.registry.prepare_view(&mut view_ctx, &self.shared);

@@ -421,6 +421,22 @@ fn a_pack_that_fails_to_record_is_disabled_and_not_called_again() {
 }
 
 #[test]
+fn a_failing_pack_is_reported_once_per_frame() {
+    let mut renderer = null_builder()
+        .with_feature(FailsToRecord {
+            calls: Arc::new(AtomicUsize::new(0)),
+        })
+        .build()
+        .expect("renderer");
+    let input = one_view(&mut renderer, Format::Rgba8Unorm);
+
+    let report = renderer.render_frame(&input).expect("the frame still renders");
+
+    let failures = report.diagnostics.iter().filter(|d| d.code == "F0105").count();
+    assert_eq!(failures, 1);
+}
+
+#[test]
 fn a_minimised_window_is_skipped_until_it_has_a_size_again() {
     let mut renderer = null_builder().build().expect("renderer");
     let window = renderer

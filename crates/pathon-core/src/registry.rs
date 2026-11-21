@@ -1,4 +1,6 @@
-use pathon_api::{Negotiation, RenderFeature, Requirements, Role, SetupCtx, Shared, TaskPool};
+use pathon_api::{
+    Negotiation, PrepareCtx, RecordCtx, RenderFeature, Requirements, Role, SetupCtx, Shared, TaskPool, ViewCtx,
+};
 use pathon_diag::Diagnostic;
 use pathon_graph::{OrderNode, Stage, sort_nodes};
 use pathon_rhi::{Backend, Caps, DeviceApi, DeviceRequest};
@@ -28,16 +30,16 @@ pub struct FeatureInfo {
     pub order: Option<usize>,
 }
 
-pub(crate) struct FeatureEntry {
-    pub(crate) feature: Box<dyn RenderFeature>,
-    pub(crate) status: FeatureStatus,
+struct FeatureEntry {
+    feature: Box<dyn RenderFeature>,
+    status: FeatureStatus,
 }
 
 // Registered render features in frame order, with the outcome of requirements, negotiation, roles and setup.
 pub(crate) struct Registry {
-    pub(crate) entries: Vec<FeatureEntry>,
-    pub(crate) order: Vec<usize>,
-    pub(crate) temporal_owner: Option<usize>,
+    entries: Vec<FeatureEntry>,
+    order: Vec<usize>,
+    temporal_owner: Option<usize>,
 }
 
 impl Registry {
@@ -57,16 +59,54 @@ impl Registry {
     }
 
     // Takes the feature out of the frame for good, wherever it failed.
-    pub(crate) fn disable(&mut self, index: usize, diagnostic: Diagnostic) {
-        pathon_diag::emit(&diagnostic);
+    pub(crate) fn disable(&mut self, index: usize, diagnostic: &Diagnostic) {
+        pathon_diag::emit(diagnostic);
+        self.mark_disabled(index, diagnostic);
+    }
+
+    fn mark_disabled(&mut self, index: usize, diagnostic: &Diagnostic) {
         self.entries[index].status = FeatureStatus::Disabled {
             code: diagnostic.code,
-            reason: diagnostic.message,
+            reason: diagnostic.message.clone(),
         };
         self.order.retain(|active| *active != index);
         if self.temporal_owner == Some(index) {
             self.temporal_owner = None;
         }
+    }
+
+    pub(crate) fn active_names(&self) -> Vec<&'static str> {
+        self.order
+            .iter()
+            .map(|index| self.entries[*index].feature.name())
+            .collect()
+    }
+
+    pub(crate) fn prepare_view(&mut self, view: &mut ViewCtx, shared: &Shared) {
+        for index in &self.order {
+            let owns_temporal = self.temporal_owner == Some(*index);
+            let mut ctx = PrepareCtx::new(view, owns_temporal, shared);
+            self.entries[*index].feature.prepare_view(&mut ctx);
+        }
+    }
+
+    // Features that fail are taken out of the frame; their F0105 is returned for the caller to report.
+    pub(crate) fn record_view(&mut self, ctx: &mut RecordCtx<'_>) -> Vec<Diagnostic> {
+        let mut failed = Vec::new();
+        for index in &self.order {
+            if let Err(error) = self.entries[*index].feature.record(ctx) {
+                failed.push((*index, error));
+            }
+        }
+        failed
+            .into_iter()
+            .map(|(index, error)| {
+                let name = self.entries[index].feature.name();
+                let diagnostic = Diagnostic::error("F0105", format!("'{name}' failed to record: {error}"));
+                self.mark_disabled(index, &diagnostic);
+                diagnostic
+            })
+            .collect()
     }
 
     // Phase 1, before the device exists. The first feature to name a backend wins; later conflicting ones are off.
@@ -80,7 +120,7 @@ impl Registry {
                     Some((owned, owner)) if owned != wanted => {
                         self.disable(
                             index,
-                            Diagnostic::warning(
+                            &Diagnostic::warning(
                                 "F0201",
                                 format!("'{name}' requires {wanted:?}, but {owner} already chose {owned:?}"),
                             )
@@ -113,7 +153,7 @@ impl Registry {
                 let name = self.entries[index].feature.name();
                 self.disable(
                     index,
-                    Diagnostic::error("F0104", format!("'{name}' failed after device reset: {error}")),
+                    &Diagnostic::error("F0104", format!("'{name}' failed after device reset: {error}")),
                 );
             }
         }
@@ -137,7 +177,7 @@ impl Registry {
                 Negotiation::Disabled { reason } => {
                     self.disable(
                         index,
-                        Diagnostic::warning("F0101", format!("'{name}' disabled: {reason}")),
+                        &Diagnostic::warning("F0101", format!("'{name}' disabled: {reason}")),
                     );
                 }
             }
@@ -193,7 +233,7 @@ impl Registry {
                 let holder = self.entries[*holder].feature.name();
                 self.disable(
                     index,
-                    Diagnostic::warning(
+                    &Diagnostic::warning(
                         "F0102",
                         format!("'{name}' claims role '{}', already held by '{holder}'", role.name()),
                     )
@@ -204,7 +244,7 @@ impl Registry {
             if let Err(error) = self.entries[index].feature.setup(ctx) {
                 self.disable(
                     index,
-                    Diagnostic::error("F0104", format!("'{name}' failed during setup: {error}")),
+                    &Diagnostic::error("F0104", format!("'{name}' failed during setup: {error}")),
                 );
                 continue;
             }

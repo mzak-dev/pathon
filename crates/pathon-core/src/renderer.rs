@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use pathon_api::{PrepareCtx, RecordCtx, Shared, Slot, Slots, TaskPool, ViewCtx, ViewId};
+use pathon_api::{RecordCtx, Shared, Slot, Slots, TaskPool, ViewCtx, ViewId};
 use pathon_diag::Diagnostic;
 use pathon_graph::{
     FrameGraph, FrameSizes, GraphCache, GraphCapture, GraphStats, PassDesc, Stage, TextureHandle, TexturePool,
@@ -132,11 +132,7 @@ impl Renderer {
     }
 
     pub fn active_features(&self) -> Vec<&'static str> {
-        self.registry
-            .order
-            .iter()
-            .map(|index| self.registry.entries[*index].feature.name())
-            .collect()
+        self.registry.active_names()
     }
 
     // Called after the device was rebuilt and every pack re-created its GPU objects: re-upload scene data here.
@@ -402,17 +398,13 @@ impl Renderer {
         view_ctx.frame_index = input.frame_index;
         view_ctx.time_seconds = input.time_seconds;
         view_ctx.delta_seconds = input.delta_seconds;
-        for feature_index in &self.registry.order {
-            let owns_temporal = self.registry.temporal_owner == Some(*feature_index);
-            let mut ctx = PrepareCtx::new(&mut view_ctx, owns_temporal, &self.shared);
-            self.registry.entries[*feature_index].feature.prepare_view(&mut ctx);
-        }
+        self.registry.prepare_view(&mut view_ctx, &self.shared);
 
         let mut graph = FrameGraph::new();
         let output_handle = self.import_output(&mut graph, output);
         let mut slots = Slots::new();
         let mut diagnostics = Vec::new();
-        let mut failed = Vec::new();
+        let record_failures;
         {
             let mut ctx = RecordCtx::new(
                 &mut graph,
@@ -423,20 +415,13 @@ impl Renderer {
                 &mut self.shared,
             );
             ctx.set_slot(Slot::OUTPUT, output_handle);
-            for feature_index in &self.registry.order {
-                if let Err(error) = self.registry.entries[*feature_index].feature.record(&mut ctx) {
-                    failed.push((*feature_index, error));
-                }
-            }
+            record_failures = self.registry.record_view(&mut ctx);
         }
         for diagnostic in &diagnostics {
             self.report(diagnostic);
         }
-        for (feature_index, error) in failed {
-            let name = self.registry.entries[feature_index].feature.name();
-            let diagnostic = Diagnostic::error("F0105", format!("'{name}' failed to record: {error}"));
-            self.frame_diagnostics.push(diagnostic.clone());
-            self.registry.disable(feature_index, diagnostic);
+        for diagnostic in &record_failures {
+            self.report(diagnostic);
         }
         graph.set_capture(self.capture);
 

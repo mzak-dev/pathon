@@ -1,7 +1,7 @@
 // Raw wgpu access. Only vendor packs and host adapters may depend on this crate (`xtask deps-check`).
 
 use pathon_rhi_types::{
-    CommandList, DeclaredAccess, DeviceApi, ResourceRef, RhiError, TextureDesc, TextureDimension, TextureId,
+    CommandList, DeclaredAccess, DeviceApi, Features, ResourceRef, RhiError, TextureDesc, TextureDimension, TextureId,
     TextureViewDesc, TextureViewId,
 };
 
@@ -128,6 +128,6 @@ impl WgpuDevice {
     // Records a pathon command list into an encoder owned by the host; the host submits it (mode A, ADR-0005).
     pub fn encode_into(&self, list: CommandList, encoder: &mut wgpu::CommandEncoder) -> Result<(), RhiError> {
         let objects = self.lock();
-        encode::encode_into(&objects, encoder, list)
+        encode::encode_into(&objects, encoder, list, self.caps().has(Features::IMMEDIATES))
     }
 }

@@ -274,6 +274,31 @@ impl WgpuDevice {
         }
     }
 
+    fn pipeline_layout(
+        &self,
+        objects: &Objects,
+        label: &str,
+        layouts: &[BindGroupLayoutId],
+        immediate_size: u32,
+    ) -> Result<wgpu::PipelineLayout, RhiError> {
+        let mut bind_group_layouts = Vec::with_capacity(layouts.len());
+        for layout in layouts {
+            bind_group_layouts.push(Some(
+                objects
+                    .layouts
+                    .get(*layout)
+                    .ok_or(RhiError::InvalidHandle("bind group layout"))?,
+            ));
+        }
+        self.scoped(|| {
+            self.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some(label),
+                bind_group_layouts: &bind_group_layouts,
+                immediate_size,
+            })
+        })
+    }
+
     fn texture_entry<R>(&self, texture: TextureId, read: impl FnOnce(&TextureEntry) -> R) -> Result<R, RhiError> {
         self.lock()
             .textures
@@ -319,7 +344,14 @@ fn build_caps(adapter: &wgpu::Adapter, device: &wgpu::Device, queue: &wgpu::Queu
             device_type: convert::device_type_from_wgpu(info.device_type),
         },
         features,
-        limits: convert::limits_from_wgpu(&device.limits()),
+        limits: {
+            let mut limits = convert::limits_from_wgpu(&device.limits());
+            // The adapter's limit is requested wholesale, but it only means something with the feature on.
+            if !features.contains(Features::IMMEDIATES) {
+                limits.max_immediate_size = 0;
+            }
+            limits
+        },
         formats,
         timestamp_period_ns: queue.get_timestamp_period(),
     }
@@ -563,14 +595,13 @@ impl DeviceApi for WgpuDevice {
     }
 
     fn create_render_pipeline(&self, desc: &RenderPipelineDesc) -> Result<RenderPipelineId, RhiError> {
+        self.caps.check_immediate_size(desc.label, desc.immediate_size)?;
+        desc.vertex.check_constants(desc.label)?;
+        if let Some(fragment) = &desc.fragment {
+            fragment.check_constants(desc.label)?;
+        }
         let mut objects = self.lock();
-        let layout = pipeline_layout(
-            &self.device,
-            &objects,
-            desc.label,
-            &desc.bind_group_layouts,
-            desc.immediate_size,
-        )?;
+        let layout = self.pipeline_layout(&objects, desc.label, &desc.bind_group_layouts, desc.immediate_size)?;
         let vertex_module = objects
             .modules
             .get(desc.vertex.module)
@@ -615,6 +646,8 @@ impl DeviceApi for WgpuDevice {
                 }))
             })
             .collect::<Result<_, RhiError>>()?;
+        let vertex_constants = override_constants(&desc.vertex);
+        let fragment_constants = desc.fragment.as_ref().map_or_else(Vec::new, override_constants);
         let fragment = match &desc.fragment {
             Some(stage) => Some(wgpu::FragmentState {
                 module: objects
@@ -622,7 +655,7 @@ impl DeviceApi for WgpuDevice {
                     .get(stage.module)
                     .ok_or(RhiError::InvalidHandle("shader module"))?,
                 entry_point: Some(stage.entry_point),
-                compilation_options: compilation_options(stage),
+                compilation_options: compilation_options(&fragment_constants),
                 targets: &targets,
             }),
             None => None,
@@ -646,7 +679,7 @@ impl DeviceApi for WgpuDevice {
                 vertex: wgpu::VertexState {
                     module: vertex_module,
                     entry_point: Some(desc.vertex.entry_point),
-                    compilation_options: compilation_options(&desc.vertex),
+                    compilation_options: compilation_options(&vertex_constants),
                     buffers: &buffers,
                 },
                 primitive: wgpu::PrimitiveState {
@@ -670,25 +703,22 @@ impl DeviceApi for WgpuDevice {
     }
 
     fn create_compute_pipeline(&self, desc: &ComputePipelineDesc) -> Result<ComputePipelineId, RhiError> {
+        self.caps.check_immediate_size(desc.label, desc.immediate_size)?;
+        desc.shader.check_constants(desc.label)?;
         let mut objects = self.lock();
-        let layout = pipeline_layout(
-            &self.device,
-            &objects,
-            desc.label,
-            &desc.bind_group_layouts,
-            desc.immediate_size,
-        )?;
+        let layout = self.pipeline_layout(&objects, desc.label, &desc.bind_group_layouts, desc.immediate_size)?;
         let module = objects
             .modules
             .get(desc.shader.module)
             .ok_or(RhiError::InvalidHandle("shader module"))?;
+        let shader_constants = override_constants(&desc.shader);
         let pipeline = self.scoped(|| {
             self.device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
                 label: Some(desc.label),
                 layout: Some(&layout),
                 module,
                 entry_point: Some(desc.shader.entry_point),
-                compilation_options: compilation_options(&desc.shader),
+                compilation_options: compilation_options(&shader_constants),
                 cache: None,
             })
         })?;
@@ -948,32 +978,17 @@ impl DeviceApi for WgpuDevice {
     }
 }
 
-fn pipeline_layout(
-    device: &wgpu::Device,
-    objects: &Objects,
-    label: &str,
-    layouts: &[BindGroupLayoutId],
-    immediate_size: u32,
-) -> Result<wgpu::PipelineLayout, RhiError> {
-    let mut bind_group_layouts = Vec::with_capacity(layouts.len());
-    for layout in layouts {
-        bind_group_layouts.push(Some(
-            objects
-                .layouts
-                .get(*layout)
-                .ok_or(RhiError::InvalidHandle("bind group layout"))?,
-        ));
-    }
-    Ok(device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        label: Some(label),
-        bind_group_layouts: &bind_group_layouts,
-        immediate_size,
-    }))
+fn override_constants(stage: &ShaderStage) -> Vec<(&'static str, f64)> {
+    stage
+        .constants
+        .iter()
+        .map(|(name, value)| (*name, value.get()))
+        .collect()
 }
 
-fn compilation_options(stage: &ShaderStage) -> wgpu::PipelineCompilationOptions<'_> {
+fn compilation_options<'a>(constants: &'a [(&'a str, f64)]) -> wgpu::PipelineCompilationOptions<'a> {
     wgpu::PipelineCompilationOptions {
-        constants: &stage.constants,
+        constants,
         ..wgpu::PipelineCompilationOptions::default()
     }
 }

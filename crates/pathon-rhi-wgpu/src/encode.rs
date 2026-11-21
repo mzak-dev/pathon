@@ -1,6 +1,6 @@
 use pathon_rhi_types::{
-    BufferCopy, BufferId, Command, CommandList, ComputePassDesc, DepthAccess, Extent3d, LoadOp, RenderPassDesc,
-    RhiError, StoreOp, TextureCopy, TextureViewId, Transfer,
+    BufferCopy, BufferId, Command, CommandList, ComputePassDesc, DepthAccess, DeviceApi, Extent3d, Features, LoadOp,
+    RenderPassDesc, RhiError, StoreOp, TextureCopy, TextureViewId, Transfer,
 };
 
 use crate::convert;
@@ -9,6 +9,15 @@ use crate::interop::ExternalContext;
 
 fn structure_error(message: String) -> RhiError {
     RhiError::validation("R0104", message)
+}
+
+// wgpu panics on set_immediates without the feature (WebGPU has none), so the command is refused first.
+fn require_immediates(enabled: bool) -> Result<(), RhiError> {
+    if enabled {
+        Ok(())
+    } else {
+        Err(structure_error("set_immediates needs Features::IMMEDIATES".into()))
+    }
 }
 
 fn new_encoder(device: &wgpu::Device) -> wgpu::CommandEncoder {
@@ -21,6 +30,7 @@ fn new_encoder(device: &wgpu::Device) -> wgpu::CommandEncoder {
 // object lock is released around it.
 pub(crate) fn encode_list(this: &WgpuDevice, list: CommandList) -> Result<Vec<wgpu::CommandBuffer>, RhiError> {
     let (device, queue) = (this.device(), this.queue());
+    let immediates = this.caps().has(Features::IMMEDIATES);
     let mut objects = this.lock();
     let mut buffers = Vec::new();
     let mut encoder = new_encoder(device);
@@ -51,7 +61,7 @@ pub(crate) fn encode_list(this: &WgpuDevice, list: CommandList) -> Result<Vec<wg
                 encoder.pop_debug_group();
                 open_groups.pop();
             }
-            command => encode_command(&objects, &mut encoder, command, &mut commands)?,
+            command => encode_command(&objects, &mut encoder, command, &mut commands, immediates)?,
         }
     }
     buffers.push(encoder.finish());
@@ -62,13 +72,14 @@ pub(crate) fn encode_into(
     objects: &Objects,
     encoder: &mut wgpu::CommandEncoder,
     list: CommandList,
+    immediates: bool,
 ) -> Result<(), RhiError> {
     let mut commands = list.into_commands().into_iter();
     while let Some(command) = commands.next() {
         if let Command::External(_) = command {
             return Err(RhiError::Unsupported("external commands need their own submission"));
         }
-        encode_command(objects, encoder, command, &mut commands)?;
+        encode_command(objects, encoder, command, &mut commands, immediates)?;
     }
     Ok(())
 }
@@ -78,12 +89,13 @@ fn encode_command(
     encoder: &mut wgpu::CommandEncoder,
     command: Command,
     rest: &mut impl Iterator<Item = Command>,
+    immediates: bool,
 ) -> Result<(), RhiError> {
     match command {
         // wgpu tracks resource states itself; the plan only feeds validation on the null backend.
         Command::TextureAccess { .. } | Command::BufferAccess { .. } => {}
-        Command::BeginRenderPass(desc) => encode_render_pass(objects, encoder, &desc, rest)?,
-        Command::BeginComputePass(desc) => encode_compute_pass(objects, encoder, *desc, rest)?,
+        Command::BeginRenderPass(desc) => encode_render_pass(objects, encoder, &desc, rest, immediates)?,
+        Command::BeginComputePass(desc) => encode_compute_pass(objects, encoder, *desc, rest, immediates)?,
         Command::Transfer(transfer) => encode_transfer(objects, encoder, *transfer)?,
         Command::PushDebugGroup(label) => encoder.push_debug_group(label),
         Command::PopDebugGroup => encoder.pop_debug_group(),
@@ -140,6 +152,7 @@ fn encode_render_pass(
     encoder: &mut wgpu::CommandEncoder,
     desc: &RenderPassDesc,
     rest: &mut impl Iterator<Item = Command>,
+    immediates: bool,
 ) -> Result<(), RhiError> {
     let mut color_attachments = Vec::with_capacity(desc.color.len());
     for attachment in &desc.color {
@@ -227,7 +240,10 @@ fn encode_render_pass(
                     .ok_or(RhiError::InvalidHandle("bind group"))?,
                 &[],
             ),
-            Command::SetImmediates { offset, data } => pass.set_immediates(offset, &data),
+            Command::SetImmediates { offset, data } => {
+                require_immediates(immediates)?;
+                pass.set_immediates(offset, &data);
+            }
             Command::SetVertexBuffer {
                 slot,
                 buffer: id,
@@ -280,6 +296,7 @@ fn encode_compute_pass(
     encoder: &mut wgpu::CommandEncoder,
     desc: ComputePassDesc,
     rest: &mut impl Iterator<Item = Command>,
+    immediates: bool,
 ) -> Result<(), RhiError> {
     let timestamp_writes = match desc.timestamps {
         Some(timestamps) => Some(wgpu::ComputePassTimestampWrites {
@@ -313,7 +330,10 @@ fn encode_compute_pass(
                     .ok_or(RhiError::InvalidHandle("bind group"))?,
                 &[],
             ),
-            Command::SetImmediates { offset, data } => pass.set_immediates(offset, &data),
+            Command::SetImmediates { offset, data } => {
+                require_immediates(immediates)?;
+                pass.set_immediates(offset, &data);
+            }
             Command::Dispatch { x, y, z } => pass.dispatch_workgroups(x, y, z),
             Command::PushDebugGroup(label) => pass.push_debug_group(label),
             Command::PopDebugGroup => pass.pop_debug_group(),
@@ -376,4 +396,15 @@ fn texture_copy(objects: &Objects, copy: TextureCopy) -> Result<wgpu::TexelCopyT
         },
         aspect: convert::aspect_to_wgpu(copy.aspect),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn immediates_are_refused_without_the_feature() {
+        assert_eq!(require_immediates(false).expect_err("refused").code(), "R0104");
+        assert!(require_immediates(true).is_ok());
+    }
 }

@@ -23,6 +23,7 @@ Przykład z prawdziwym oknem: `cargo run -p pathon-examples --bin vertical_slice
 | `v` | następny widok |
 | `p` | pauza (snapshoty dalej przychodzą, ekran stoi) |
 | `s` | zapis bieżącego snapshotu do `pathon-snapshot-<klatka>.json` |
+| `d` | zapis grafu bieżącego widoku do `pathon-graph-<klatka>.dot` (Graphviz; wycięte passy szare i przerywane) |
 | `q`, `Esc` | wyjście |
 
 ## Zakładki

@@ -214,7 +214,7 @@ Hosty (M6, M7) nie są na ścieżce minimalnej, ale ich szew jest: M2-19 i M4-20
   - Rejestr paczek, przydział ról (F0102), konflikt backendów (F0201).
   - **Gotowe gdy:** test potwierdza, że core nie tworzy wątków; przykład z runnerem działa natywnie na wątku renderu i w jednym wątku na wasm.
 - [ ] **M2-12 · `pathon-profile`** — timestampy passów, `tracing` + Tracy / puffin za feature. **Gotowe gdy:** zrzut z Tracy z nazwanymi passami.
-- [ ] **M2-13 · `pathon-graph-viz`** — eksport grafu do JSON i DOT. **Gotowe gdy:** DOT renderuje się w Graphviz dla przykładu z M2-18.
+- [x] **M2-13 · `pathon-graph-viz`** — eksport grafu do JSON i DOT (JSON to snapshoty devtools, DOT: `pathon_graph::to_dot` i klawisz `d`). **Gotowe gdy:** DOT renderuje się w Graphviz dla przykładu z M2-18.
 - [x] **M2-14 · `pathon-test` i paczki adwersaryjne** ★
   - **Stan 20.11.2026:** zamiast paczki z hookiem materiału jest OnDemandConsumer (sloty na żądanie) — prawdziwe hooki WGSL przyjdą z M4-03.
   - Paczki testowe: podmiana roli Geometry, upscaler zmieniający `render_size`, paczka z hookiem materiału, atrapa paczki vendorowej z `Cmd::External`.

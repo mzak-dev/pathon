@@ -4,10 +4,12 @@ mod graph;
 mod panels;
 
 use std::collections::VecDeque;
+use std::path::Path;
 use std::time::Duration;
 use std::{fs, io};
 
 use crossbeam_channel::Receiver;
+use pathon_graph::{DotPass, render_dot};
 use ratatui::Frame;
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use ratatui::layout::{Constraint, Layout};
@@ -187,6 +189,7 @@ impl App {
             }
             KeyCode::Char('p') => self.paused = !self.paused,
             KeyCode::Char('s') => self.save(),
+            KeyCode::Char('d') => self.save_dot(Path::new(".")),
             KeyCode::Left => self.navigate(Direction::Left),
             KeyCode::Right => self.navigate(Direction::Right),
             KeyCode::Up => self.navigate(Direction::Up),
@@ -245,6 +248,27 @@ impl App {
         let path = format!("pathon-snapshot-{}.json", snapshot.frame);
         self.message = Some(match fs::write(&path, snapshot.to_line()) {
             Ok(()) => format!("zapisano {path}"),
+            Err(error) => format!("zapis się nie udał: {error}"),
+        });
+    }
+
+    fn save_dot(&mut self, directory: &Path) {
+        let (Some(snapshot), Some(view)) = (&self.snapshot, self.current_view()) else {
+            return;
+        };
+        let passes: Vec<DotPass<'_>> = view
+            .passes
+            .iter()
+            .map(|pass| DotPass {
+                name: &pass.name,
+                stage: &pass.stage,
+                order: pass.order,
+            })
+            .collect();
+        let dot = render_dot(&passes, &view.edges);
+        let path = directory.join(format!("pathon-graph-{}.dot", snapshot.frame));
+        self.message = Some(match fs::write(&path, dot) {
+            Ok(()) => format!("zapisano {}", path.display()),
             Err(error) => format!("zapis się nie udał: {error}"),
         });
     }
@@ -348,6 +372,26 @@ mod tests {
         let text = screen(&app);
         assert!(text.contains("test upscale"), "{text}");
         assert!(text.contains("wycięty"), "the culled debug mask is reachable: {text}");
+    }
+
+    #[test]
+    fn saving_dot_writes_the_current_view_next_to_the_frame_number() {
+        let mut app = demo_app();
+        let directory = std::env::temp_dir().join("pathon-devtools-dot-test");
+        fs::create_dir_all(&directory).expect("temp dir");
+
+        app.save_dot(&directory);
+
+        let frame = app.snapshot.as_ref().expect("snapshot").frame;
+        let dot = fs::read_to_string(directory.join(format!("pathon-graph-{frame}.dot"))).expect("file written");
+        assert!(dot.starts_with("digraph"), "{dot}");
+        assert!(dot.contains("unlit mesh") && dot.contains("dashed"), "{dot}");
+        assert!(
+            app.message
+                .as_deref()
+                .is_some_and(|message| message.starts_with("zapisano"))
+        );
+        fs::remove_dir_all(&directory).expect("cleanup");
     }
 
     #[test]

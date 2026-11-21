@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use pathon_graph::{
     CapturedKind, CapturedTarget, FrameGraph, FrameSizes, GraphBufferDesc, GraphTextureDesc, HistoryStore, PassContext,
-    PassDesc, ResourcePool, Stage, TextureHandle,
+    PassDesc, ResourcePool, Stage, TextureHandle, to_dot,
 };
 use pathon_resources::DeferredRelease;
 use pathon_rhi_null::NullDevice;
@@ -384,6 +384,43 @@ fn capture_describes_order_culling_dependencies_aliasing_and_barriers() {
     assert!(capture.final_barriers.iter().any(|barrier| barrier.target
         == CapturedTarget::Texture(physical("output").expect("physical"))
         && barrier.access == Access::SHADER_READ));
+}
+
+#[test]
+fn dot_lists_passes_edges_and_culled_passes() {
+    let device = NullDevice::new();
+    let mut pool = ResourcePool::new();
+    let mut graph = FrameGraph::new();
+    graph.set_capture(true);
+    let output = import_output(&mut graph, &device);
+    let desc = GraphTextureDesc::render(Format::Rgba8Unorm);
+
+    let first = graph.create_texture("t1", desc);
+    let mut pass = graph.add_pass(PassDesc::new("t1", Stage::Opaque));
+    let first = pass.write(first, Access::COLOR_ATTACHMENT);
+    pass.record(clear(first));
+    let mut pass = graph.add_pass(PassDesc::new("to \"output\"", Stage::Tonemap));
+    let source = pass.read(first, Access::COPY_SRC);
+    let written = pass.write(output, Access::COPY_DST);
+    pass.record(copy(source, written));
+    let unused = graph.create_texture("unused", desc);
+    let mut pass = graph.add_pass(PassDesc::new("unused producer", Stage::Opaque));
+    let unused = pass.write(unused, Access::COLOR_ATTACHMENT);
+    pass.record(clear(unused));
+
+    let capture = run(graph, &device, &mut pool, 0).capture.expect("capture was enabled");
+    let dot = to_dot(&capture);
+
+    assert!(dot.starts_with("digraph"), "{dot}");
+    assert!(dot.contains("t1") && dot.contains("unused producer"), "{dot}");
+    assert!(dot.contains("p0 -> p1"), "{dot}");
+    assert!(dot.contains("Opaque #0"), "{dot}");
+    assert_eq!(
+        dot.matches("dashed").count(),
+        1,
+        "only the culled pass is dashed: {dot}"
+    );
+    assert!(dot.contains("to \\\"output\\\""), "quotes are escaped: {dot}");
 }
 
 #[test]

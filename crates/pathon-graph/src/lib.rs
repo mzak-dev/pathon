@@ -3,6 +3,7 @@
 mod cache;
 mod capture;
 mod compile;
+mod dot;
 mod execute;
 mod graph;
 mod history;
@@ -14,6 +15,7 @@ pub use capture::{
     AccessCapture, BarrierCapture, CapturedKind, CapturedTarget, GraphCapture, PassCapture, ResourceCapture,
 };
 pub use compile::{CompiledGraph, GraphStats};
+pub use dot::{DotPass, render_dot, to_dot};
 pub use execute::{Execution, PassContext};
 pub use graph::{
     BufferHandle, FrameGraph, FrameSizes, GraphBufferDesc, GraphSize, GraphTextureDesc, PassBuilder, PassDesc,

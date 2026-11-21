@@ -263,12 +263,14 @@ impl Renderer {
             self.abandon_frame();
             return Err(error);
         }
+        // The list has run, so its states and history are real even if presenting fails below.
+        self.commit_frame_state();
         let mut presented = Ok(());
         for surface in presents {
             presented = presented.and(self.device.present_surface(surface));
         }
         if let Err(error) = presented {
-            self.abandon_frame();
+            self.drop_frame_results();
             return Err(error.into());
         }
         self.end_frame();
@@ -310,6 +312,7 @@ impl Renderer {
             self.abandon_frame();
             return Err(error);
         }
+        self.commit_frame_state();
         self.end_frame();
         self.drop_frame_results();
         Ok(commands)
@@ -355,13 +358,16 @@ impl Renderer {
         }
     }
 
-    fn end_frame(&mut self) {
+    fn commit_frame_state(&mut self) {
         for id in self.pending_offscreen.drain(..) {
             if let Some(TargetKind::Offscreen { state, .. }) = self.targets.get_mut(id).map(|target| &mut target.kind) {
                 *state = OFFSCREEN_FINAL;
             }
         }
         self.runner.commit_frame();
+    }
+
+    fn end_frame(&mut self) {
         self.release.collect(self.frame, self.device.as_ref());
         self.frame += 1;
     }

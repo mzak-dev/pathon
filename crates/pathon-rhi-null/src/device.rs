@@ -115,18 +115,37 @@ pub(crate) struct State {
     surfaces: Pool<SurfaceId, NullSurface>,
 }
 
+// Everything a submit can change, so a rejected list can be undone.
+struct Snapshot {
+    textures: Vec<(TextureId, Vec<SubresourceState>)>,
+    buffers: Vec<(BufferId, Vec<u8>)>,
+}
+
 impl State {
-    fn texture_states(&self) -> Vec<(TextureId, Vec<SubresourceState>)> {
-        self.textures
-            .iter()
-            .map(|(id, texture)| (id, texture.subresources.clone()))
-            .collect()
+    fn snapshot(&self) -> Snapshot {
+        Snapshot {
+            textures: self
+                .textures
+                .iter()
+                .map(|(id, texture)| (id, texture.subresources.clone()))
+                .collect(),
+            buffers: self
+                .buffers
+                .iter()
+                .map(|(id, buffer)| (id, buffer.data.clone()))
+                .collect(),
+        }
     }
 
-    fn restore_texture_states(&mut self, saved: Vec<(TextureId, Vec<SubresourceState>)>) {
-        for (id, subresources) in saved {
+    fn restore(&mut self, snapshot: Snapshot) {
+        for (id, subresources) in snapshot.textures {
             if let Some(texture) = self.textures.get_mut(id) {
                 texture.subresources = subresources;
+            }
+        }
+        for (id, data) in snapshot.buffers {
+            if let Some(buffer) = self.buffers.get_mut(id) {
+                buffer.data = data;
             }
         }
     }
@@ -672,11 +691,12 @@ impl DeviceApi for NullDevice {
     fn submit(&self, commands: CommandList) -> Result<(), RhiError> {
         self.ensure_alive()?;
         let mut state = self.lock();
-        // A GPU does not run an invalid command buffer, so a rejected list must not move any texture state.
-        let saved = state.texture_states();
+        // A GPU does not run an invalid command buffer, so a rejected list must not move any texture state or buffer
+        // byte.
+        let saved = state.snapshot();
         let result = Validator::new(&mut state).run(commands);
         if result.is_err() {
-            state.restore_texture_states(saved);
+            state.restore(saved);
         }
         result
     }

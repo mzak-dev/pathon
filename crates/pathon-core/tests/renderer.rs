@@ -1300,3 +1300,69 @@ fn the_host_returns_an_offscreen_target_to_sampled_after_reading_it_back() {
 
     renderer.render_frame(&input).expect("frame after the readback");
 }
+
+// Overwrites a window's `Output` without drawing while `active`, so the list is valid but presenting fails (R0106).
+struct OverwritesWindowOutput {
+    active: Arc<AtomicBool>,
+}
+
+impl RenderFeature for OverwritesWindowOutput {
+    fn name(&self) -> &'static str {
+        "overwrites window output"
+    }
+
+    fn stage(&self) -> Stage {
+        Stage::PostProcess
+    }
+
+    fn record(&mut self, ctx: &mut RecordCtx<'_>) -> Result<(), RhiError> {
+        let Some(output) = ctx.slot(pathon_api::Slot::OUTPUT) else {
+            return Ok(());
+        };
+        let is_window = ctx.graph().texture_format(output) != Some(Format::Rgba8Unorm);
+        if !self.active.load(Ordering::SeqCst) || !is_window {
+            return Ok(());
+        }
+        let mut pass = ctx.graph().add_pass(PassDesc::new("overwrite", Stage::PostProcess));
+        let written = pass.write(output, Access::COLOR_ATTACHMENT);
+        pass.record(|_| Ok(()));
+        ctx.set_slot(pathon_api::Slot::OUTPUT, written);
+        Ok(())
+    }
+}
+
+#[test]
+fn frames_recover_after_present_failed_following_a_successful_submit() {
+    let active = Arc::new(AtomicBool::new(true));
+    let mut renderer = null_builder()
+        .with_feature(ScratchFeature {
+            draw_without_pipeline: Arc::new(AtomicBool::new(false)),
+        })
+        .with_feature(OverwritesWindowOutput {
+            active: Arc::clone(&active),
+        })
+        .build()
+        .expect("renderer");
+    let offscreen = renderer
+        .add_offscreen_target(SIZE, Format::Rgba8Unorm)
+        .expect("offscreen");
+    let window = renderer
+        .add_window(SurfaceTarget::new(Arc::new(NoWindow), SIZE, 1.0))
+        .expect("window");
+    let view = |target| ViewInput {
+        target,
+        camera: Camera::default(),
+    };
+    let input = FrameInput {
+        views: vec![view(offscreen), view(window)],
+        ..FrameInput::default()
+    };
+
+    assert!(renderer.render_frame(&input).is_err(), "presenting must fail");
+    active.store(false, Ordering::SeqCst);
+    for _ in 0..3 {
+        renderer
+            .render_frame(&input)
+            .expect("the failed present did not roll back states of a list that ran");
+    }
+}

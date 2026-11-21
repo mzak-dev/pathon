@@ -1472,3 +1472,36 @@ fn a_rejected_list_changes_no_texture_state() {
         .submit(retry)
         .expect("the first barrier of the rejected list was not applied");
 }
+
+#[test]
+fn a_rejected_list_leaves_buffer_bytes_untouched() {
+    use pathon_rhi_types::{BufferDesc, BufferUsage};
+    let device = NullDevice::new();
+    let source = device
+        .create_buffer(&BufferDesc {
+            label: "source",
+            size: 16,
+            usage: BufferUsage::COPY_SRC | BufferUsage::COPY_DST,
+        })
+        .expect("source");
+    let target = device
+        .create_buffer(&BufferDesc {
+            label: "target",
+            size: 16,
+            usage: BufferUsage::COPY_DST | BufferUsage::MAP_READ,
+        })
+        .expect("target");
+    device.write_buffer(source, 0, &[7; 16]).expect("write");
+
+    let mut rejected = CommandList::new();
+    rejected.copy_buffer_to_buffer(source, 0, target, 0, 16);
+    rejected.texture_access(
+        render_target(&device),
+        SubresourceRange::ALL,
+        Access::SAMPLED,
+        Access::COPY_SRC,
+    );
+    assert_eq!(code(device.submit(rejected)), "R0103");
+
+    assert_eq!(device.read_buffer(target).expect("read"), [0; 16]);
+}

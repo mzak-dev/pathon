@@ -14,14 +14,14 @@ Spike ash (`docs/spike-ash.md`, pozycje #6 i J) pokazał, że część zachowani
 - `Command::TextureAccess { texture, range, from: Access, to: Access }`, `CommandList::texture_access(texture, range, from, to)`. `from` to stan, w którym każdy subresource z `range` jest przed barierą; zakres z różnymi stanami dzieli się na kilka komend.
 - `from == Access::empty()` znaczy „zawartość nieważna” (UNDEFINED w Vulkanie): bariera wolno ją porzucić.
 - `rhi-null` sprawdza, że `from` równa się śledzonemu stanowi każdego subresource'a z zakresu (R0103); backend wgpu dalej pomija bariery.
-- Graf zna stan poprzedni z własnego śledzenia (`StateTracker` w `pathon-graph`), a dla importów z `initial`.
+- Graf zna stan poprzedni z własnego śledzenia (`StateTracker` w `pathon-graph`), a dla importów z `initial`. Między klatkami stan tekstur z puli pamięta `ResourcePool`, a stan celu offscreen renderer: zapisują go dwufazowo, jak historię — jako oczekujący przy nagrywaniu, zatwierdzony przez `commit_frame` po udanej klatce, odrzucony przez `abandon_frame`, gdy klatka nie dotarła do GPU (błąd późniejszego widoku, `submit`, `present`). Dzięki temu `from` zawsze zgadza się ze stanem, w którym GPU naprawdę jest. `rhi-null` jest przy tym atomowe: odrzucona lista nie zmienia żadnego stanu tekstury. Host, który kopiuje z celu offscreen, zwraca go do `SAMPLED`.
 - Limit 32 B na `Command` (ADR-0009): `Access` przechodzi na `u16` (13 bitów zajętych). Gdy zabraknie bitów, wracamy do tego ADR, zanim powiększymy komendę.
 
 ### Zapis z hosta (`write_buffer`, `write_texture`)
 
 - Dane są zachowane, a zapisane subresource'y tekstury przechodzą w stan `COPY_DST`: następna bariera ma `from: Access::COPY_DST`. Tak backend natywny nie musi pamiętać uploadu, a bariera z `Access::empty()` po uploadzie jest błędem (R0103) zamiast cichej utraty danych.
 - `write_*` jest uporządkowane przed każdym `submit`, który zaczyna się po powrocie `write_*` (z dowolnego wątku).
-- `bytes_per_row` w `write_texture` nie ma wymogu wyrównania, musi tylko mieścić wiersz bloków. Kopie bufor↔tekstura w liście komend wymagają `bytes_per_row` podzielnego przez 256 (`COPY_BYTES_PER_ROW_ALIGNMENT` z wgpu). `rhi-null` sprawdza obie reguły i `rows_per_image` (nowy kod R0113, niepoprawny układ texeli).
+- `bytes_per_row` w `write_texture` nie ma wymogu wyrównania, musi tylko mieścić wiersz bloków. Kopie bufor↔tekstura w liście komend wymagają `bytes_per_row` podzielnego przez 256 (`COPY_BYTES_PER_ROW_ALIGNMENT` z wgpu). `rows_per_image` musi pokrywać wysokość kopii w blokach zawsze, także dla jednego obrazu (backend wgpu zawsze je przekazuje). `rhi-null` sprawdza te trzy reguły (nowy kod R0113, niepoprawny układ texeli).
 
 ### Kolejność w passie
 
@@ -54,3 +54,4 @@ Bind groupy nie mają dynamicznych offsetów uniformów; dane per draw idą prze
 - Kod po `write_texture` musi zacząć barierę od `COPY_DST`.
 - `rhi-null` łapie błędne `from` i złe `bytes_per_row`, których wgpu albo nie sprawdza, albo zgłosiłby dopiero przy kopiowaniu.
 - Mniej wolnych bitów w `Access` (3).
+- Tekstura z puli, która ma znany stan, nigdy nie zaczyna klatki od `Access::empty()`, więc backend natywny nie odrzuci jej treści na starcie klatki; `from == empty` służy tylko świeżym teksturom i pierwszemu użyciu.

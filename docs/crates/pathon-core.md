@@ -12,7 +12,7 @@ Nie ma też pętli, okna, wątku, ECS ani systemu assetów (ADR-0005): wołając
 | Klatka | `render_frame(&FrameInput)` nagrywa, zgłasza i prezentuje okna; `record_frame(&FrameInput)` zwraca `CommandList`, którą host nagrywa do swojego enkodera (`interop::encode_into`) i zgłasza sam |
 | Cele | `add_window(SurfaceTarget)` albo `add_surface(SurfaceId, size)` (surface utworzony przez hosta na wątku głównym); `add_offscreen_target(size, format)`; `import_texture(id, before, after)` — tekstura hosta |
 
-Tekstura zaimportowana zachowuje treść hosta (tryb A: paczki dorysowują na obrazie hosta). Cel offscreen kończy każdą klatkę w stanie `SAMPLED`; host, który z niego kopiuje, sam wstawia przejście `SAMPLED` → `COPY_SRC` (`texture_access(texture, range, Access::SAMPLED, Access::COPY_SRC)`; na wgpu bariery są niejawne). Okna i cele offscreen są czyszczone kolorem z `with_clear_color` przez pass, który znika, jeśli paczka nadpisze `Output` przez `write`.
+Tekstura zaimportowana zachowuje treść hosta (tryb A: paczki dorysowują na obrazie hosta). Cel offscreen kończy każdą klatkę w stanie `SAMPLED`; host, który z niego kopiuje, sam wstawia przejście `SAMPLED` → `COPY_SRC` (`texture_access(texture, range, Access::SAMPLED, Access::COPY_SRC)`), a po kopii **musi** zwrócić cel do `SAMPLED` (`COPY_SRC` → `SAMPLED`): kolejna klatka zaczyna barierę od `SAMPLED` i `rhi-null` odrzuca (R0103) każde inne ułożenie, choć na wgpu bariery są niejawne i błąd byłby niewidoczny. Stan celu offscreen renderer zapisuje dopiero po udanej klatce; klatka porzucona (błąd widoku, `submit` albo `present`) go nie zmienia. Okna i cele offscreen są czyszczone kolorem z `with_clear_color` przez pass, który znika, jeśli paczka nadpisze `Output` przez `write`.
 
 ## Klatka
 

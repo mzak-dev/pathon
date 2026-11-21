@@ -3,9 +3,9 @@ use std::num::NonZeroU32;
 use pathon_rhi_null::NullDevice;
 use pathon_rhi_types::{
     Access, BindGroupDesc, BindGroupEntry, BindGroupLayoutDesc, BindGroupLayoutEntry, BindingResource, BindingType,
-    Color, ColorAttachment, CommandList, ComputePassDesc, ComputePipelineDesc, DepthAttachment, DeviceApi, Features,
-    Format, RenderPassDesc, RhiError, ShaderModuleDesc, ShaderStage, ShaderStages, StorageAccess, SubresourceRange,
-    SurfaceConfig, TextureDesc, TextureId, TextureUsage, TextureViewDesc, TextureViewDimension,
+    Color, ColorAttachment, CommandList, ComputePassDesc, ComputePipelineDesc, ComputePipelineId, DepthAttachment,
+    DeviceApi, Features, Format, RenderPassDesc, RhiError, ShaderModuleDesc, ShaderStage, ShaderStages, StorageAccess,
+    SubresourceRange, SurfaceConfig, TextureDesc, TextureId, TextureUsage, TextureViewDesc, TextureViewDimension,
 };
 
 fn code(result: Result<(), RhiError>) -> &'static str {
@@ -149,7 +149,9 @@ fn reading_hi_z_mip_before_it_is_written_is_rejected() {
             shader: ShaderStage {
                 module,
                 entry_point: "main",
+                constants: vec![],
             },
+            immediate_size: 0,
         })
         .expect("pipeline");
 
@@ -228,7 +230,9 @@ fn sampling_a_texture_in_a_storage_state_is_rejected() {
             shader: ShaderStage {
                 module,
                 entry_point: "main",
+                constants: vec![],
             },
+            immediate_size: 0,
         })
         .expect("pipeline");
 
@@ -285,7 +289,9 @@ fn sampled_compute_pass(device: &NullDevice, texture: TextureId, list: &mut Comm
             shader: ShaderStage {
                 module,
                 entry_point: "main",
+                constants: vec![],
             },
+            immediate_size: 0,
         })
         .expect("pipeline");
     let mut pass = list.compute_pass(ComputePassDesc {
@@ -926,7 +932,9 @@ fn an_array_element_in_the_wrong_state_at_dispatch_is_rejected() {
             shader: ShaderStage {
                 module,
                 entry_point: "main",
+                constants: vec![],
             },
+            immediate_size: 0,
         })
         .expect("pipeline");
     {
@@ -940,4 +948,86 @@ fn an_array_element_in_the_wrong_state_at_dispatch_is_rejected() {
     }
 
     assert_eq!(code(device.submit(list)), "R0101");
+}
+
+fn immediate_pipeline(device: &NullDevice, immediate_size: u32) -> Result<ComputePipelineId, RhiError> {
+    let module = device
+        .create_shader_module(&ShaderModuleDesc {
+            label: "immediates",
+            wgsl: "fn main() {}",
+        })
+        .expect("module");
+    device.create_compute_pipeline(&ComputePipelineDesc {
+        label: "immediates",
+        bind_group_layouts: vec![],
+        shader: ShaderStage {
+            module,
+            entry_point: "main",
+            constants: vec![],
+        },
+        immediate_size,
+    })
+}
+
+fn submit_immediates(
+    device: &NullDevice,
+    pipeline: Option<ComputePipelineId>,
+    offset: u32,
+    len: usize,
+) -> Result<(), RhiError> {
+    let mut list = CommandList::new();
+    {
+        let mut pass = list.compute_pass(ComputePassDesc {
+            label: "immediates",
+            timestamps: None,
+        });
+        if let Some(pipeline) = pipeline {
+            pass.set_pipeline(pipeline);
+        }
+        pass.set_immediates(offset, &vec![0; len]);
+    }
+    device.submit(list)
+}
+
+#[test]
+fn a_pipeline_with_immediates_needs_the_immediates_feature() {
+    let device = NullDevice::with_features(Features::empty());
+    let error = immediate_pipeline(&device, 16).expect_err("feature is off");
+    assert_eq!(error.code(), "R0002");
+}
+
+#[test]
+fn a_pipeline_with_immediates_over_the_limit_is_rejected() {
+    let device = NullDevice::with_features(Features::IMMEDIATES);
+    let over = device.caps().limits.max_immediate_size + 4;
+    let error = immediate_pipeline(&device, over).expect_err("over the limit");
+    assert_eq!(error.code(), "R0107");
+}
+
+#[test]
+fn immediates_inside_the_pipeline_range_are_accepted() {
+    let device = NullDevice::with_features(Features::IMMEDIATES);
+    let pipeline = immediate_pipeline(&device, 16).expect("pipeline");
+    submit_immediates(&device, Some(pipeline), 4, 8).expect("immediates");
+}
+
+#[test]
+fn immediates_past_the_pipeline_range_are_rejected() {
+    let device = NullDevice::with_features(Features::IMMEDIATES);
+    let pipeline = immediate_pipeline(&device, 16).expect("pipeline");
+    assert_eq!(code(submit_immediates(&device, Some(pipeline), 12, 8)), "R0104");
+}
+
+#[test]
+fn immediates_without_a_pipeline_are_rejected() {
+    let device = NullDevice::with_features(Features::IMMEDIATES);
+    assert_eq!(code(submit_immediates(&device, None, 0, 4)), "R0104");
+}
+
+#[test]
+fn unaligned_immediates_are_rejected() {
+    let device = NullDevice::with_features(Features::IMMEDIATES);
+    let pipeline = immediate_pipeline(&device, 16).expect("pipeline");
+    assert_eq!(code(submit_immediates(&device, Some(pipeline), 2, 4)), "R0104");
+    assert_eq!(code(submit_immediates(&device, Some(pipeline), 0, 6)), "R0104");
 }

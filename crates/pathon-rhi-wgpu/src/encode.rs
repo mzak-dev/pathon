@@ -227,6 +227,7 @@ fn encode_render_pass(
                     .ok_or(RhiError::InvalidHandle("bind group"))?,
                 &[],
             ),
+            Command::SetImmediates { offset, data } => pass.set_immediates(offset, &data),
             Command::SetVertexBuffer {
                 slot,
                 buffer: id,
@@ -312,6 +313,7 @@ fn encode_compute_pass(
                     .ok_or(RhiError::InvalidHandle("bind group"))?,
                 &[],
             ),
+            Command::SetImmediates { offset, data } => pass.set_immediates(offset, &data),
             Command::Dispatch { x, y, z } => pass.dispatch_workgroups(x, y, z),
             Command::PushDebugGroup(label) => pass.push_debug_group(label),
             Command::PopDebugGroup => pass.pop_debug_group(),

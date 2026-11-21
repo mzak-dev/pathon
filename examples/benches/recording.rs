@@ -205,6 +205,7 @@ fn pathon_objects(device: &WgpuDevice) -> ViaPathon {
             vertex: ShaderStage {
                 module,
                 entry_point: "vs_main",
+                constants: vec![],
             },
             vertex_buffers: vec![VertexBufferLayout {
                 stride: 8,
@@ -218,11 +219,13 @@ fn pathon_objects(device: &WgpuDevice) -> ViaPathon {
             fragment: Some(ShaderStage {
                 module,
                 entry_point: "fs_main",
+                constants: vec![],
             }),
             color_targets: vec![ColorTargetState::opaque(Format::Rgba8Unorm)],
             primitive: PrimitiveState::default(),
             depth: None,
             sample_count: 1,
+            immediate_size: 0,
         })
         .expect("pipeline");
     let buffer = |label: &'static str, size: u64, usage: BufferUsage, data: &[u8]| {

@@ -139,7 +139,9 @@ fn compute_reads_elements_of_a_texture_binding_array() {
             shader: ShaderStage {
                 module,
                 entry_point: "main",
+                constants: vec![],
             },
+            immediate_size: 0,
         })
         .expect("pipeline");
 
@@ -286,7 +288,9 @@ fn compute_reads_elements_of_a_sampler_binding_array() {
             shader: ShaderStage {
                 module,
                 entry_point: "main",
+                constants: vec![],
             },
+            immediate_size: 0,
         })
         .expect("pipeline");
 

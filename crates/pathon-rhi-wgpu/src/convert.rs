@@ -118,6 +118,7 @@ const FEATURE_TABLE: &[(Features, wgpu::Features)] = &[
     (Features::RAY_QUERY, wgpu::Features::EXPERIMENTAL_RAY_QUERY),
     (Features::MESH_SHADER, wgpu::Features::EXPERIMENTAL_MESH_SHADER),
     (Features::POLYGON_MODE_LINE, wgpu::Features::POLYGON_MODE_LINE),
+    (Features::IMMEDIATES, wgpu::Features::IMMEDIATES),
 ];
 
 // Experimental wgpu features need an explicit unsafe opt-in; pathon enables them once M8 packs need them.
@@ -166,6 +167,7 @@ pub(crate) fn limits_from_wgpu(limits: &wgpu::Limits) -> Limits {
         max_compute_workgroups_per_dimension: limits.max_compute_workgroups_per_dimension,
         max_binding_array_elements_per_shader_stage: limits.max_binding_array_elements_per_shader_stage,
         max_binding_array_sampler_elements_per_shader_stage: limits.max_binding_array_sampler_elements_per_shader_stage,
+        max_immediate_size: limits.max_immediate_size,
         min_uniform_buffer_offset_alignment: clamp_u32(limits.min_uniform_buffer_offset_alignment),
         min_storage_buffer_offset_alignment: clamp_u32(limits.min_storage_buffer_offset_alignment),
     }

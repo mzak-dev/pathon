@@ -9,8 +9,8 @@ use pathon_rhi_types::{
     BufferDesc, BufferId, Caps, CommandList, Compression, ComputePipelineDesc, ComputePipelineId, DeviceApi,
     DeviceRequest, Extent3d, Features, Format, FormatCaps, Pool, PowerPreference, QuerySetDesc, QuerySetId,
     RenderPipelineDesc, RenderPipelineId, Resource, RhiError, SamplerDesc, SamplerId, ShaderModuleDesc, ShaderModuleId,
-    SurfaceConfig, SurfaceFrame, SurfaceId, SurfaceTarget, TexelLayout, TextureCopy, TextureDesc, TextureId,
-    TextureViewDesc, TextureViewId, WindowSource,
+    ShaderStage, SurfaceConfig, SurfaceFrame, SurfaceId, SurfaceTarget, TexelLayout, TextureCopy, TextureDesc,
+    TextureId, TextureViewDesc, TextureViewId, WindowSource,
 };
 use raw_window_handle::{DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, WindowHandle};
 
@@ -564,7 +564,13 @@ impl DeviceApi for WgpuDevice {
 
     fn create_render_pipeline(&self, desc: &RenderPipelineDesc) -> Result<RenderPipelineId, RhiError> {
         let mut objects = self.lock();
-        let layout = pipeline_layout(&self.device, &objects, desc.label, &desc.bind_group_layouts)?;
+        let layout = pipeline_layout(
+            &self.device,
+            &objects,
+            desc.label,
+            &desc.bind_group_layouts,
+            desc.immediate_size,
+        )?;
         let vertex_module = objects
             .modules
             .get(desc.vertex.module)
@@ -609,14 +615,14 @@ impl DeviceApi for WgpuDevice {
                 }))
             })
             .collect::<Result<_, RhiError>>()?;
-        let fragment = match desc.fragment {
+        let fragment = match &desc.fragment {
             Some(stage) => Some(wgpu::FragmentState {
                 module: objects
                     .modules
                     .get(stage.module)
                     .ok_or(RhiError::InvalidHandle("shader module"))?,
                 entry_point: Some(stage.entry_point),
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                compilation_options: compilation_options(stage),
                 targets: &targets,
             }),
             None => None,
@@ -640,7 +646,7 @@ impl DeviceApi for WgpuDevice {
                 vertex: wgpu::VertexState {
                     module: vertex_module,
                     entry_point: Some(desc.vertex.entry_point),
-                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    compilation_options: compilation_options(&desc.vertex),
                     buffers: &buffers,
                 },
                 primitive: wgpu::PrimitiveState {
@@ -665,7 +671,13 @@ impl DeviceApi for WgpuDevice {
 
     fn create_compute_pipeline(&self, desc: &ComputePipelineDesc) -> Result<ComputePipelineId, RhiError> {
         let mut objects = self.lock();
-        let layout = pipeline_layout(&self.device, &objects, desc.label, &desc.bind_group_layouts)?;
+        let layout = pipeline_layout(
+            &self.device,
+            &objects,
+            desc.label,
+            &desc.bind_group_layouts,
+            desc.immediate_size,
+        )?;
         let module = objects
             .modules
             .get(desc.shader.module)
@@ -676,7 +688,7 @@ impl DeviceApi for WgpuDevice {
                 layout: Some(&layout),
                 module,
                 entry_point: Some(desc.shader.entry_point),
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                compilation_options: compilation_options(&desc.shader),
                 cache: None,
             })
         })?;
@@ -941,6 +953,7 @@ fn pipeline_layout(
     objects: &Objects,
     label: &str,
     layouts: &[BindGroupLayoutId],
+    immediate_size: u32,
 ) -> Result<wgpu::PipelineLayout, RhiError> {
     let mut bind_group_layouts = Vec::with_capacity(layouts.len());
     for layout in layouts {
@@ -954,8 +967,15 @@ fn pipeline_layout(
     Ok(device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some(label),
         bind_group_layouts: &bind_group_layouts,
-        immediate_size: 0,
+        immediate_size,
     }))
+}
+
+fn compilation_options(stage: &ShaderStage) -> wgpu::PipelineCompilationOptions<'_> {
+    wgpu::PipelineCompilationOptions {
+        constants: &stage.constants,
+        ..wgpu::PipelineCompilationOptions::default()
+    }
 }
 
 #[cfg(test)]

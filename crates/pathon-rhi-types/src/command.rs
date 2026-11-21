@@ -226,6 +226,10 @@ pub enum Command {
     },
     SetViewport(Viewport),
     SetScissor(ScissorRect),
+    SetImmediates {
+        offset: u32,
+        data: Box<[u8]>,
+    },
     Draw {
         vertices: Range<u32>,
         instances: Range<u32>,
@@ -410,6 +414,13 @@ impl RenderPassEncoder<'_> {
         self.list.push(Command::SetScissor(scissor));
     }
 
+    pub fn set_immediates(&mut self, offset: u32, data: &[u8]) {
+        self.list.push(Command::SetImmediates {
+            offset,
+            data: data.into(),
+        });
+    }
+
     pub fn draw(&mut self, vertices: Range<u32>, instances: Range<u32>) {
         self.list.push(Command::Draw { vertices, instances });
     }
@@ -445,6 +456,13 @@ impl ComputePassEncoder<'_> {
 
     pub fn set_bind_group(&mut self, index: u32, group: BindGroupId) {
         self.list.push(Command::SetBindGroup { index, group });
+    }
+
+    pub fn set_immediates(&mut self, offset: u32, data: &[u8]) {
+        self.list.push(Command::SetImmediates {
+            offset,
+            data: data.into(),
+        });
     }
 
     pub fn dispatch(&mut self, x: u32, y: u32, z: u32) {

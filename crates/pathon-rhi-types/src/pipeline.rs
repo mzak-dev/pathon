@@ -10,10 +10,11 @@ pub struct ShaderModuleDesc<'src> {
     pub wgsl: &'src str,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct ShaderStage {
     pub module: ShaderModuleId,
     pub entry_point: &'static str,
+    pub constants: Vec<(&'static str, f64)>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -214,7 +215,7 @@ impl DepthState {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct RenderPipelineDesc {
     pub label: &'static str,
     pub bind_group_layouts: Vec<BindGroupLayoutId>,
@@ -225,11 +226,13 @@ pub struct RenderPipelineDesc {
     pub primitive: PrimitiveState,
     pub depth: Option<DepthState>,
     pub sample_count: u32,
+    pub immediate_size: u32,
 }
 
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct ComputePipelineDesc {
     pub label: &'static str,
     pub bind_group_layouts: Vec<BindGroupLayoutId>,
     pub shader: ShaderStage,
+    pub immediate_size: u32,
 }

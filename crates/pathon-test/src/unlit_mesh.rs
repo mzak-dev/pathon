@@ -106,6 +106,7 @@ impl UnlitMeshPack {
             vertex: ShaderStage {
                 module: objects.shader,
                 entry_point: "vs_main",
+                constants: vec![],
             },
             vertex_buffers: vec![VertexBufferLayout {
                 stride: 24,
@@ -126,6 +127,7 @@ impl UnlitMeshPack {
             fragment: Some(ShaderStage {
                 module: objects.shader,
                 entry_point: "fs_main",
+                constants: vec![],
             }),
             color_targets: vec![ColorTargetState::opaque(format)],
             primitive: PrimitiveState {
@@ -134,6 +136,7 @@ impl UnlitMeshPack {
             },
             depth: Some(DepthState::reverse_z(Format::Depth32Float)),
             sample_count: 1,
+            immediate_size: 0,
         })?;
         self.pipelines.insert(format, pipeline);
         Ok(pipeline)

@@ -31,7 +31,7 @@ fn structure_error(message: impl Into<String>) -> RhiError {
 pub(crate) struct Validator<'state> {
     state: &'state mut State,
     pass: PassKind,
-    pipeline_set: bool,
+    pipeline_immediate_size: Option<u32>,
     bound: Vec<(u32, BindGroupId)>,
     debug_depth: u32,
 }
@@ -41,7 +41,7 @@ impl<'state> Validator<'state> {
         Self {
             state,
             pass: PassKind::None,
-            pipeline_set: false,
+            pipeline_immediate_size: None,
             bound: Vec::new(),
             debug_depth: 0,
         }
@@ -117,17 +117,21 @@ impl<'state> Validator<'state> {
             }
             Command::SetRenderPipeline(pipeline) => {
                 self.require_pass(PassKind::Render, "set render pipeline")?;
-                if !self.state.render_pipelines.contains(pipeline) {
-                    return Err(RhiError::InvalidHandle("render pipeline"));
-                }
-                self.pipeline_set = true;
+                let immediate_size = *self
+                    .state
+                    .render_pipelines
+                    .get(pipeline)
+                    .ok_or(RhiError::InvalidHandle("render pipeline"))?;
+                self.pipeline_immediate_size = Some(immediate_size);
             }
             Command::SetComputePipeline(pipeline) => {
                 self.require_pass(PassKind::Compute, "set compute pipeline")?;
-                if !self.state.compute_pipelines.contains(pipeline) {
-                    return Err(RhiError::InvalidHandle("compute pipeline"));
-                }
-                self.pipeline_set = true;
+                let immediate_size = *self
+                    .state
+                    .compute_pipelines
+                    .get(pipeline)
+                    .ok_or(RhiError::InvalidHandle("compute pipeline"))?;
+                self.pipeline_immediate_size = Some(immediate_size);
             }
             Command::SetBindGroup { index, group } => {
                 if self.pass == PassKind::None {
@@ -139,6 +143,7 @@ impl<'state> Validator<'state> {
                 self.bound.retain(|(bound_index, _)| *bound_index != index);
                 self.bound.push((index, group));
             }
+            Command::SetImmediates { offset, data } => self.set_immediates(offset, data.len())?,
             Command::SetVertexBuffer { buffer, .. } => {
                 self.require_pass(PassKind::Render, "set vertex buffer")?;
                 self.buffer_usage(buffer, BufferUsage::VERTEX)?;
@@ -263,15 +268,36 @@ impl<'state> Validator<'state> {
         }
     }
 
+    fn set_immediates(&self, offset: u32, len: usize) -> Result<(), RhiError> {
+        if self.pass == PassKind::None {
+            return Err(structure_error("immediates set outside a pass"));
+        }
+        let Some(size) = self.pipeline_immediate_size else {
+            return Err(structure_error("immediates set without a pipeline"));
+        };
+        let end = u64::from(offset) + len as u64;
+        if !offset.is_multiple_of(4) || !len.is_multiple_of(4) {
+            return Err(structure_error(format!(
+                "immediates at offset {offset} with {len} bytes are not 4-byte aligned"
+            )));
+        }
+        if end > u64::from(size) {
+            return Err(structure_error(format!(
+                "immediates {offset}..{end} reach past the pipeline's {size} bytes"
+            )));
+        }
+        Ok(())
+    }
+
     fn enter_pass(&mut self, kind: PassKind) {
         self.pass = kind;
-        self.pipeline_set = false;
+        self.pipeline_immediate_size = None;
         self.bound.clear();
     }
 
     fn draw_or_dispatch(&mut self, kind: PassKind) -> Result<(), RhiError> {
         self.require_pass(kind, "draw or dispatch")?;
-        if !self.pipeline_set {
+        if self.pipeline_immediate_size.is_none() {
             return Err(structure_error("draw or dispatch without a pipeline"));
         }
         let groups: Vec<BindGroupId> = self.bound.iter().map(|(_, group)| *group).collect();

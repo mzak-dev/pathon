@@ -153,7 +153,9 @@ fn compute_doubles_values(device: &Device) {
             shader: ShaderStage {
                 module,
                 entry_point: "main",
+                constants: vec![],
             },
+            immediate_size: 0,
         })
         .expect("pipeline");
     let readback = readback_buffer(device, bytes.len() as u64);
@@ -290,6 +292,7 @@ fn indexed_quad_samples_texture(device: &Device) {
             vertex: ShaderStage {
                 module,
                 entry_point: "vs_main",
+                constants: vec![],
             },
             vertex_buffers: vec![VertexBufferLayout {
                 stride: 8,
@@ -303,11 +306,13 @@ fn indexed_quad_samples_texture(device: &Device) {
             fragment: Some(ShaderStage {
                 module,
                 entry_point: "fs_main",
+                constants: vec![],
             }),
             color_targets: vec![ColorTargetState::opaque(Format::Rgba8Unorm)],
             primitive: PrimitiveState::default(),
             depth: None,
             sample_count: 1,
+            immediate_size: 0,
         })
         .expect("pipeline");
 

@@ -49,6 +49,7 @@ bitflags! {
         const RAY_QUERY = 1 << 21;
         const MESH_SHADER = 1 << 22;
         const POLYGON_MODE_LINE = 1 << 23;
+        const IMMEDIATES = 1 << 24;
     }
 }
 
@@ -80,6 +81,7 @@ pub struct Limits {
     pub max_compute_workgroups_per_dimension: u32,
     pub max_binding_array_elements_per_shader_stage: u32,
     pub max_binding_array_sampler_elements_per_shader_stage: u32,
+    pub max_immediate_size: u32,
     pub min_uniform_buffer_offset_alignment: u32,
     pub min_storage_buffer_offset_alignment: u32,
 }
@@ -100,6 +102,7 @@ impl Limits {
         max_compute_workgroups_per_dimension: 65535,
         max_binding_array_elements_per_shader_stage: 0,
         max_binding_array_sampler_elements_per_shader_stage: 0,
+        max_immediate_size: 0,
         min_uniform_buffer_offset_alignment: 256,
         min_storage_buffer_offset_alignment: 256,
     };

@@ -188,7 +188,7 @@ impl Renderer {
 
     pub fn remove_target(&mut self, id: TargetId) -> Result<(), RenderError> {
         let removed = self.targets.remove(id).ok_or(RenderError::UnknownTarget)?;
-        self.runner.forget_target(id);
+        self.runner.forget_target(id, &mut self.release, self.frame);
         match removed.kind {
             TargetKind::Surface { surface, .. } => self.device.destroy_surface(surface),
             TargetKind::Offscreen { texture, .. } => self.release.release(self.frame, texture),

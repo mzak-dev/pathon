@@ -24,6 +24,12 @@ Tekstury tymczasowe o tym samym kształcie i rozłącznych czasach życia dziel�
 
 Bufory są zasobami grafu jak tekstury: `create_buffer(name, GraphBufferDesc)` i `import_buffer(name, id, size, initial, final)`, a passy deklarują je przez `read_buffer` / `write_buffer` / `modify_buffer` z tą samą semantyką wersji, cullingu i kolejności. Flagi `BufferUsage` graf wylicza z `Access` (`SHADER_*` daje `STORAGE`), a bufory tymczasowe o tym samym rozmiarze i rozłącznych czasach życia dzielą pamięć w `ResourcePool` (dawny `TexturePool`). Przed passem graf wpisuje `BufferAccess` według tej samej reguły co dla tekstur, a zaimportowane bufory na końcu przechodzą do `final`; w passie id bufora daje `PassContext::buffer`.
 
+## Historia (ADR-0011, M2-08)
+
+`FrameGraph::for_view(&HistoryStore, sizes)` tworzy graf, który zna historię widoku; `history_texture(name, GraphTextureDesc)` zwraca `HistoryTexture { previous, current, previous_valid }`. `previous` to treść z poprzedniej klatki (tylko do odczytu), `current` to tekstura do zapisu w tej klatce; pass zapisujący ostatnią wersję `current` jest korzeniem cullingu. W grafie z `FrameGraph::new()` `previous_valid` jest zawsze `false`. Nazwa jest unikalna w obrębie widoku i klatki.
+
+Fizyczne tekstury żyją w `HistoryStore` (runner trzyma po jednym na cel), poza `ResourcePool`, razem ze stanem `Access` każdej. `execute` tworzy brakującą albo nieaktualną parę od nowa (zmiana opisu, rozmiaru albo użycia; stara trafia do `DeferredRelease`), zeruje nową `previous` przed pierwszym odczytem (kolor: przezroczysta czerń, głębia: 0.0), a po klatce zapisuje stany i zamienia role pary. Klatka, która się nie powiodła, usuwa parę, bo jej komendy nie zostaną wykonane. Widok pominięty w klatce nie rusza historii; po utracie urządzenia `forget_all` czyni ją nieważną.
+
 ## Bariery (M2-05)
 
 Przed każdym passem graf porównuje potrzebny `Access` każdego subresource'u z bieżącym i dopisuje `TextureAccess`, także po każdym zapisie (zależność pamięci dla backendów natywnych). Na końcu zasoby importowane przechodzą do stanu `final` (okna: `PRESENT`). Testy wykonują ten plan na `pathon-rhi-null`, który odrzuca każdy błąd stanu.

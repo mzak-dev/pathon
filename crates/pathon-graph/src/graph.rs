@@ -3,6 +3,7 @@ use pathon_rhi_types::{
 };
 
 use crate::execute::PassContext;
+use crate::history::{HistoryStore, HistoryTexture};
 
 // Coarse frame order. Ties inside a stage are broken by priority, then by registration order (with G0006).
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
@@ -185,6 +186,11 @@ pub(crate) enum ResourceKind {
         initial: Access,
         final_access: Access,
     },
+    // Backed by a `HistoryStore` texture: its contents come from, and go to, other frames.
+    History {
+        desc: GraphTextureDesc,
+        role: HistoryRole,
+    },
     TransientBuffer(GraphBufferDesc),
     ImportedBuffer {
         buffer: BufferId,
@@ -194,9 +200,27 @@ pub(crate) enum ResourceKind {
     },
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum HistoryRole {
+    Previous,
+    Current,
+}
+
+// The two resources of one `history_texture` call.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct HistoryDecl {
+    pub(crate) name: &'static str,
+    pub(crate) desc: GraphTextureDesc,
+    pub(crate) previous: u32,
+    pub(crate) current: u32,
+}
+
 impl ResourceKind {
     pub(crate) fn is_imported(self) -> bool {
-        matches!(self, Self::Imported { .. } | Self::ImportedBuffer { .. })
+        matches!(
+            self,
+            Self::Imported { .. } | Self::ImportedBuffer { .. } | Self::History { .. }
+        )
     }
 
     pub(crate) fn is_transient(self) -> bool {
@@ -236,6 +260,9 @@ pub struct FrameGraph {
     pub(crate) resources: Vec<ResourceNode>,
     pub(crate) passes: Vec<PassNode>,
     pub(crate) capture: bool,
+    pub(crate) histories: Vec<HistoryDecl>,
+    known_history: Vec<(&'static str, GraphTextureDesc, Extent3d)>,
+    sizes: Option<FrameSizes>,
 }
 
 impl std::fmt::Debug for FrameGraph {
@@ -245,6 +272,9 @@ impl std::fmt::Debug for FrameGraph {
             .field("resources", &self.resources)
             .field("passes", &passes)
             .field("capture", &self.capture)
+            .field("histories", &self.histories)
+            .field("known_history", &self.known_history)
+            .field("sizes", &self.sizes)
             .finish()
     }
 }
@@ -252,6 +282,56 @@ impl std::fmt::Debug for FrameGraph {
 impl FrameGraph {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    // A graph that knows which history the view kept from earlier frames.
+    pub fn for_view(history: &HistoryStore, sizes: FrameSizes) -> Self {
+        Self {
+            known_history: history.signatures(),
+            sizes: Some(sizes),
+            ..Self::default()
+        }
+    }
+
+    // One name per view and frame: the store keeps a single pair per name.
+    pub fn history_texture(&mut self, name: &'static str, desc: GraphTextureDesc) -> HistoryTexture {
+        let previous_valid = self.sizes.is_some_and(|sizes| {
+            let extent = desc.extent(sizes);
+            self.known_history.iter().any(|(known, known_desc, known_extent)| {
+                *known == name && *known_desc == desc && *known_extent == extent
+            })
+        });
+        let previous = self.add_resource(
+            name,
+            ResourceKind::History {
+                desc,
+                role: HistoryRole::Previous,
+            },
+        );
+        let current = self.add_resource(
+            name,
+            ResourceKind::History {
+                desc,
+                role: HistoryRole::Current,
+            },
+        );
+        self.histories.push(HistoryDecl {
+            name,
+            desc,
+            previous,
+            current,
+        });
+        HistoryTexture {
+            previous: TextureHandle {
+                resource: previous,
+                version: 0,
+            },
+            current: TextureHandle {
+                resource: current,
+                version: 0,
+            },
+            previous_valid,
+        }
     }
 
     pub fn create_texture(&mut self, name: &'static str, desc: GraphTextureDesc) -> TextureHandle {
@@ -341,7 +421,7 @@ impl FrameGraph {
 
     pub fn texture_format(&self, handle: TextureHandle) -> Option<Format> {
         match self.resources.get(handle.resource as usize)?.kind {
-            ResourceKind::Transient(desc) => Some(desc.format),
+            ResourceKind::Transient(desc) | ResourceKind::History { desc, .. } => Some(desc.format),
             ResourceKind::Imported { desc, .. } => Some(desc.format),
             ResourceKind::TransientBuffer(_) | ResourceKind::ImportedBuffer { .. } => None,
         }

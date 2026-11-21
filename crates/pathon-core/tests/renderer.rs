@@ -5,8 +5,8 @@ use pathon_api::graph::{GraphTextureDesc, PassDesc, Stage};
 use pathon_api::{Camera, PrepareCtx, RecordCtx, RenderFeature, Role, SetupCtx, ViewId};
 use pathon_core::{FeatureStatus, FrameInput, RenderError, Renderer, RendererBuilder, ViewInput};
 use pathon_rhi::{
-    Access, Backend, Color, Device, DeviceApi, DeviceRequest, Extent3d, Format, PhysicalSize, RhiError, SurfaceTarget,
-    TextureId,
+    Access, Backend, Color, ColorAttachment, Device, DeviceApi, DeviceRequest, Extent3d, Format, PhysicalSize,
+    RenderPassDesc, RhiError, SurfaceTarget, TextureId,
 };
 use pathon_test::{GeometryPack, OnDemandConsumer, UnlitMeshPack, UpscalerPack, VendorDummy};
 
@@ -727,4 +727,72 @@ fn a_view_keeps_its_id_while_its_target_lives() {
     let recreated = frame(&mut renderer, [a2, b]);
     assert_ne!(recreated[0], ab[0], "a re-created target is a new view");
     assert_eq!(recreated[1], ab[1]);
+}
+
+struct RecordsHistoryValidity {
+    seen: Arc<Mutex<Vec<bool>>>,
+}
+
+impl RenderFeature for RecordsHistoryValidity {
+    fn name(&self) -> &'static str {
+        "history recorder"
+    }
+
+    fn stage(&self) -> Stage {
+        Stage::PostProcess
+    }
+
+    fn record(&mut self, ctx: &mut RecordCtx<'_>) -> Result<(), RhiError> {
+        let history = ctx
+            .graph()
+            .history_texture("test history", GraphTextureDesc::render(Format::Rgba8Unorm));
+        self.seen.lock().expect("mutex").push(history.previous_valid);
+        let mut pass = ctx
+            .graph()
+            .add_pass(PassDesc::new("history writer", Stage::PostProcess));
+        pass.read(history.previous, Access::SHADER_READ);
+        let current = pass.write(history.current, Access::COLOR_ATTACHMENT);
+        pass.record(move |pass| {
+            let view = pass.view(current)?;
+            drop(pass.commands().render_pass(RenderPassDesc {
+                label: "history writer",
+                color: vec![ColorAttachment::clear(view, Color::BLACK)],
+                depth: None,
+                timestamps: None,
+            }));
+            Ok(())
+        });
+        Ok(())
+    }
+}
+
+#[test]
+fn history_survives_a_skipped_frame_and_resets_with_the_device() {
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let mut renderer = null_builder()
+        .with_feature(RecordsHistoryValidity {
+            seen: Arc::clone(&seen),
+        })
+        .build()
+        .expect("renderer");
+    let with_view = one_view(&mut renderer, Format::Rgba8Unorm);
+
+    renderer.render_frame(&with_view).expect("first frame");
+    renderer.render_frame(&FrameInput::default()).expect("skipped frame");
+    renderer.render_frame(&with_view).expect("frame after the skip");
+    assert_eq!(*seen.lock().expect("mutex"), [false, true]);
+
+    renderer
+        .device()
+        .as_null()
+        .expect("null backend")
+        .simulate_device_loss();
+    assert!(matches!(
+        renderer.render_frame(&with_view),
+        Err(RenderError::DeviceLost)
+    ));
+    renderer.recover().expect("recover");
+    seen.lock().expect("mutex").clear();
+    renderer.render_frame(&with_view).expect("frame after recovery");
+    assert_eq!(*seen.lock().expect("mutex"), [false]);
 }

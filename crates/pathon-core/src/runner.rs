@@ -2,7 +2,8 @@ use std::collections::HashMap;
 
 use pathon_diag::Diagnostic;
 use pathon_graph::{
-    FrameGraph, FrameSizes, GraphCache, GraphCapture, GraphStats, PassDesc, ResourcePool, Stage, TextureHandle,
+    FrameGraph, FrameSizes, GraphCache, GraphCapture, GraphStats, HistoryStore, PassDesc, ResourcePool, Stage,
+    TextureHandle,
 };
 use pathon_resources::DeferredRelease;
 use pathon_rhi::{
@@ -40,6 +41,7 @@ pub(crate) struct ViewRun {
 pub(crate) struct GraphRunner {
     pool: ResourcePool,
     caches: HashMap<TargetId, GraphCache>,
+    histories: HashMap<TargetId, HistoryStore>,
     capture: bool,
     clear_color: Color,
 }
@@ -49,6 +51,7 @@ impl GraphRunner {
         Self {
             pool: ResourcePool::new(),
             caches: HashMap::new(),
+            histories: HashMap::new(),
             capture: false,
             clear_color,
         }
@@ -58,13 +61,22 @@ impl GraphRunner {
         self.capture = enabled;
     }
 
-    pub(crate) fn forget_target(&mut self, target: TargetId) {
+    pub(crate) fn forget_target(&mut self, target: TargetId, release: &mut DeferredRelease, frame: u64) {
         self.caches.remove(&target);
+        if let Some(mut history) = self.histories.remove(&target) {
+            for texture in history.textures() {
+                self.pool.release_views_of(texture, release, frame);
+            }
+            history.release_all(release, frame);
+        }
     }
 
     pub(crate) fn forget_device(&mut self) {
         self.pool.forget_all();
         self.caches.clear();
+        for history in self.histories.values_mut() {
+            history.forget_all();
+        }
     }
 
     // Diagnostics are collected into `diagnostics` whatever the result, for the renderer to report once.
@@ -77,7 +89,7 @@ impl GraphRunner {
         mut env: FrameEnv<'_>,
         diagnostics: &mut Vec<Diagnostic>,
     ) -> Result<ViewRun, RenderError> {
-        let mut graph = FrameGraph::new();
+        let mut graph = FrameGraph::for_view(self.histories.entry(target).or_default(), sizes);
         let output_handle = self.import_output(&mut graph, output);
         diagnostics.extend(fill(&mut graph, output_handle));
         graph.set_capture(self.capture);
@@ -95,7 +107,8 @@ impl GraphRunner {
         } else {
             Vec::new()
         };
-        let outcome = graph.execute(compiled, env.device, &mut self.pool, env.release, env.frame);
+        let history = self.histories.entry(target).or_default();
+        let outcome = graph.execute(compiled, env.device, &mut self.pool, history, env.release, env.frame);
         diagnostics.extend(fresh_warnings);
         match outcome {
             Ok(execution) => Ok(ViewRun {
@@ -161,7 +174,14 @@ impl GraphRunner {
                 output.desc.size.height,
             )))
             .map_err(|mut errors| RenderError::Diagnostic(errors.remove(0)))?;
-        let execution = graph.execute(&compiled, env.device, &mut self.pool, env.release, env.frame)?;
+        let execution = graph.execute(
+            &compiled,
+            env.device,
+            &mut self.pool,
+            &mut HistoryStore::new(),
+            env.release,
+            env.frame,
+        )?;
         Ok(ViewRun {
             commands: execution.commands,
             stats: execution.stats,

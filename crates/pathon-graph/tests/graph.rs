@@ -1,6 +1,6 @@
 use pathon_graph::{
-    FrameGraph, FrameSizes, GraphBufferDesc, GraphTextureDesc, PassContext, PassDesc, ResourcePool, Stage,
-    TextureHandle,
+    FrameGraph, FrameSizes, GraphBufferDesc, GraphTextureDesc, HistoryStore, PassContext, PassDesc, ResourcePool,
+    Stage, TextureHandle,
 };
 use pathon_resources::DeferredRelease;
 use pathon_rhi_null::NullDevice;
@@ -58,7 +58,7 @@ fn run(graph: FrameGraph, device: &NullDevice, pool: &mut ResourcePool, frame: u
     let compiled = graph.compile(FrameSizes::same(SIZE)).expect("graph compiles");
     let mut release = DeferredRelease::new(2);
     let execution = graph
-        .execute(&compiled, device, pool, &mut release, frame)
+        .execute(&compiled, device, pool, &mut HistoryStore::new(), &mut release, frame)
         .expect("graph executes");
     release.collect(frame + 2, device);
     execution
@@ -456,7 +456,7 @@ fn a_failing_pass_still_hands_its_frame_resources_to_deferred_release() {
     });
 
     let compiled = graph.compile(FrameSizes::same(SIZE)).expect("compiles");
-    let result = graph.execute(&compiled, &device, &mut pool, &mut release, 0);
+    let result = graph.execute(&compiled, &device, &mut pool, &mut HistoryStore::new(), &mut release, 0);
 
     assert!(matches!(result, Err(RhiError::InvalidHandle("pass gave up"))));
     assert_eq!(release.len(), 2, "the output's view and the frame's bind group");
@@ -665,4 +665,104 @@ fn an_untouched_imported_buffer_still_ends_in_its_final_state() {
     device
         .submit(execution.commands)
         .expect("buffer barriers pass null validation");
+}
+
+const HISTORY_DESC: GraphTextureDesc = GraphTextureDesc::render(Format::Rgba8Unorm);
+
+struct HistoryFrame {
+    previous_valid: bool,
+    order: Vec<&'static str>,
+}
+
+// One view's frame: a pass reads `previous` and writes `current`, nobody else reads `current`.
+fn history_frame(
+    device: &NullDevice,
+    pool: &mut ResourcePool,
+    store: &mut HistoryStore,
+    release: &mut DeferredRelease,
+    sizes: FrameSizes,
+    frame: u64,
+) -> HistoryFrame {
+    let mut graph = FrameGraph::for_view(store, sizes);
+    let history = graph.history_texture("taa history", HISTORY_DESC);
+    let mut pass = graph.add_pass(PassDesc::new("resolve", Stage::Resolve));
+    pass.read(history.previous, Access::SHADER_READ);
+    let current = pass.write(history.current, Access::COLOR_ATTACHMENT);
+    pass.record(clear(current));
+
+    let compiled = graph.compile(sizes).expect("graph compiles");
+    let order = compiled.order().to_vec();
+    let execution = graph
+        .execute(&compiled, device, pool, store, release, frame)
+        .expect("graph executes");
+    device
+        .submit(execution.commands)
+        .expect("history passes null validation");
+    HistoryFrame {
+        previous_valid: history.previous_valid,
+        order,
+    }
+}
+
+#[test]
+fn history_is_invalid_on_the_first_frame_and_valid_on_the_next() {
+    let device = NullDevice::new();
+    let mut pool = ResourcePool::new();
+    let mut store = HistoryStore::new();
+    let mut release = DeferredRelease::new(2);
+    let sizes = FrameSizes::same(SIZE);
+
+    let first = history_frame(&device, &mut pool, &mut store, &mut release, sizes, 0);
+    let created = store.created_total();
+    let second = history_frame(&device, &mut pool, &mut store, &mut release, sizes, 1);
+    let third = history_frame(&device, &mut pool, &mut store, &mut release, sizes, 2);
+
+    assert!(!first.previous_valid);
+    assert!(second.previous_valid);
+    assert!(third.previous_valid);
+    assert_eq!(created, 2);
+    assert_eq!(
+        store.created_total(),
+        2,
+        "a stable history allocates nothing after the first frame"
+    );
+    assert_eq!(pool.created_total(), 0, "history textures do not live in the pool");
+    assert_eq!(release.len(), 0);
+}
+
+#[test]
+fn resizing_invalidates_history() {
+    let device = NullDevice::new();
+    let mut pool = ResourcePool::new();
+    let mut store = HistoryStore::new();
+    let mut release = DeferredRelease::new(2);
+
+    history_frame(&device, &mut pool, &mut store, &mut release, FrameSizes::same(SIZE), 0);
+    let before = release.len();
+    let resized = FrameSizes::same(PhysicalSize::new(16, 16));
+    let frame = history_frame(&device, &mut pool, &mut store, &mut release, resized, 1);
+
+    assert!(!frame.previous_valid);
+    // Both textures go, each with the one view the frame created on it.
+    assert_eq!(release.len(), before + 4);
+    let next = history_frame(&device, &mut pool, &mut store, &mut release, resized, 2);
+    assert!(next.previous_valid);
+}
+
+#[test]
+fn the_pass_writing_history_is_not_culled() {
+    let device = NullDevice::new();
+    let mut pool = ResourcePool::new();
+    let mut store = HistoryStore::new();
+    let mut release = DeferredRelease::new(2);
+
+    let frame = history_frame(&device, &mut pool, &mut store, &mut release, FrameSizes::same(SIZE), 0);
+
+    assert_eq!(frame.order, ["resolve"]);
+}
+
+#[test]
+fn a_graph_without_history_never_reports_valid_history() {
+    let mut graph = FrameGraph::new();
+    assert!(!graph.history_texture("taa history", HISTORY_DESC).previous_valid);
 }

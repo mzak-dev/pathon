@@ -187,8 +187,16 @@ impl FrameGraph {
                 }
                 if is_attachment(access.access) {
                     match resource.kind {
-                        ResourceKind::Transient(desc) if desc.size == GraphSize::Render => render_sized = true,
-                        ResourceKind::Transient(desc) if desc.size == GraphSize::Output => output_sized = true,
+                        ResourceKind::Transient(desc) | ResourceKind::History { desc, .. }
+                            if desc.size == GraphSize::Render =>
+                        {
+                            render_sized = true;
+                        }
+                        ResourceKind::Transient(desc) | ResourceKind::History { desc, .. }
+                            if desc.size == GraphSize::Output =>
+                        {
+                            output_sized = true;
+                        }
                         // An import has no size class, only a size; it counts once that size tells the classes apart.
                         ResourceKind::Imported { desc, .. } if sizes.render != sizes.output => {
                             let size = PhysicalSize::new(desc.size.width, desc.size.height);
@@ -197,6 +205,7 @@ impl FrameGraph {
                         }
                         ResourceKind::Imported { .. }
                         | ResourceKind::Transient(_)
+                        | ResourceKind::History { .. }
                         | ResourceKind::TransientBuffer(_)
                         | ResourceKind::ImportedBuffer { .. } => {}
                     }

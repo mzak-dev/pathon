@@ -192,7 +192,8 @@ Hosty (M6, M7) nie są na ścieżce minimalnej, ale ich szew jest: M2-19 i M4-20
 - [x] **M2-06 · Walidacja grafu** ★ — G0001 cykl, G0003 odczyt bez producenta, G0004 mieszanie render / output size. **Gotowe gdy:** każdy kod ma test.
 - [x] **M2-07 · Cache grafu** — rekompilacja tylko przy zmianie paczek, celów, rozmiaru lub profilu. **Gotowe gdy:** licznik kompilacji w teście stabilnej sceny wynosi 1.
   - **Stan 20.11.2026:** `GraphCache` porównuje strukturę grafu dokładnie; test stabilnej sceny: jedna kompilacja na 5 klatek, resize wymusza kolejną. Z cache 5–6× szybciej niż kompilacja ([docs/bench](bench/README.md)).
-- [ ] **M2-08 · Historia** — `g.history(slot, n)`, kluczowana per widok; pula na maksymalny rozmiar + viewport przy dynamicznej rozdzielczości; unieważnianie przy resize i cięciu kamery. **Gotowe gdy:** testy resize i zmiany render_size.
+- [x] **M2-08 · Historia** — `g.history(slot, n)`, kluczowana per widok; pula na maksymalny rozmiar + viewport przy dynamicznej rozdzielczości; unieważnianie przy resize i cięciu kamery. **Gotowe gdy:** testy resize i zmiany render_size.
+  - **Stan 21.11.2026:** `history_texture(name, desc)` zwraca parę `previous` / `current` kluczowaną per widok (ADR-0011); resize i zmiana `render_size` unieważniają historię (testy w `tests/graph.rs`). N = 1 oraz pula na maksymalny rozmiar z viewportem są odłożone (ADR-0011); cięcie kamery to sprawa paczki — czyta `previous_valid`.
 - [x] **M2-09 · `pathon-resources`** ★
   - Handle'y generacyjne, opóźnione zwalnianie, staging ring, sub-alokacja buforów.
   - `GpuArray<T>`: tablica danych na GPU (instancje, materiały, kości, światła) jako storage buffer na każdym profilu.

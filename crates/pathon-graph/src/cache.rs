@@ -17,6 +17,7 @@ fn same_resource(cached: &ResourceNode, current: &ResourceNode) -> bool {
     let same_kind = match (cached.kind, current.kind) {
         (ResourceKind::Transient(a), ResourceKind::Transient(b)) => a == b,
         (ResourceKind::Imported { desc: a, .. }, ResourceKind::Imported { desc: b, .. }) => a == b,
+        (ResourceKind::History { .. }, ResourceKind::History { .. }) => cached.kind == current.kind,
         (ResourceKind::TransientBuffer(a), ResourceKind::TransientBuffer(b)) => a == b,
         (ResourceKind::ImportedBuffer { size: a, .. }, ResourceKind::ImportedBuffer { size: b, .. }) => a == b,
         _ => false,

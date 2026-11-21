@@ -5,6 +5,7 @@ mod capture;
 mod compile;
 mod execute;
 mod graph;
+mod history;
 mod order;
 mod pool;
 
@@ -16,5 +17,6 @@ pub use graph::{
     BufferHandle, FrameGraph, FrameSizes, GraphBufferDesc, GraphSize, GraphTextureDesc, PassBuilder, PassDesc,
     RecordFn, Stage, TextureHandle,
 };
+pub use history::{HistoryStore, HistoryTexture};
 pub use order::{OrderNode, sort_nodes};
 pub use pool::ResourcePool;

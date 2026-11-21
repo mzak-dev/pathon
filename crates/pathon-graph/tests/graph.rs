@@ -244,7 +244,11 @@ fn mixing_render_and_output_size_attachments_is_g0004() {
     pass.write(scene, Access::COLOR_ATTACHMENT);
     pass.write(output, Access::COLOR_ATTACHMENT);
 
-    let errors = graph.compile(FrameSizes::same(SIZE)).expect_err("must fail");
+    let upscaled = FrameSizes {
+        render: PhysicalSize::new(SIZE.width / 2, SIZE.height / 2),
+        output: SIZE,
+    };
+    let errors = graph.compile(upscaled).expect_err("must fail");
     assert_eq!(errors[0].code, "G0004");
 }
 
@@ -455,4 +459,39 @@ fn a_failing_pass_still_hands_its_frame_resources_to_deferred_release() {
 
     assert!(matches!(result, Err(RhiError::InvalidHandle("pass gave up"))));
     assert_eq!(release.len(), 2, "the output's view and the frame's bind group");
+}
+
+fn render_sized_history(graph: &mut FrameGraph, device: &NullDevice, size: PhysicalSize) -> TextureHandle {
+    let desc = TextureDesc::new_2d(
+        "history",
+        size.width,
+        size.height,
+        Format::Rgba16Float,
+        TextureUsage::RENDER_TARGET | TextureUsage::SAMPLED,
+    );
+    let texture = device.create_texture(&desc).expect("history");
+    graph.import_texture("history", texture, desc, Access::SHADER_READ, Access::SHADER_READ)
+}
+
+#[test]
+fn a_render_sized_import_next_to_a_render_sized_transient_is_not_g0004() {
+    let half = PhysicalSize::new(SIZE.width / 2, SIZE.height / 2);
+    for sizes in [
+        FrameSizes::same(SIZE),
+        FrameSizes {
+            render: half,
+            output: SIZE,
+        },
+    ] {
+        let device = NullDevice::new();
+        let mut graph = FrameGraph::new();
+        let history = render_sized_history(&mut graph, &device, sizes.render);
+        let scene = graph.create_texture("scene", GraphTextureDesc::render(Format::Rgba16Float));
+        let mut pass = graph.add_pass(PassDesc::new("taa resolve", Stage::Resolve).side_effect());
+        pass.write(scene, Access::COLOR_ATTACHMENT);
+        pass.write(history, Access::COLOR_ATTACHMENT);
+
+        let compiled = graph.compile(sizes);
+        assert!(compiled.is_ok(), "{sizes:?}: {:?}", compiled.err());
+    }
 }

@@ -1,5 +1,5 @@
 use pathon_diag::Diagnostic;
-use pathon_rhi_types::{Access, TextureUsage};
+use pathon_rhi_types::{Access, PhysicalSize, TextureUsage};
 
 use crate::graph::{FrameGraph, FrameSizes, GraphSize, PassAccess, ResourceKind};
 use crate::order::{OrderNode, sort_nodes};
@@ -85,7 +85,7 @@ fn is_attachment(access: Access) -> bool {
 
 impl FrameGraph {
     pub fn compile(&self, sizes: FrameSizes) -> Result<CompiledGraph, Vec<Diagnostic>> {
-        let errors = self.validate();
+        let errors = self.validate(sizes);
         if !errors.is_empty() {
             return Err(errors);
         }
@@ -130,7 +130,7 @@ impl FrameGraph {
         })
     }
 
-    fn validate(&self) -> Vec<Diagnostic> {
+    fn validate(&self, sizes: FrameSizes) -> Vec<Diagnostic> {
         let mut errors = Vec::new();
         for pass in &self.passes {
             let mut render_sized = false;
@@ -155,8 +155,13 @@ impl FrameGraph {
                     match resource.kind {
                         ResourceKind::Transient(desc) if desc.size == GraphSize::Render => render_sized = true,
                         ResourceKind::Transient(desc) if desc.size == GraphSize::Output => output_sized = true,
-                        ResourceKind::Imported { .. } => output_sized = true,
-                        ResourceKind::Transient(_) => {}
+                        // An import has no size class, only a size; it counts once that size tells the classes apart.
+                        ResourceKind::Imported { desc, .. } if sizes.render != sizes.output => {
+                            let size = PhysicalSize::new(desc.size.width, desc.size.height);
+                            render_sized |= size == sizes.render;
+                            output_sized |= size == sizes.output;
+                        }
+                        ResourceKind::Imported { .. } | ResourceKind::Transient(_) => {}
                     }
                 }
             }

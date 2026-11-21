@@ -158,6 +158,7 @@ Rdzeń nie ma własnej pętli, okna, wątku ani ECS, więc ten sam silnik i te s
 | [`pathon-rhi-wgpu`](docs/crates/pathon-rhi-wgpu.md) | backend wgpu 30 + `interop` dla paczek vendorowych |
 | [`pathon-rhi-null`](docs/crates/pathon-rhi-null.md) | backend bez GPU, waliduje stany zasobów |
 | [`pathon-diag`](docs/crates/pathon-diag.md) | diagnostyka z kodem i [stroną dla każdego kodu](docs/diag/) |
+| [`pathon-shader`](docs/crates/pathon-shader.md) | importy WGSL przez naga_oil: moduły `#define_import_path`, złożone źródło dla RHI |
 | [`pathon-devtools`](docs/devtools.md) | TUI (ratatui) do podglądu klatki na żywo, poza procesem renderera |
 
 ## Testy

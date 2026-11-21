@@ -4,7 +4,7 @@
 
 **Cel:** shader WGSL z `#import` składa się w jedno źródło WGSL, które RHI przyjmuje i z którego powstaje działający potok.
 
-**Spec:** [ADR-0021](../../adr/0021-importy-shaderow-naga-oil.md), [ADR-0006](../../adr/0006-wejscie-shaderow-do-rhi.md); M3-01 w [planie](../../plan-implementacji.md).
+**Spec:** [ADR-0021](../../adr/0021-importy-shaderow-naga-oil.md), [ADR-0006](../../adr/0006-wejscie-shaderow.md); M3-01 w [planie](../../plan-implementacji.md).
 
 ## Ograniczenia globalne
 

@@ -697,3 +697,247 @@ fn binding_array_elements_are_checked_like_single_bindings() {
 
     assert_eq!(result.expect_err("second element lacks SAMPLED").code(), "R0105");
 }
+
+fn sampler_array_layout_entry(count: u32) -> BindGroupLayoutEntry {
+    BindGroupLayoutEntry {
+        ty: BindingType::Sampler(pathon_rhi_types::SamplerBindingType::Filtering),
+        ..array_layout_entry(count)
+    }
+}
+
+fn layout_error(device: &NullDevice, entries: Vec<BindGroupLayoutEntry>) -> RhiError {
+    device
+        .create_bind_group_layout(&BindGroupLayoutDesc {
+            label: "rejected",
+            entries,
+        })
+        .expect_err("layout should be rejected")
+}
+
+fn samplers(device: &NullDevice, count: usize) -> Vec<pathon_rhi_types::SamplerId> {
+    (0..count)
+        .map(|_| {
+            device
+                .create_sampler(&pathon_rhi_types::SamplerDesc::NEAREST_CLAMP)
+                .expect("sampler")
+        })
+        .collect()
+}
+
+const PARTIAL: Features = Features::TEXTURE_BINDING_ARRAY.union(Features::PARTIALLY_BOUND_BINDING_ARRAY);
+
+#[test]
+fn a_binding_array_layout_without_the_feature_names_the_feature() {
+    let device = NullDevice::with_features(Features::empty());
+    let error = layout_error(&device, vec![array_layout_entry(4)]);
+
+    assert!(error.to_string().contains("TEXTURE_BINDING_ARRAY"), "{error}");
+}
+
+#[test]
+fn a_storage_texture_array_is_rejected() {
+    let device = NullDevice::new();
+    let entry = BindGroupLayoutEntry {
+        ty: BindingType::StorageTexture {
+            access: StorageAccess::ReadOnly,
+            format: Format::Rgba8Unorm,
+            dimension: TextureViewDimension::D2,
+        },
+        ..array_layout_entry(4)
+    };
+
+    assert_eq!(layout_error(&device, vec![entry]).code(), "R0107");
+}
+
+#[test]
+fn a_buffer_array_is_rejected() {
+    let device = NullDevice::new();
+    let entry = BindGroupLayoutEntry {
+        ty: BindingType::StorageBuffer {
+            access: StorageAccess::ReadOnly,
+        },
+        ..array_layout_entry(4)
+    };
+
+    assert_eq!(layout_error(&device, vec![entry]).code(), "R0107");
+}
+
+#[test]
+fn an_empty_binding_array_is_rejected_even_when_partially_bound() {
+    let device = NullDevice::with_features(PARTIAL);
+    let layout = array_layout(&device, 4);
+    let result = array_group(&device, layout, BindingResource::TextureViewArray(Vec::new()));
+
+    assert_eq!(result.expect_err("zero length").code(), "R0107");
+}
+
+#[test]
+fn an_empty_array_of_the_wrong_kind_is_rejected() {
+    let device = NullDevice::with_features(PARTIAL);
+    let layout = device
+        .create_bind_group_layout(&BindGroupLayoutDesc {
+            label: "samplers",
+            entries: vec![sampler_array_layout_entry(4)],
+        })
+        .expect("layout");
+    let result = array_group(&device, layout, BindingResource::TextureViewArray(Vec::new()));
+
+    assert_eq!(result.expect_err("views for samplers").code(), "R0107");
+}
+
+#[test]
+fn a_binding_array_longer_than_count_is_rejected_even_when_partially_bound() {
+    let device = NullDevice::with_features(PARTIAL);
+    let layout = array_layout(&device, 2);
+    let views = sampled_views(&device, 3);
+    let result = array_group(&device, layout, BindingResource::TextureViewArray(views));
+
+    assert_eq!(result.expect_err("3 of 2 elements").code(), "R0107");
+}
+
+#[test]
+fn texture_arrays_are_limited_per_stage_across_entries() {
+    let device = NullDevice::new();
+    let half = device.caps().limits.max_binding_array_elements_per_shader_stage / 2 + 1;
+    let second = BindGroupLayoutEntry {
+        binding: 1,
+        ..array_layout_entry(half)
+    };
+
+    assert_eq!(
+        layout_error(&device, vec![array_layout_entry(half), second]).code(),
+        "R0107"
+    );
+}
+
+#[test]
+fn arrays_in_different_stages_do_not_share_a_limit() {
+    let device = NullDevice::new();
+    let half = device.caps().limits.max_binding_array_elements_per_shader_stage / 2 + 1;
+    let vertex_only = BindGroupLayoutEntry {
+        binding: 1,
+        visibility: ShaderStages::VERTEX,
+        ..array_layout_entry(half)
+    };
+
+    device
+        .create_bind_group_layout(&BindGroupLayoutDesc {
+            label: "stages",
+            entries: vec![array_layout_entry(half), vertex_only],
+        })
+        .expect("different stages");
+}
+
+#[test]
+fn sampler_arrays_are_limited_per_stage_across_entries() {
+    let device = NullDevice::new();
+    let half = device.caps().limits.max_binding_array_sampler_elements_per_shader_stage / 2 + 1;
+    let second = BindGroupLayoutEntry {
+        binding: 1,
+        ..sampler_array_layout_entry(half)
+    };
+
+    assert_eq!(
+        layout_error(&device, vec![sampler_array_layout_entry(half), second]).code(),
+        "R0107"
+    );
+}
+
+#[test]
+fn sampler_arrays_count_against_the_general_limit_too() {
+    let device = NullDevice::new();
+    let limits = &device.caps().limits;
+    let sampler_count = limits.max_binding_array_sampler_elements_per_shader_stage;
+    let textures = limits.max_binding_array_elements_per_shader_stage - sampler_count + 1;
+    let sampler_entry = BindGroupLayoutEntry {
+        binding: 1,
+        ..sampler_array_layout_entry(sampler_count)
+    };
+
+    assert_eq!(
+        layout_error(&device, vec![array_layout_entry(textures), sampler_entry]).code(),
+        "R0107"
+    );
+}
+
+#[test]
+fn a_sampler_array_over_the_sampler_limit_is_rejected() {
+    let device = NullDevice::new();
+    let over = device.caps().limits.max_binding_array_sampler_elements_per_shader_stage + 1;
+
+    assert_eq!(
+        layout_error(&device, vec![sampler_array_layout_entry(over)]).code(),
+        "R0107"
+    );
+}
+
+#[test]
+fn a_sampler_array_group_matches_only_sampler_arrays() {
+    let device = NullDevice::new();
+    let layout = device
+        .create_bind_group_layout(&BindGroupLayoutDesc {
+            label: "samplers",
+            entries: vec![sampler_array_layout_entry(2)],
+        })
+        .expect("layout");
+    let two_samplers = samplers(&device, 2);
+    array_group(&device, layout, BindingResource::SamplerArray(two_samplers)).expect("sampler array");
+
+    let views = sampled_views(&device, 2);
+    let result = array_group(&device, layout, BindingResource::TextureViewArray(views));
+    assert_eq!(result.expect_err("views for samplers").code(), "R0107");
+
+    let texture_layout = array_layout(&device, 2);
+    let two_samplers = samplers(&device, 2);
+    let result = array_group(&device, texture_layout, BindingResource::SamplerArray(two_samplers));
+    assert_eq!(result.expect_err("samplers for textures").code(), "R0107");
+}
+
+#[test]
+fn an_array_element_in_the_wrong_state_at_dispatch_is_rejected() {
+    let device = NullDevice::new();
+    let mut list = CommandList::new();
+    let ready = render_target(&device);
+    let stale = render_target(&device);
+    for texture in [ready, stale] {
+        list.texture_access(texture, SubresourceRange::ALL, Access::COLOR_ATTACHMENT);
+        clear_pass(&device, texture, &mut list);
+    }
+    list.texture_access(ready, SubresourceRange::ALL, Access::SAMPLED);
+    let views: Vec<_> = [ready, stale]
+        .map(|texture| {
+            device
+                .create_texture_view(texture, &TextureViewDesc::default())
+                .expect("view")
+        })
+        .to_vec();
+    let layout = array_layout(&device, 2);
+    let group = array_group(&device, layout, BindingResource::TextureViewArray(views)).expect("group");
+    let module = device
+        .create_shader_module(&ShaderModuleDesc {
+            label: "sample",
+            wgsl: "fn main() {}",
+        })
+        .expect("module");
+    let pipeline = device
+        .create_compute_pipeline(&ComputePipelineDesc {
+            label: "sample",
+            bind_group_layouts: vec![layout],
+            shader: ShaderStage {
+                module,
+                entry_point: "main",
+            },
+        })
+        .expect("pipeline");
+    {
+        let mut pass = list.compute_pass(ComputePassDesc {
+            label: "sample",
+            timestamps: None,
+        });
+        pass.set_pipeline(pipeline);
+        pass.set_bind_group(0, group);
+        pass.dispatch(1, 1, 1);
+    }
+
+    assert_eq!(code(device.submit(list)), "R0101");
+}

@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use pathon_rhi_types::{
     Access, BindGroupId, BufferId, BufferUsage, Command, CommandList, DepthAccess, Extent3d, FormatKind, LoadOp,
     ResourceRef, RhiError, StoreOp, SubresourceRange, TextureCopy, TextureDimension, TextureId, TextureUsage,
@@ -274,13 +276,13 @@ impl<'state> Validator<'state> {
         }
         let groups: Vec<BindGroupId> = self.bound.iter().map(|(_, group)| *group).collect();
         for group in groups {
-            let uses = self
-                .state
-                .bind_groups
-                .get(group)
-                .ok_or(RhiError::InvalidHandle("bind group"))?
-                .clone();
-            for binding_use in uses {
+            let uses = Arc::clone(
+                self.state
+                    .bind_groups
+                    .get(group)
+                    .ok_or(RhiError::InvalidHandle("bind group"))?,
+            );
+            for &binding_use in uses.iter() {
                 if let BindingUse::Texture {
                     view,
                     mut access,

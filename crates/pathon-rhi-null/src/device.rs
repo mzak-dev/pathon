@@ -1,14 +1,14 @@
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use pathon_rhi_types::{
     Access, AdapterInfo, Backend, BindGroupDesc, BindGroupId, BindGroupLayoutDesc, BindGroupLayoutEntry,
     BindGroupLayoutId, BindingResource, BindingType, BufferDesc, BufferId, BufferUsage, Caps, CommandList,
     ComputePipelineDesc, ComputePipelineId, DeviceApi, DeviceType, Extent3d, Features, Format, FormatCaps, FormatKind,
     Limits, Pool, Profile, QuerySetDesc, QuerySetId, RenderPipelineDesc, RenderPipelineId, Resource, RhiError,
-    SamplerDesc, SamplerId, ShaderModuleDesc, ShaderModuleId, StorageAccess, SubresourceRange, SurfaceConfig,
-    SurfaceFrame, SurfaceId, SurfaceTarget, TexelLayout, TextureCopy, TextureDesc, TextureDimension, TextureId,
-    TextureUsage, TextureViewDesc, TextureViewId,
+    SamplerDesc, SamplerId, ShaderModuleDesc, ShaderModuleId, ShaderStages, StorageAccess, SubresourceRange,
+    SurfaceConfig, SurfaceFrame, SurfaceId, SurfaceTarget, TexelLayout, TextureCopy, TextureDesc, TextureDimension,
+    TextureId, TextureUsage, TextureViewDesc, TextureViewId,
 };
 
 use crate::validator::Validator;
@@ -102,7 +102,7 @@ pub(crate) struct State {
     samplers: Pool<SamplerId, ()>,
     modules: Pool<ShaderModuleId, ()>,
     layouts: Pool<BindGroupLayoutId, BindGroupLayoutDesc>,
-    pub(crate) bind_groups: Pool<BindGroupId, Vec<BindingUse>>,
+    pub(crate) bind_groups: Pool<BindGroupId, Arc<[BindingUse]>>,
     pub(crate) render_pipelines: Pool<RenderPipelineId, ()>,
     pub(crate) compute_pipelines: Pool<ComputePipelineId, ()>,
     pub(crate) query_sets: Pool<QuerySetId, u32>,
@@ -148,7 +148,7 @@ impl NullDevice {
                 device_type: DeviceType::Cpu,
             },
             features,
-            limits: limits_for(features),
+            limits: null_limits(),
             formats,
             timestamp_period_ns: 1.0,
         };
@@ -171,23 +171,37 @@ impl NullDevice {
             if !self.caps.has(Features::TEXTURE_BINDING_ARRAY) {
                 return Err(invalid("binding arrays need Features::TEXTURE_BINDING_ARRAY".into()));
             }
-            let limit = match entry.ty {
-                BindingType::SampledTexture { .. } | BindingType::StorageTexture { .. } => {
-                    self.caps.limits.max_binding_array_elements_per_shader_stage
-                }
-                BindingType::Sampler(_) => self.caps.limits.max_binding_array_sampler_elements_per_shader_stage,
-                _ => {
-                    return Err(invalid(format!(
-                        "binding {} is an array of buffers, which is unsupported",
-                        entry.binding
-                    )));
-                }
-            };
-            let count = entry.count.map_or(0, std::num::NonZeroU32::get);
-            if count > limit {
+            // wgpu would need STORAGE_RESOURCE_BINDING_ARRAY / BUFFER_BINDING_ARRAY, which pathon does not request.
+            if !matches!(entry.ty, BindingType::SampledTexture { .. } | BindingType::Sampler(_)) {
                 return Err(invalid(format!(
-                    "binding {} has {count} elements, the limit is {limit}",
+                    "binding {} is an array of buffers or storage textures, which is unsupported",
                     entry.binding
+                )));
+            }
+        }
+        let limits = &self.caps.limits;
+        for stage in [ShaderStages::VERTEX, ShaderStages::FRAGMENT, ShaderStages::COMPUTE] {
+            let counts = |samplers: bool| -> u64 {
+                desc.entries
+                    .iter()
+                    .filter(|entry| entry.visibility.intersects(stage))
+                    .filter(|entry| matches!(entry.ty, BindingType::Sampler(_)) == samplers)
+                    .filter_map(|entry| entry.count)
+                    .map(|count| u64::from(count.get()))
+                    .sum()
+            };
+            let (textures, samplers) = (counts(false), counts(true));
+            if textures + samplers > u64::from(limits.max_binding_array_elements_per_shader_stage) {
+                return Err(invalid(format!(
+                    "{} binding array elements in one stage, the limit is {}",
+                    textures + samplers,
+                    limits.max_binding_array_elements_per_shader_stage
+                )));
+            }
+            if samplers > u64::from(limits.max_binding_array_sampler_elements_per_shader_stage) {
+                return Err(invalid(format!(
+                    "{samplers} sampler array elements in one stage, the limit is {}",
+                    limits.max_binding_array_sampler_elements_per_shader_stage
                 )));
             }
         }
@@ -221,12 +235,10 @@ impl Default for NullDevice {
     }
 }
 
-fn limits_for(features: Features) -> Limits {
+fn null_limits() -> Limits {
     let mut limits = Limits::WEBGPU_DEFAULT;
-    if features.contains(Features::TEXTURE_BINDING_ARRAY) {
-        limits.max_binding_array_elements_per_shader_stage = 1 << 20;
-        limits.max_binding_array_sampler_elements_per_shader_stage = 2048;
-    }
+    limits.max_binding_array_elements_per_shader_stage = 1 << 20;
+    limits.max_binding_array_sampler_elements_per_shader_stage = 2048;
     limits
 }
 
@@ -278,7 +290,9 @@ fn binding_uses(layout_entry: &BindGroupLayoutEntry, resource: &BindingResource)
         BindingResource::Sampler(_) if layout_entry.count.is_none() && matches!(ty, BindingType::Sampler(_)) => {
             Some(vec![BindingUse::Sampler])
         }
-        BindingResource::TextureViewArray(views) if layout_entry.count.is_some() => {
+        BindingResource::TextureViewArray(views)
+            if layout_entry.count.is_some() && matches!(ty, BindingType::SampledTexture { .. }) =>
+        {
             views.iter().map(|view| texture_use(ty, *view)).collect()
         }
         BindingResource::SamplerArray(samplers) if layout_entry.count.is_some() => {
@@ -459,7 +473,7 @@ impl DeviceApi for NullDevice {
             if let Some(count) = layout_entry.count {
                 let len = resource_len(&entry.resource);
                 let allowed = if self.caps.has(Features::PARTIALLY_BOUND_BINDING_ARRAY) {
-                    len <= count.get() as usize
+                    (1..=count.get() as usize).contains(&len)
                 } else {
                     len == count.get() as usize
                 };
@@ -478,7 +492,7 @@ impl DeviceApi for NullDevice {
         for binding_use in &uses {
             check_binding_usage(&state, desc.label, *binding_use)?;
         }
-        Ok(state.bind_groups.insert(uses))
+        Ok(state.bind_groups.insert(uses.into()))
     }
 
     fn create_render_pipeline(&self, desc: &RenderPipelineDesc) -> Result<RenderPipelineId, RhiError> {

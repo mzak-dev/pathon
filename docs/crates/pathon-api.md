@@ -21,7 +21,7 @@ Każdy pojedynczy `RenderFeature` jest też `Pack` (implementacja ogólna), wię
 | --- | --- | --- |
 | `requirements()` | przed utworzeniem urządzenia | backend, wymagane i opcjonalne funkcje, rozszerzenia backendu (faza 1) |
 | `negotiate(&Caps)` | po utworzeniu urządzenia | `Full`, `Fallback { reason }` (F0103) albo `Disabled { reason }` (F0101) (faza 2) |
-| `setup(&mut SetupCtx)` | raz, po negocjacji | pipeline'y, bufory, publikacja danych w `Shared` |
+| `setup(&mut SetupCtx)` | raz, po negocjacji; po resecie urządzenia paczka wyłączona z F0105 dostaje `negotiate` i `setup` ponownie na tej samej instancji, a jej stare uchwyty GPU są martwe | pipeline'y, bufory, publikacja danych w `Shared` |
 | `prepare_view(&mut PrepareCtx)` | co klatkę, przed budową grafu | prośby o sloty na żądanie; rola `TEMPORAL_RESOLVE` ustawia `render_size`, jitter i mip bias |
 | `record(&mut RecordCtx)` | co klatkę, dla każdego widoku | passy w grafie, odczyt i zapis slotów i `Shared` |
 | `on_resize`, `on_device_reset` | przy zmianie rozmiaru / po utracie urządzenia | domyślnie `on_device_reset` woła `setup` |

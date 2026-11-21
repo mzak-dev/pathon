@@ -88,7 +88,7 @@ pub(super) fn draw_header(frame: &mut Frame<'_>, area: Rect, app: &App) {
 }
 
 pub(super) fn draw_footer(frame: &mut Frame<'_>, area: Rect, app: &App) {
-    let keys = "←↑↓→ wybór · Tab/1-4 zakładki · c wycięte · v widok · p pauza · s zapisz · q wyjście";
+    let keys = "←↑↓→ wybór · Tab/1-4 zakładki · c wycięte · v widok · p pauza · s zapisz · d zapis DOT · q wyjście";
     let mut spans = vec![Span::styled(keys, dim())];
     if let Some(message) = &app.message {
         spans.push(Span::styled(format!("   {message}"), Style::default().fg(Color::Green)));

@@ -649,7 +649,7 @@ fn reordering_views_does_not_recompile_their_graphs() {
 }
 
 #[test]
-fn two_views_on_one_target_still_render() {
+fn a_second_view_of_the_same_offscreen_target_is_skipped() {
     let mut renderer = null_builder().build().expect("renderer");
     let target = renderer
         .add_offscreen_target(SIZE, Format::Rgba8Unorm)

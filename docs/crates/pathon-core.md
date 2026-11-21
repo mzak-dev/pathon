@@ -29,7 +29,7 @@ Cache grafu i `ViewId` są per cel, nie per pozycja widoku: zmiana kolejności w
 
 Jeden widok na cel w klatce ([ADR-0013](../adr/0013-dwa-widoki-na-celu-i-paczki-po-resecie.md)). Drugi widok tego samego celu jest pomijany przed pobraniem wyjścia (okno nie jest pobierane dwa razy), liczy się w `FrameReport::skipped_views` i zgłasza [F0106](../diag/F0106.md); w trybie A trafia ona tylko do logu.
 
-`FrameReport::diagnostics` zbiera diagnostyki z tej klatki (F0105, ostrzeżenia grafu). Gdy klatka kończy się błędem, jej diagnostyki trafiają do logu, ale nie do następnego raportu. Po `set_capture(true)` `FrameReport::captures` ma jeden `GraphCapture` na widok, a `feature_details()` opisuje każdą paczkę (status, etap, priorytet, rola, kolejność). Z tego korzystają [devtools](../devtools.md).
+`FrameReport::diagnostics` zbiera diagnostyki z tej klatki (F0105, F0106, ostrzeżenia grafu). Gdy klatka kończy się błędem, jej diagnostyki trafiają do logu, ale nie do następnego raportu. Po `set_capture(true)` `FrameReport::captures` ma jeden `GraphCapture` na widok, a `feature_details()` opisuje każdą paczkę (status, etap, priorytet, rola, kolejność). Z tego korzystają [devtools](../devtools.md).
 
 ## Rejestr paczek
 

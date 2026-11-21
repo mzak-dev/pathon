@@ -15,7 +15,8 @@ Spike ash (`docs/spike-ash.md`, pozycje P, S i K) zostawił trzy decyzje przed M
 - `DeviceApi::pipeline_cache_data(&self) -> Option<PipelineCacheData>` — aktualny blob do zapisania przez hosta; `None`, gdy backend nie ma cache albo funkcja nie jest włączona.
 - `PipelineCacheData` to newtype na bajtach: `as_bytes()` do zapisu, `unsafe fn from_bytes(Vec<u8>)` do wczytania. Kontrakt `unsafe` przenosi kontrakt wgpu (`Device::create_pipeline_cache`): bajty muszą pochodzić z `pipeline_cache_data` — sterownik nie musi bronić się przed dowolnymi danymi. Blob otrzymany z gettera da się przekazać dalej bez `unsafe`.
 - Cache działa tylko z włączonym `Features::PIPELINE_CACHE` (dziś tylko Vulkan). Bez funkcji blob z `DeviceRequest` jest ignorowany, żeby host mógł żądać funkcji jako opcjonalnej i zawsze podawać blob z dysku.
-- Blob niepasujący do adaptera, sterownika albo wersji wgpu nie jest błędem: urządzenie startuje z pustym cache (`fallback: true`).
+- Blob niepasujący do adaptera, backendu, sterownika albo wersji wgpu nie jest błędem: urządzenie startuje z pustym cache. `fallback: true` w wgpu obejmuje tylko blob uszkodzony lub ze starszego sterownika albo wgpu; blob z innego adaptera lub backendu wgpu odrzuca błędem walidacji, więc backend tworzy cache w zakresie błędów i przy każdym błędzie tworzy go ponownie bez danych.
+- Kontrakt `from_bytes` dotyczy bajtów z `pipeline_cache_data` tego samego backendu; gdy pojawi się drugi backend produkujący bloby (ash), blob dostanie własny znacznik backendu albo kontrakt zostanie zaostrzony.
 - Backend wgpu tworzy cache przy każdym urządzeniu z włączoną funkcją (także cudzym, bez danych) i przekazuje go do każdego tworzonego potoku. `rhi-null` zawsze zwraca `None`.
 - Gdzie i pod jakim kluczem host zapisuje blob — M3-05.
 

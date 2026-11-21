@@ -7,7 +7,7 @@ Backend RHI na wgpu 30 — jedyny crate, który importuje wgpu (M0-08).
 - Konwersje typów pathon ↔ wgpu idą z jednej tabeli na typ (makro `two_way!` dla formatów, tablica par dla funkcji); test sprawdza, że każdy format i każdy bit `Features` przechodzi w obie strony.
 - `Caps` liczone z adaptera: matryca formatów pomija formaty, których funkcje (BC, ETC2, ASTC, 16-bit norm) nie zostały włączone.
 - Błędy walidacji wgpu przy tworzeniu obiektów i `submit` wracają jako `R0009` zamiast trafiać do handlera, który domyślnie panikuje.
-- Przy włączonym `Features::PIPELINE_CACHE` (dziś Vulkan) urządzenie ma jeden `wgpu::PipelineCache` przekazywany każdemu potokowi. Własne urządzenie startuje z blobem z `DeviceRequest::pipeline_cache` (`fallback: true`: niepasujący blob daje pusty cache), urządzenie hosta (`adopt`) dostaje cache bez danych; `pipeline_cache_data()` oddaje blob do zapisu (ADR-0019).
+- Przy włączonym `Features::PIPELINE_CACHE` (dziś Vulkan) urządzenie ma jeden `wgpu::PipelineCache` przekazywany każdemu potokowi. Własne urządzenie startuje z blobem z `DeviceRequest::pipeline_cache`; cache powstaje w zakresie błędów walidacji, a blob odrzucony przez wgpu (inny adapter lub backend, uszkodzony, ze starszego sterownika) daje pusty cache, nigdy błąd ani panikę, urządzenie hosta (`adopt`) dostaje cache bez danych; `pipeline_cache_data()` oddaje blob do zapisu (ADR-0019).
 - Komendy `TextureAccess` są pomijane: wgpu śledzi stany sam, plan barier waliduje `pathon-rhi-null`.
 
 ## `interop`

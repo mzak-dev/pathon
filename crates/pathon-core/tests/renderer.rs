@@ -1366,3 +1366,60 @@ fn frames_recover_after_present_failed_following_a_successful_submit() {
             .expect("the failed present did not roll back states of a list that ran");
     }
 }
+
+// `UnlitMeshPack` takes one uniform slot per record; its ring holds 64 KiB.
+fn unlit_ring_capacity(renderer: &Renderer) -> usize {
+    let alignment = u64::from(renderer.device().caps().limits.min_uniform_buffer_offset_alignment);
+    usize::try_from((64 << 10) / alignment).expect("ring capacity fits usize")
+}
+
+#[test]
+#[ignore = "red until the frame clock lands"]
+fn a_pack_with_a_per_frame_ring_survives_a_host_that_never_numbers_its_frames() {
+    let mut renderer = null_builder()
+        .with_feature(UnlitMeshPack::new())
+        .build()
+        .expect("renderer");
+    let input = one_view(&mut renderer, Format::Rgba8Unorm);
+
+    for _ in 0..unlit_ring_capacity(&renderer) * 2 {
+        renderer.render_frame(&input).expect("frame");
+    }
+
+    assert_eq!(renderer.features(), [("unlit mesh", FeatureStatus::Active)]);
+}
+
+#[test]
+#[ignore = "red until the frame clock lands"]
+fn a_pack_with_a_per_frame_ring_survives_unnumbered_frames_in_mode_a() {
+    let mut renderer = null_builder()
+        .with_feature(UnlitMeshPack::new())
+        .build()
+        .expect("renderer");
+    let input = one_view(&mut renderer, Format::Rgba8Unorm);
+
+    for _ in 0..unlit_ring_capacity(&renderer) * 2 {
+        let list = renderer.record_frame(&input).expect("frame");
+        renderer.device().submit(list).expect("host submit");
+    }
+
+    assert_eq!(renderer.features(), [("unlit mesh", FeatureStatus::Active)]);
+}
+
+#[test]
+#[ignore = "red until the frame clock lands"]
+fn retrying_an_abandoned_frame_does_not_exhaust_a_per_frame_ring() {
+    let mut renderer = null_builder()
+        .with_feature(UnlitMeshPack::new())
+        .build()
+        .expect("renderer");
+    let healthy = one_view(&mut renderer, Format::Rgba8Unorm);
+    let failing = failing_second_view(&mut renderer, &healthy);
+
+    for _ in 0..unlit_ring_capacity(&renderer) * 2 {
+        assert!(renderer.render_frame(&failing).is_err());
+    }
+
+    renderer.render_frame(&healthy).expect("frame after the retries");
+    assert_eq!(renderer.features(), [("unlit mesh", FeatureStatus::Active)]);
+}

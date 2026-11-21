@@ -68,7 +68,7 @@ impl<'state> Validator<'state> {
                     .textures
                     .get_mut(texture)
                     .ok_or(RhiError::InvalidHandle("texture"))?;
-                for (mip, layer) in target.subresource_list(range) {
+                for (mip, layer) in target.checked_subresources(range)? {
                     target.subresource_mut(mip, layer).access = access;
                 }
             }
@@ -382,7 +382,7 @@ impl<'state> Validator<'state> {
                 format!("texture '{label}' used without {usage:?} usage"),
             ));
         }
-        for (mip, layer) in target.subresource_list(range) {
+        for (mip, layer) in target.checked_subresources(range)? {
             let subresource = target.subresource_mut(mip, layer);
             if !subresource.access.contains(needed) {
                 return Err(RhiError::validation(

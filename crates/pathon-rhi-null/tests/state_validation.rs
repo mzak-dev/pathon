@@ -263,3 +263,66 @@ impl raw_window_handle::HasDisplayHandle for NoWindow {
         Err(raw_window_handle::HandleError::Unavailable)
     }
 }
+
+#[test]
+fn writing_a_deeper_slice_of_a_3d_texture_initializes_it() {
+    let device = NullDevice::new();
+    let desc = TextureDesc {
+        size: pathon_rhi_types::Extent3d {
+            width: 4,
+            height: 4,
+            depth_or_layers: 4,
+        },
+        dimension: pathon_rhi_types::TextureDimension::D3,
+        ..TextureDesc::new_2d(
+            "volume",
+            4,
+            4,
+            Format::Rgba8Unorm,
+            TextureUsage::COPY_DST | TextureUsage::COPY_SRC,
+        )
+    };
+    let volume = device.create_texture(&desc).expect("volume");
+    let slice = pathon_rhi_types::TextureCopy {
+        origin: pathon_rhi_types::Origin3d { x: 0, y: 0, z: 2 },
+        ..pathon_rhi_types::TextureCopy::whole(volume)
+    };
+    let layout = pathon_rhi_types::TexelLayout {
+        offset: 0,
+        bytes_per_row: 16,
+        rows_per_image: 4,
+    };
+    device
+        .write_texture(&slice, &[0; 64], layout, pathon_rhi_types::Extent3d::new_2d(4, 4))
+        .expect("write");
+
+    let mut list = CommandList::new();
+    list.texture_access(volume, SubresourceRange::ALL, Access::COPY_SRC);
+    let copy = TextureDesc::new_2d("copy", 4, 4, Format::Rgba8Unorm, TextureUsage::COPY_DST);
+    let destination = device.create_texture(&copy).expect("copy target");
+    list.texture_access(destination, SubresourceRange::ALL, Access::COPY_DST);
+    list.copy_texture_to_texture(
+        pathon_rhi_types::TextureCopy::whole(volume),
+        pathon_rhi_types::TextureCopy::whole(destination),
+        pathon_rhi_types::Extent3d::new_2d(4, 4),
+    );
+    device
+        .submit(list)
+        .expect("the volume was written, so reading it is fine");
+}
+
+#[test]
+fn a_barrier_outside_the_texture_mips_is_r0112() {
+    let device = NullDevice::new();
+    let texture = render_target(&device);
+    let mut list = CommandList::new();
+    let mip_three = SubresourceRange {
+        base_mip: 3,
+        mip_count: 1,
+        base_layer: 0,
+        layer_count: 1,
+    };
+    list.texture_access(texture, mip_three, Access::COPY_DST);
+
+    assert_eq!(code(device.submit(list)), "R0112");
+}

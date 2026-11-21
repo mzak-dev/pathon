@@ -43,6 +43,25 @@ impl NullTexture {
             .subresources(self.desc.mip_level_count, self.desc.array_layers())
             .collect()
     }
+
+    // Like `subresource_list`, but a range reaching past the texture is an error instead of being clamped;
+    // a `u32::MAX` count means "to the end".
+    pub(crate) fn checked_subresources(&self, range: SubresourceRange) -> Result<Vec<(u32, u32)>, RhiError> {
+        let (mips, layers) = (self.desc.mip_level_count, self.desc.array_layers());
+        let fits = |base: u32, count: u32, total: u32| {
+            base < total && (count == u32::MAX || base.saturating_add(count) <= total)
+        };
+        if fits(range.base_mip, range.mip_count, mips) && fits(range.base_layer, range.layer_count, layers) {
+            return Ok(self.subresource_list(range));
+        }
+        Err(RhiError::validation(
+            "R0112",
+            format!(
+                "texture '{}' has {mips} mips and {layers} layers; {range:?} reaches outside them",
+                self.desc.label
+            ),
+        ))
+    }
 }
 
 #[derive(Debug)]
@@ -276,10 +295,16 @@ impl DeviceApi for NullDevice {
         } else {
             size.depth_or_layers
         };
+        // A 3D texture has one subresource per mip; `origin.z` is a depth slice inside it, not a layer.
+        let base_layer = if texture.desc.dimension == TextureDimension::D3 {
+            0
+        } else {
+            dst.origin.z
+        };
         let range = SubresourceRange {
             base_mip: dst.mip,
             mip_count: 1,
-            base_layer: dst.origin.z,
+            base_layer,
             layer_count: layers,
         };
         for (mip, layer) in texture.subresource_list(range) {
@@ -408,6 +433,9 @@ impl DeviceApi for NullDevice {
     }
 
     fn configure_surface(&self, surface: SurfaceId, config: &SurfaceConfig) -> Result<Format, RhiError> {
+        if config.size.is_empty() {
+            return Err(RhiError::SurfaceUnavailable);
+        }
         let mut state = self.lock();
         let target = state
             .surfaces

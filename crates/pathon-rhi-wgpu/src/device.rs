@@ -476,7 +476,7 @@ impl DeviceApi for WgpuDevice {
                     binding: entry.binding,
                     visibility: convert::shader_stages_to_wgpu(entry.visibility),
                     ty: convert::binding_type_to_wgpu(entry.ty)?,
-                    count: None,
+                    count: entry.count,
                 })
             })
             .collect::<Result<_, RhiError>>()?;
@@ -495,25 +495,55 @@ impl DeviceApi for WgpuDevice {
             .layouts
             .get(desc.layout)
             .ok_or(RhiError::InvalidHandle("bind group layout"))?;
+        let mut view_arrays: Vec<Vec<&wgpu::TextureView>> = Vec::new();
+        let mut sampler_arrays: Vec<Vec<&wgpu::Sampler>> = Vec::new();
+        for entry in &desc.entries {
+            match &entry.resource {
+                BindingResource::TextureViewArray(views) => view_arrays.push(
+                    views
+                        .iter()
+                        .map(|view| objects.views.get(*view).ok_or(RhiError::InvalidHandle("texture view")))
+                        .collect::<Result<_, _>>()?,
+                ),
+                BindingResource::SamplerArray(samplers) => sampler_arrays.push(
+                    samplers
+                        .iter()
+                        .map(|sampler| objects.samplers.get(*sampler).ok_or(RhiError::InvalidHandle("sampler")))
+                        .collect::<Result<_, _>>()?,
+                ),
+                _ => {}
+            }
+        }
+        let mut next_view_array = view_arrays.iter();
+        let mut next_sampler_array = sampler_arrays.iter();
         let mut entries = Vec::with_capacity(desc.entries.len());
         for entry in &desc.entries {
-            let resource = match entry.resource {
+            let resource = match &entry.resource {
                 BindingResource::Buffer { buffer, offset, size } => {
-                    let buffer = objects.buffers.get(buffer).ok_or(RhiError::InvalidHandle("buffer"))?;
+                    let buffer = objects.buffers.get(*buffer).ok_or(RhiError::InvalidHandle("buffer"))?;
                     wgpu::BindingResource::Buffer(wgpu::BufferBinding {
                         buffer,
-                        offset,
+                        offset: *offset,
                         size: size.and_then(NonZeroU64::new),
                     })
                 }
                 BindingResource::TextureView(view) => wgpu::BindingResource::TextureView(
-                    objects.views.get(view).ok_or(RhiError::InvalidHandle("texture view"))?,
+                    objects
+                        .views
+                        .get(*view)
+                        .ok_or(RhiError::InvalidHandle("texture view"))?,
                 ),
                 BindingResource::Sampler(sampler) => wgpu::BindingResource::Sampler(
                     objects
                         .samplers
-                        .get(sampler)
+                        .get(*sampler)
                         .ok_or(RhiError::InvalidHandle("sampler"))?,
+                ),
+                BindingResource::TextureViewArray(_) => wgpu::BindingResource::TextureViewArray(
+                    next_view_array.next().expect("one array per TextureViewArray entry"),
+                ),
+                BindingResource::SamplerArray(_) => wgpu::BindingResource::SamplerArray(
+                    next_sampler_array.next().expect("one array per SamplerArray entry"),
                 ),
             };
             entries.push(wgpu::BindGroupEntry {

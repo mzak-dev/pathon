@@ -174,6 +174,7 @@ impl RenderFeature for UnlitMeshPack {
                 binding: 0,
                 visibility: ShaderStages::VERTEX,
                 ty: BindingType::UniformBuffer,
+                count: None,
             }],
         })?;
         self.objects = Some(GpuObjects {

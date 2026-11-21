@@ -1,3 +1,5 @@
+use std::num::NonZeroU32;
+
 use bitflags::bitflags;
 
 use crate::desc::TextureViewDimension;
@@ -72,6 +74,7 @@ pub struct BindGroupLayoutEntry {
     pub binding: u32,
     pub visibility: ShaderStages,
     pub ty: BindingType,
+    pub count: Option<NonZeroU32>,
 }
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -80,7 +83,7 @@ pub struct BindGroupLayoutDesc {
     pub entries: Vec<BindGroupLayoutEntry>,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum BindingResource {
     Buffer {
         buffer: BufferId,
@@ -89,6 +92,8 @@ pub enum BindingResource {
     },
     TextureView(TextureViewId),
     Sampler(SamplerId),
+    TextureViewArray(Vec<TextureViewId>),
+    SamplerArray(Vec<SamplerId>),
 }
 
 impl BindingResource {
@@ -101,7 +106,7 @@ impl BindingResource {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct BindGroupEntry {
     pub binding: u32,
     pub resource: BindingResource,

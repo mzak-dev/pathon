@@ -126,6 +126,7 @@ fn compute_doubles_values(device: &Device) {
                 ty: BindingType::StorageBuffer {
                     access: StorageAccess::ReadWrite,
                 },
+                count: None,
             }],
         })
         .expect("layout");
@@ -249,11 +250,13 @@ fn indexed_quad_samples_texture(device: &Device) {
                     binding: 0,
                     visibility: ShaderStages::FRAGMENT,
                     ty: BindingType::texture_2d(),
+                    count: None,
                 },
                 BindGroupLayoutEntry {
                     binding: 1,
                     visibility: ShaderStages::FRAGMENT,
                     ty: BindingType::Sampler(SamplerBindingType::Filtering),
+                    count: None,
                 },
             ],
         })

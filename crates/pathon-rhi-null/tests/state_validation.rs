@@ -1,8 +1,10 @@
+use std::num::NonZeroU32;
+
 use pathon_rhi_null::NullDevice;
 use pathon_rhi_types::{
     Access, BindGroupDesc, BindGroupEntry, BindGroupLayoutDesc, BindGroupLayoutEntry, BindingResource, BindingType,
-    Color, ColorAttachment, CommandList, ComputePassDesc, ComputePipelineDesc, DepthAttachment, DeviceApi, Format,
-    RenderPassDesc, RhiError, ShaderModuleDesc, ShaderStage, ShaderStages, StorageAccess, SubresourceRange,
+    Color, ColorAttachment, CommandList, ComputePassDesc, ComputePipelineDesc, DepthAttachment, DeviceApi, Features,
+    Format, RenderPassDesc, RhiError, ShaderModuleDesc, ShaderStage, ShaderStages, StorageAccess, SubresourceRange,
     SurfaceConfig, TextureDesc, TextureId, TextureUsage, TextureViewDesc, TextureViewDimension,
 };
 
@@ -97,6 +99,7 @@ fn reading_hi_z_mip_before_it_is_written_is_rejected() {
                     binding: 0,
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::texture_2d(),
+                    count: None,
                 },
                 BindGroupLayoutEntry {
                     binding: 1,
@@ -106,6 +109,7 @@ fn reading_hi_z_mip_before_it_is_written_is_rejected() {
                         format: Format::R32Float,
                         dimension: TextureViewDimension::D2,
                     },
+                    count: None,
                 },
             ],
         })
@@ -194,6 +198,7 @@ fn sampling_a_texture_in_a_storage_state_is_rejected() {
                 binding: 0,
                 visibility: ShaderStages::COMPUTE,
                 ty: BindingType::texture_2d(),
+                count: None,
             }],
         })
         .expect("layout");
@@ -250,6 +255,7 @@ fn sampled_compute_pass(device: &NullDevice, texture: TextureId, list: &mut Comm
                 binding: 0,
                 visibility: ShaderStages::COMPUTE,
                 ty: BindingType::texture_2d(),
+                count: None,
             }],
         })
         .expect("layout");
@@ -351,6 +357,7 @@ fn a_read_only_storage_binding_on_a_texture_without_storage_usage_is_rejected() 
                     format: Format::Rgba8Unorm,
                     dimension: TextureViewDimension::D2,
                 },
+                count: None,
             }],
         })
         .expect("layout");
@@ -529,4 +536,164 @@ fn a_barrier_outside_the_texture_mips_is_r0112() {
     list.texture_access(texture, mip_three, Access::COPY_DST);
 
     assert_eq!(code(device.submit(list)), "R0112");
+}
+
+fn array_layout_entry(count: u32) -> BindGroupLayoutEntry {
+    BindGroupLayoutEntry {
+        binding: 0,
+        visibility: ShaderStages::COMPUTE,
+        ty: BindingType::texture_2d(),
+        count: NonZeroU32::new(count),
+    }
+}
+
+fn array_layout(device: &NullDevice, count: u32) -> pathon_rhi_types::BindGroupLayoutId {
+    device
+        .create_bind_group_layout(&BindGroupLayoutDesc {
+            label: "array",
+            entries: vec![array_layout_entry(count)],
+        })
+        .expect("array layout")
+}
+
+fn sampled_views(device: &NullDevice, count: usize) -> Vec<pathon_rhi_types::TextureViewId> {
+    let texture = render_target(device);
+    (0..count)
+        .map(|_| {
+            device
+                .create_texture_view(texture, &TextureViewDesc::default())
+                .expect("view")
+        })
+        .collect()
+}
+
+fn array_group(
+    device: &NullDevice,
+    layout: pathon_rhi_types::BindGroupLayoutId,
+    resource: BindingResource,
+) -> Result<pathon_rhi_types::BindGroupId, RhiError> {
+    device.create_bind_group(&BindGroupDesc {
+        label: "array",
+        layout,
+        entries: vec![BindGroupEntry { binding: 0, resource }],
+    })
+}
+
+#[test]
+fn a_binding_array_group_with_a_uniform_buffer_is_rejected() {
+    let device = NullDevice::new();
+    let result = device.create_bind_group_layout(&BindGroupLayoutDesc {
+        label: "mixed",
+        entries: vec![
+            array_layout_entry(4),
+            BindGroupLayoutEntry {
+                binding: 1,
+                visibility: ShaderStages::COMPUTE,
+                ty: BindingType::UniformBuffer,
+                count: None,
+            },
+        ],
+    });
+
+    assert_eq!(result.expect_err("uniform next to an array").code(), "R0107");
+}
+
+#[test]
+fn a_binding_array_layout_needs_the_texture_binding_array_feature() {
+    let device = NullDevice::with_features(Features::empty());
+    let result = device.create_bind_group_layout(&BindGroupLayoutDesc {
+        label: "array",
+        entries: vec![array_layout_entry(4)],
+    });
+
+    assert_eq!(result.expect_err("feature is off").code(), "R0107");
+}
+
+#[test]
+fn a_binding_array_layout_over_the_limit_is_rejected() {
+    let device = NullDevice::new();
+    let over = device.caps().limits.max_binding_array_elements_per_shader_stage + 1;
+    let result = device.create_bind_group_layout(&BindGroupLayoutDesc {
+        label: "array",
+        entries: vec![array_layout_entry(over)],
+    });
+
+    assert_eq!(result.expect_err("over the limit").code(), "R0107");
+}
+
+#[test]
+fn a_short_binding_array_needs_the_partially_bound_feature() {
+    let strict = NullDevice::with_features(Features::TEXTURE_BINDING_ARRAY);
+    let layout = array_layout(&strict, 4);
+    let views = sampled_views(&strict, 3);
+    let result = array_group(&strict, layout, BindingResource::TextureViewArray(views));
+    assert_eq!(result.expect_err("3 of 4 elements").code(), "R0107");
+
+    let partial = NullDevice::with_features(Features::TEXTURE_BINDING_ARRAY | Features::PARTIALLY_BOUND_BINDING_ARRAY);
+    let layout = array_layout(&partial, 4);
+    let views = sampled_views(&partial, 3);
+    array_group(&partial, layout, BindingResource::TextureViewArray(views)).expect("partially bound group");
+}
+
+#[test]
+fn a_full_binding_array_is_accepted() {
+    let device = NullDevice::new();
+    let layout = array_layout(&device, 4);
+    let views = sampled_views(&device, 4);
+
+    array_group(&device, layout, BindingResource::TextureViewArray(views)).expect("full array");
+}
+
+#[test]
+fn an_array_resource_for_an_entry_without_count_is_rejected() {
+    let device = NullDevice::new();
+    let layout = device
+        .create_bind_group_layout(&BindGroupLayoutDesc {
+            label: "single",
+            entries: vec![BindGroupLayoutEntry {
+                count: None,
+                ..array_layout_entry(1)
+            }],
+        })
+        .expect("layout");
+    let views = sampled_views(&device, 1);
+    let result = array_group(&device, layout, BindingResource::TextureViewArray(views));
+
+    assert_eq!(result.expect_err("array for a single binding").code(), "R0107");
+}
+
+#[test]
+fn a_single_resource_for_an_array_entry_is_rejected() {
+    let device = NullDevice::new();
+    let layout = array_layout(&device, 1);
+    let view = sampled_views(&device, 1)[0];
+    let result = array_group(&device, layout, BindingResource::TextureView(view));
+
+    assert_eq!(result.expect_err("single for an array binding").code(), "R0107");
+}
+
+#[test]
+fn binding_array_elements_are_checked_like_single_bindings() {
+    let device = NullDevice::new();
+    let layout = array_layout(&device, 2);
+    let target = render_target(&device);
+    let sampled_texture = device
+        .create_texture(&TextureDesc::new_2d(
+            "no-sampled",
+            4,
+            4,
+            Format::Rgba8Unorm,
+            TextureUsage::RENDER_TARGET,
+        ))
+        .expect("texture");
+    let views = [target, sampled_texture]
+        .map(|texture| {
+            device
+                .create_texture_view(texture, &TextureViewDesc::default())
+                .expect("view")
+        })
+        .to_vec();
+    let result = array_group(&device, layout, BindingResource::TextureViewArray(views));
+
+    assert_eq!(result.expect_err("second element lacks SAMPLED").code(), "R0105");
 }

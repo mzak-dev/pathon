@@ -2,12 +2,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, MutexGuard};
 
 use pathon_rhi_types::{
-    Access, AdapterInfo, Backend, BindGroupDesc, BindGroupId, BindGroupLayoutDesc, BindGroupLayoutId, BindingResource,
-    BindingType, BufferDesc, BufferId, BufferUsage, Caps, CommandList, ComputePipelineDesc, ComputePipelineId,
-    DeviceApi, DeviceType, Extent3d, Features, Format, FormatCaps, FormatKind, Limits, Pool, Profile, QuerySetDesc,
-    QuerySetId, RenderPipelineDesc, RenderPipelineId, Resource, RhiError, SamplerDesc, SamplerId, ShaderModuleDesc,
-    ShaderModuleId, StorageAccess, SubresourceRange, SurfaceConfig, SurfaceFrame, SurfaceId, SurfaceTarget,
-    TexelLayout, TextureCopy, TextureDesc, TextureDimension, TextureId, TextureUsage, TextureViewDesc, TextureViewId,
+    Access, AdapterInfo, Backend, BindGroupDesc, BindGroupId, BindGroupLayoutDesc, BindGroupLayoutEntry,
+    BindGroupLayoutId, BindingResource, BindingType, BufferDesc, BufferId, BufferUsage, Caps, CommandList,
+    ComputePipelineDesc, ComputePipelineId, DeviceApi, DeviceType, Extent3d, Features, Format, FormatCaps, FormatKind,
+    Limits, Pool, Profile, QuerySetDesc, QuerySetId, RenderPipelineDesc, RenderPipelineId, Resource, RhiError,
+    SamplerDesc, SamplerId, ShaderModuleDesc, ShaderModuleId, StorageAccess, SubresourceRange, SurfaceConfig,
+    SurfaceFrame, SurfaceId, SurfaceTarget, TexelLayout, TextureCopy, TextureDesc, TextureDimension, TextureId,
+    TextureUsage, TextureViewDesc, TextureViewId,
 };
 
 use crate::validator::Validator;
@@ -147,7 +148,7 @@ impl NullDevice {
                 device_type: DeviceType::Cpu,
             },
             features,
-            limits: Limits::WEBGPU_DEFAULT,
+            limits: limits_for(features),
             formats,
             timestamp_period_ns: 1.0,
         };
@@ -160,6 +161,43 @@ impl NullDevice {
 
     pub fn simulate_device_loss(&self) {
         self.lost.store(true, Ordering::SeqCst);
+    }
+
+    fn validate_binding_arrays(&self, desc: &BindGroupLayoutDesc) -> Result<(), RhiError> {
+        let invalid = |message: String| RhiError::validation("R0107", format!("layout '{}': {message}", desc.label));
+        let mut has_array = false;
+        for entry in desc.entries.iter().filter(|entry| entry.count.is_some()) {
+            has_array = true;
+            if !self.caps.has(Features::TEXTURE_BINDING_ARRAY) {
+                return Err(invalid("binding arrays need Features::TEXTURE_BINDING_ARRAY".into()));
+            }
+            let limit = match entry.ty {
+                BindingType::SampledTexture { .. } | BindingType::StorageTexture { .. } => {
+                    self.caps.limits.max_binding_array_elements_per_shader_stage
+                }
+                BindingType::Sampler(_) => self.caps.limits.max_binding_array_sampler_elements_per_shader_stage,
+                _ => {
+                    return Err(invalid(format!(
+                        "binding {} is an array of buffers, which is unsupported",
+                        entry.binding
+                    )));
+                }
+            };
+            let count = entry.count.map_or(0, std::num::NonZeroU32::get);
+            if count > limit {
+                return Err(invalid(format!(
+                    "binding {} has {count} elements, the limit is {limit}",
+                    entry.binding
+                )));
+            }
+        }
+        let has_uniform = desc.entries.iter().any(|entry| entry.ty == BindingType::UniformBuffer);
+        if has_array && has_uniform {
+            return Err(invalid(
+                "a group with a binding array cannot contain a uniform buffer".into(),
+            ));
+        }
+        Ok(())
     }
 
     fn lock(&self) -> MutexGuard<'_, State> {
@@ -183,6 +221,15 @@ impl Default for NullDevice {
     }
 }
 
+fn limits_for(features: Features) -> Limits {
+    let mut limits = Limits::WEBGPU_DEFAULT;
+    if features.contains(Features::TEXTURE_BINDING_ARRAY) {
+        limits.max_binding_array_elements_per_shader_stage = 1 << 20;
+        limits.max_binding_array_sampler_elements_per_shader_stage = 2048;
+    }
+    limits
+}
+
 fn all_format_caps(format: Format) -> FormatCaps {
     if format.compression().is_some() {
         return FormatCaps::SAMPLED | FormatCaps::FILTERABLE;
@@ -195,14 +242,14 @@ fn all_format_caps(format: Format) -> FormatCaps {
     }
 }
 
-fn binding_use(ty: BindingType, resource: BindingResource) -> Option<BindingUse> {
-    match (ty, resource) {
-        (BindingType::SampledTexture { .. }, BindingResource::TextureView(view)) => Some(BindingUse::Texture {
+fn texture_use(ty: BindingType, view: TextureViewId) -> Option<BindingUse> {
+    match ty {
+        BindingType::SampledTexture { .. } => Some(BindingUse::Texture {
             view,
             access: Access::SAMPLED,
             reads: true,
         }),
-        (BindingType::StorageTexture { access, .. }, BindingResource::TextureView(view)) => {
+        BindingType::StorageTexture { access, .. } => {
             let (needed, reads) = match access {
                 StorageAccess::ReadOnly => (Access::STORAGE_READ, true),
                 StorageAccess::WriteOnly => (Access::STORAGE_WRITE, false),
@@ -214,11 +261,42 @@ fn binding_use(ty: BindingType, resource: BindingResource) -> Option<BindingUse>
                 reads,
             })
         }
-        (BindingType::UniformBuffer | BindingType::StorageBuffer { .. }, BindingResource::Buffer { .. }) => {
-            Some(BindingUse::Buffer)
-        }
-        (BindingType::Sampler(_), BindingResource::Sampler(_)) => Some(BindingUse::Sampler),
         _ => None,
+    }
+}
+
+fn binding_uses(layout_entry: &BindGroupLayoutEntry, resource: &BindingResource) -> Option<Vec<BindingUse>> {
+    let ty = layout_entry.ty;
+    match resource {
+        BindingResource::TextureView(view) if layout_entry.count.is_none() => texture_use(ty, *view).map(|u| vec![u]),
+        BindingResource::Buffer { .. }
+            if layout_entry.count.is_none()
+                && matches!(ty, BindingType::UniformBuffer | BindingType::StorageBuffer { .. }) =>
+        {
+            Some(vec![BindingUse::Buffer])
+        }
+        BindingResource::Sampler(_) if layout_entry.count.is_none() && matches!(ty, BindingType::Sampler(_)) => {
+            Some(vec![BindingUse::Sampler])
+        }
+        BindingResource::TextureViewArray(views) if layout_entry.count.is_some() => {
+            views.iter().map(|view| texture_use(ty, *view)).collect()
+        }
+        BindingResource::SamplerArray(samplers) if layout_entry.count.is_some() => {
+            if matches!(ty, BindingType::Sampler(_)) {
+                Some(samplers.iter().map(|_| BindingUse::Sampler).collect())
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+fn resource_len(resource: &BindingResource) -> usize {
+    match resource {
+        BindingResource::TextureViewArray(views) => views.len(),
+        BindingResource::SamplerArray(samplers) => samplers.len(),
+        _ => 1,
     }
 }
 
@@ -347,6 +425,7 @@ impl DeviceApi for NullDevice {
     }
 
     fn create_bind_group_layout(&self, desc: &BindGroupLayoutDesc) -> Result<BindGroupLayoutId, RhiError> {
+        self.validate_binding_arrays(desc)?;
         Ok(self.lock().layouts.insert(desc.clone()))
     }
 
@@ -368,7 +447,7 @@ impl DeviceApi for NullDevice {
                         format!("bind group '{}' misses binding {}", desc.label, layout_entry.binding),
                     )
                 })?;
-            let binding_use = binding_use(layout_entry.ty, entry.resource).ok_or_else(|| {
+            let entry_uses = binding_uses(layout_entry, &entry.resource).ok_or_else(|| {
                 RhiError::validation(
                     "R0107",
                     format!(
@@ -377,7 +456,24 @@ impl DeviceApi for NullDevice {
                     ),
                 )
             })?;
-            uses.push(binding_use);
+            if let Some(count) = layout_entry.count {
+                let len = resource_len(&entry.resource);
+                let allowed = if self.caps.has(Features::PARTIALLY_BOUND_BINDING_ARRAY) {
+                    len <= count.get() as usize
+                } else {
+                    len == count.get() as usize
+                };
+                if !allowed {
+                    return Err(RhiError::validation(
+                        "R0107",
+                        format!(
+                            "bind group '{}' binding {} has {len} array elements for a layout count of {count}",
+                            desc.label, entry.binding
+                        ),
+                    ));
+                }
+            }
+            uses.extend(entry_uses);
         }
         for binding_use in &uses {
             check_binding_usage(&state, desc.label, *binding_use)?;

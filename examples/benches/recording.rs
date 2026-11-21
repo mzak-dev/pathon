@@ -194,6 +194,7 @@ fn pathon_objects(device: &WgpuDevice) -> ViaPathon {
                 binding: 0,
                 visibility: ShaderStages::VERTEX,
                 ty: BindingType::UniformBuffer,
+                count: None,
             }],
         })
         .expect("layout");

@@ -165,6 +165,7 @@ pub(crate) fn limits_from_wgpu(limits: &wgpu::Limits) -> Limits {
         max_compute_invocations_per_workgroup: limits.max_compute_invocations_per_workgroup,
         max_compute_workgroups_per_dimension: limits.max_compute_workgroups_per_dimension,
         max_binding_array_elements_per_shader_stage: limits.max_binding_array_elements_per_shader_stage,
+        max_binding_array_sampler_elements_per_shader_stage: limits.max_binding_array_sampler_elements_per_shader_stage,
         min_uniform_buffer_offset_alignment: clamp_u32(limits.min_uniform_buffer_offset_alignment),
         min_storage_buffer_offset_alignment: clamp_u32(limits.min_storage_buffer_offset_alignment),
     }

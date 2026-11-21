@@ -55,6 +55,16 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Core builds for the web (single thread, no platform)
         run: cargo check --target wasm32-unknown-unknown -p pathon-core -p pathon-test -p pathon --no-default-features
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack
+      - name: Build the web example (release)
+        run: wasm-pack build examples/web --release --target web
+      - name: WASM size report
+        run: |
+          wasm=examples/web/pkg/pathon_example_web_bg.wasm
+          echo "WASM raw: $(stat -c %s "$wasm") bytes" >> "$GITHUB_STEP_SUMMARY"
+          echo "WASM gzip: $(gzip -c "$wasm" | wc -c) bytes" >> "$GITHUB_STEP_SUMMARY"
 
   gpu:
     runs-on: ubuntu-latest

@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>pathon — clear</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #111; color: #eee; font-family: sans-serif; }
+    #pathon { width: 100vw; height: 100vh; }
+    #pathon canvas { display: block; width: 100%; height: 100%; }
+    #pathon-no-webgpu { padding: 2rem; white-space: pre-line; }
+  </style>
+</head>
+<body>
+  <div id="pathon"></div>
+  <script type="module">
+    import init from "./pkg/pathon_example_web.js";
+    init();
+  </script>
+</body>
+</html>

@@ -102,7 +102,7 @@ Hosty (M6, M7) nie są na ścieżce minimalnej, ale ich szew jest: M2-19 i M4-20
   - **Gotowe gdy:** każda z reguł ma test, który celowo ją łamie i sprawdza, że CI przerywa z czytelnym komunikatem.
 
 - [ ] **M0-03 · CI** ★
-  - **Stan 20.11.2026:** pierwszy przebieg na GitHubie zielony (Windows, Linux, macOS, wasm, GPU na lavapipe, lint). Brakuje raportu rozmiaru WASM — dojdzie z M0-06 (brak punktu wejścia wasm).
+  - **Stan 20.11.2026:** pierwszy przebieg na GitHubie zielony (Windows, Linux, macOS, wasm, GPU na lavapipe, lint). Raport rozmiaru WASM (surowy i gzip) jest w podsumowaniu zadania `wasm` (przykład `examples/web`).
   - Macierz: Windows, Linux, macOS (Apple Silicon), `wasm32-unknown-unknown`; fmt, clippy, test, deps-check, rozmiar release WASM.
   - **Gotowe gdy:** wszystkie joby zielone na pustym workspace; raport rozmiaru WASM w podsumowaniu joba.
 
@@ -117,7 +117,7 @@ Hosty (M6, M7) nie są na ścieżce minimalnej, ale ich szew jest: M2-19 i M4-20
   - **Gotowe gdy:** okno reaguje na resize i zmianę skali na Windows, Linux (X11 i Wayland) i macOS.
 
 - [ ] **M0-06 · `pathon-platform-web`** ★
-  - **Stan 20.11.2026:** nie zaczęty.
+  - **Stan 21.11.2026:** komunikat bez WebGPU działa (sprawdzony w przeglądarce w aplikacji); obraz do sprawdzenia w Chrome i Safari 26 z WebGPU.
   - Canvas, asynchroniczny start, `requestAnimationFrame`; brak WebGPU → czytelny komunikat w stronie, nie fallback.
   - **Gotowe gdy:** przykład startuje w Chrome i Safari 26; w przeglądarce bez WebGPU pokazuje komunikat.
 
@@ -141,7 +141,7 @@ Hosty (M6, M7) nie są na ścieżce minimalnej, ale ich szew jest: M2-19 i M4-20
   - **Gotowe gdy:** ten sam kod tworzy urządzenie natywnie (blokująco) i na wasm (async).
 
 - [ ] **M0-10 · Przykład `clear`** ★ — **Gotowe gdy:** spełniona pierwsza część kryterium M0.
-  - **Stan 20.11.2026:** działa na Windows; Linux, macOS i Chrome do sprawdzenia.
+  - **Stan 20.11.2026:** działa na Windows; wersja webowa (`examples/web`) buduje się, obraz do sprawdzenia w Chrome; Linux i macOS do sprawdzenia.
 
 - [x] **M0-11 · Przykład `external-window`** — okno z surowego winita albo SDL3, bez `pathon-platform`. **Gotowe gdy:** przykład rysuje.
   - **Stan 20.11.2026:** działa na Windows (surowy winit, bez pathon-platform).

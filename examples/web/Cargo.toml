@@ -1,0 +1,22 @@
+[package]
+name = "pathon-example-web"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+console_error_panic_hook = "0.1"
+pathon.workspace = true
+wasm-bindgen.workspace = true
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ["-Oz"]
+
+[lints]
+workspace = true

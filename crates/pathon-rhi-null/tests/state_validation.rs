@@ -1,9 +1,9 @@
 use pathon_rhi_null::NullDevice;
 use pathon_rhi_types::{
     Access, BindGroupDesc, BindGroupEntry, BindGroupLayoutDesc, BindGroupLayoutEntry, BindingResource, BindingType,
-    Color, ColorAttachment, CommandList, ComputePassDesc, ComputePipelineDesc, DeviceApi, Format, RenderPassDesc,
-    RhiError, ShaderModuleDesc, ShaderStage, ShaderStages, StorageAccess, SubresourceRange, SurfaceConfig, TextureDesc,
-    TextureId, TextureUsage, TextureViewDesc, TextureViewDimension,
+    Color, ColorAttachment, CommandList, ComputePassDesc, ComputePipelineDesc, DepthAttachment, DeviceApi, Format,
+    RenderPassDesc, RhiError, ShaderModuleDesc, ShaderStage, ShaderStages, StorageAccess, SubresourceRange,
+    SurfaceConfig, TextureDesc, TextureId, TextureUsage, TextureViewDesc, TextureViewDimension,
 };
 
 fn code(result: Result<(), RhiError>) -> &'static str {
@@ -240,6 +240,133 @@ fn sampling_a_texture_in_a_storage_state_is_rejected() {
     }
 
     assert_eq!(code(device.submit(list)), "R0101");
+}
+
+fn sampled_compute_pass(device: &NullDevice, texture: TextureId, list: &mut CommandList) {
+    let layout = device
+        .create_bind_group_layout(&BindGroupLayoutDesc {
+            label: "sampled",
+            entries: vec![BindGroupLayoutEntry {
+                binding: 0,
+                visibility: ShaderStages::COMPUTE,
+                ty: BindingType::texture_2d(),
+            }],
+        })
+        .expect("layout");
+    let view = device
+        .create_texture_view(texture, &TextureViewDesc::default())
+        .expect("view");
+    let group = device
+        .create_bind_group(&BindGroupDesc {
+            label: "sampled",
+            layout,
+            entries: vec![BindGroupEntry {
+                binding: 0,
+                resource: BindingResource::TextureView(view),
+            }],
+        })
+        .expect("bind group");
+    let module = device
+        .create_shader_module(&ShaderModuleDesc {
+            label: "sample",
+            wgsl: "fn main() {}",
+        })
+        .expect("module");
+    let pipeline = device
+        .create_compute_pipeline(&ComputePipelineDesc {
+            label: "sample",
+            bind_group_layouts: vec![layout],
+            shader: ShaderStage {
+                module,
+                entry_point: "main",
+            },
+        })
+        .expect("pipeline");
+    let mut pass = list.compute_pass(ComputePassDesc {
+        label: "sample",
+        timestamps: None,
+    });
+    pass.set_pipeline(pipeline);
+    pass.set_bind_group(0, group);
+    pass.dispatch(1, 1, 1);
+}
+
+fn cleared_depth_texture(device: &NullDevice, list: &mut CommandList) -> TextureId {
+    let depth = device
+        .create_texture(&TextureDesc::new_2d(
+            "depth",
+            4,
+            4,
+            Format::Depth32Float,
+            TextureUsage::RENDER_TARGET | TextureUsage::SAMPLED,
+        ))
+        .expect("depth texture");
+    let view = device
+        .create_texture_view(depth, &TextureViewDesc::default())
+        .expect("view");
+    list.texture_access(depth, SubresourceRange::ALL, Access::DEPTH_WRITE);
+    drop(list.render_pass(RenderPassDesc {
+        label: "depth",
+        color: vec![],
+        depth: Some(DepthAttachment::clear_reverse_z(view)),
+        timestamps: None,
+    }));
+    depth
+}
+
+#[test]
+fn a_depth_texture_sampled_in_a_sampled_and_depth_read_state_is_accepted() {
+    let device = NullDevice::new();
+    let mut list = CommandList::new();
+    let depth = cleared_depth_texture(&device, &mut list);
+    list.texture_access(depth, SubresourceRange::ALL, Access::SAMPLED | Access::DEPTH_READ);
+    sampled_compute_pass(&device, depth, &mut list);
+
+    device.submit(list).expect("valid list");
+}
+
+#[test]
+fn a_depth_texture_sampled_without_depth_read_is_rejected() {
+    let device = NullDevice::new();
+    let mut list = CommandList::new();
+    let depth = cleared_depth_texture(&device, &mut list);
+    list.texture_access(depth, SubresourceRange::ALL, Access::SAMPLED);
+    sampled_compute_pass(&device, depth, &mut list);
+
+    assert_eq!(code(device.submit(list)), "R0101");
+}
+
+#[test]
+fn a_read_only_storage_binding_on_a_texture_without_storage_usage_is_rejected() {
+    let device = NullDevice::new();
+    let texture = render_target(&device);
+    let layout = device
+        .create_bind_group_layout(&BindGroupLayoutDesc {
+            label: "storage",
+            entries: vec![BindGroupLayoutEntry {
+                binding: 0,
+                visibility: ShaderStages::COMPUTE,
+                ty: BindingType::StorageTexture {
+                    access: StorageAccess::ReadOnly,
+                    format: Format::Rgba8Unorm,
+                    dimension: TextureViewDimension::D2,
+                },
+            }],
+        })
+        .expect("layout");
+    let view = device
+        .create_texture_view(texture, &TextureViewDesc::default())
+        .expect("view");
+    let result = device.create_bind_group(&BindGroupDesc {
+        label: "storage",
+        layout,
+        entries: vec![BindGroupEntry {
+            binding: 0,
+            resource: BindingResource::TextureView(view),
+        }],
+    });
+
+    assert_eq!(result.expect_err("missing STORAGE usage").code(), "R0105");
 }
 
 #[test]

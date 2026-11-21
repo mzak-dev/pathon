@@ -31,7 +31,7 @@ impl Access {
         self.intersection(Self::WRITES)
     }
 
-    // A state may combine any reads, or exactly one kind of write; storage read-write is the one mixed case.
+    // A state may combine any reads, or exactly one kind of write; storage and depth read-write are the mixed cases.
     pub fn is_valid_state(self) -> bool {
         let writes = self.writes();
         if writes.is_empty() {
@@ -59,8 +59,7 @@ impl Access {
             Access::PRESENT,
             Access::COPY_DST,
         ];
-        let texture_bits = self.difference(Self::VERTEX | Self::INDEX | Self::INDIRECT | Self::UNIFORM);
-        self.is_valid_state() && LAYOUT_CLASSES.iter().any(|class| class.contains(texture_bits))
+        self.is_valid_state() && LAYOUT_CLASSES.iter().any(|class| class.contains(self))
     }
 }
 
@@ -129,6 +128,17 @@ mod tests {
         assert!((Access::STORAGE_READ | Access::STORAGE_WRITE).is_valid_texture_state());
         assert!(!(Access::SAMPLED | Access::COPY_SRC).is_valid_texture_state());
         assert!(!(Access::SAMPLED | Access::STORAGE_READ).is_valid_texture_state());
+    }
+
+    #[test]
+    fn buffer_only_bits_are_not_texture_states() {
+        assert!(!Access::VERTEX.is_valid_texture_state());
+        assert!(!(Access::SAMPLED | Access::UNIFORM).is_valid_texture_state());
+        assert!((Access::DEPTH_READ | Access::DEPTH_WRITE).is_valid_texture_state());
+        assert!(!(Access::SAMPLED | Access::DEPTH_READ | Access::DEPTH_WRITE).is_valid_texture_state());
+        assert!(!(Access::STORAGE_READ | Access::COPY_SRC).is_valid_texture_state());
+        assert!(Access::PRESENT.is_valid_texture_state());
+        assert!(Access::COLOR_ATTACHMENT.is_valid_texture_state());
     }
 
     #[test]

@@ -13,7 +13,7 @@
 - **Stan tekstury** łączy tylko odczyty o tym samym układzie: `SAMPLED` z `DEPTH_READ`; `STORAGE_READ` z `STORAGE_WRITE`. `SAMPLED | COPY_SRC`, `SAMPLED | STORAGE_READ` i podobne mieszanki układów są błędem (`Access::is_valid_texture_state`). Bufory nie mają układów, więc ich odczyty łączą się dowolnie (`Access::is_valid_state` jak dotąd: najwyżej jeden rodzaj zapisu; `STORAGE_WRITE` może iść z `STORAGE_READ`, `DEPTH_WRITE` z `DEPTH_READ`).
 - **Użycia w grafie:** `SAMPLED` → `TextureUsage::SAMPLED`; `STORAGE_READ` / `STORAGE_WRITE` → `TextureUsage::STORAGE` i `BufferUsage::STORAGE`.
 - **Stan końcowy celów offscreen** to `SAMPLED` (dotąd `SHADER_READ | COPY_SRC`). Host, który kopiuje z celu, sam wstawia przejście do `COPY_SRC` (na wgpu bariery są niejawne).
-- **Walidacja w `rhi-null`:** binding próbkowanej tekstury wymaga `SAMPLED` (dla formatu głębi także `DEPTH_READ`), tekstury storage — `STORAGE_READ` i/lub `STORAGE_WRITE` zgodnie z trybem dostępu, bufora storage — `STORAGE_*`, uniform buffera — `UNIFORM`.
+- **Walidacja w `rhi-null`:** binding próbkowanej tekstury wymaga `SAMPLED` (dla formatu głębi także `DEPTH_READ`), tekstury storage — `STORAGE_READ` i/lub `STORAGE_WRITE` zgodnie z trybem dostępu. Stanów buforów null jeszcze nie śledzi: sprawdza tylko `Access::is_valid_state` w `BufferAccess` oraz użycie (`BufferUsage`) bufora; wymagania bindingów bufora storage i uniform ma dopiero dodać śledzenie stanów buforów. Graf odrzuca niepoprawne stany tekstur już przy kompilacji (G0008).
 
 ## Konsekwencje
 

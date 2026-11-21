@@ -1,6 +1,7 @@
 use bitflags::bitflags;
 
 use crate::desc::CompareFunction;
+use crate::error::RhiError;
 use crate::format::Format;
 use crate::id::{BindGroupLayoutId, ShaderModuleId};
 
@@ -10,11 +11,69 @@ pub struct ShaderModuleDesc<'src> {
     pub wgsl: &'src str,
 }
 
-#[derive(Clone, PartialEq, Debug)]
+// Stored as bits so descriptions stay `Eq + Hash` (pipeline keys); a NaN equals itself.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct OverrideValue(u64);
+
+impl OverrideValue {
+    pub fn get(self) -> f64 {
+        f64::from_bits(self.0)
+    }
+}
+
+impl From<f64> for OverrideValue {
+    fn from(value: f64) -> Self {
+        Self(value.to_bits())
+    }
+}
+
+impl From<f32> for OverrideValue {
+    fn from(value: f32) -> Self {
+        f64::from(value).into()
+    }
+}
+
+impl From<u32> for OverrideValue {
+    fn from(value: u32) -> Self {
+        f64::from(value).into()
+    }
+}
+
+impl From<i32> for OverrideValue {
+    fn from(value: i32) -> Self {
+        f64::from(value).into()
+    }
+}
+
+impl From<bool> for OverrideValue {
+    fn from(value: bool) -> Self {
+        f64::from(u8::from(value)).into()
+    }
+}
+
+// Names must be unique; their order does not matter to the backends (pipeline keys sort them).
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct ShaderStage {
     pub module: ShaderModuleId,
     pub entry_point: &'static str,
-    pub constants: Vec<(&'static str, f64)>,
+    pub constants: Vec<(&'static str, OverrideValue)>,
+}
+
+impl ShaderStage {
+    pub fn check_constants(&self, label: &str) -> Result<(), RhiError> {
+        let duplicate = self
+            .constants
+            .iter()
+            .enumerate()
+            .find(|(index, (name, _))| self.constants[..*index].iter().any(|(earlier, _)| earlier == name));
+        match duplicate {
+            Some((_, (name, _))) => Err(RhiError::validation(
+                "R0107",
+                format!("pipeline '{label}': override '{name}' is given more than once"),
+            )),
+            None => Ok(()),
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -215,7 +274,7 @@ impl DepthState {
     }
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct RenderPipelineDesc {
     pub label: &'static str,
     pub bind_group_layouts: Vec<BindGroupLayoutId>,
@@ -229,10 +288,45 @@ pub struct RenderPipelineDesc {
     pub immediate_size: u32,
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct ComputePipelineDesc {
     pub label: &'static str,
     pub bind_group_layouts: Vec<BindGroupLayoutId>,
     pub shader: ShaderStage,
     pub immediate_size: u32,
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+
+    use super::*;
+    use crate::id::{Id, RawHandle};
+
+    #[test]
+    fn override_values_round_trip_and_compare_by_bits() {
+        assert_eq!(OverrideValue::from(3.5f64).get(), 3.5);
+        assert_eq!(OverrideValue::from(1.25f32).get(), 1.25);
+        assert_eq!(OverrideValue::from(7u32).get(), 7.0);
+        assert_eq!(OverrideValue::from(-2i32).get(), -2.0);
+        assert_eq!(OverrideValue::from(true).get(), 1.0);
+        assert_eq!(OverrideValue::from(false).get(), 0.0);
+        assert_eq!(OverrideValue::from(f64::NAN), OverrideValue::from(f64::NAN));
+    }
+
+    #[test]
+    fn a_compute_pipeline_description_is_hashable() {
+        let desc = ComputePipelineDesc {
+            label: "key",
+            bind_group_layouts: vec![],
+            shader: ShaderStage {
+                module: ShaderModuleId::from_raw(RawHandle::new(0, 0)),
+                entry_point: "main",
+                constants: vec![("scale", 2.0.into())],
+            },
+            immediate_size: 4,
+        };
+        let keys: HashSet<ComputePipelineDesc> = [desc.clone(), desc].into_iter().collect();
+        assert_eq!(keys.len(), 1);
+    }
 }

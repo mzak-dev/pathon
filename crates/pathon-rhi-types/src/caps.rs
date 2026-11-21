@@ -1,5 +1,6 @@
 use bitflags::bitflags;
 
+use crate::error::RhiError;
 use crate::format::Format;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -163,6 +164,25 @@ impl Caps {
             .iter()
             .find(|(candidate, _)| *candidate == format)
             .map_or(FormatCaps::empty(), |(_, caps)| *caps)
+    }
+
+    pub fn check_immediate_size(&self, label: &str, immediate_size: u32) -> Result<(), RhiError> {
+        if immediate_size == 0 {
+            return Ok(());
+        }
+        if !self.has(Features::IMMEDIATES) {
+            return Err(RhiError::MissingFeatures(Features::IMMEDIATES));
+        }
+        let max = self.limits.max_immediate_size;
+        if immediate_size > max || !immediate_size.is_multiple_of(4) {
+            return Err(RhiError::validation(
+                "R0107",
+                format!(
+                    "pipeline '{label}': {immediate_size} bytes of immediates must be a multiple of 4 and at most {max}"
+                ),
+            ));
+        }
+        Ok(())
     }
 
     pub fn satisfies(&self, profile: Profile) -> bool {

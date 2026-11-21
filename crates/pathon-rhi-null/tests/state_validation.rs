@@ -3,9 +3,10 @@ use std::num::NonZeroU32;
 use pathon_rhi_null::NullDevice;
 use pathon_rhi_types::{
     Access, BindGroupDesc, BindGroupEntry, BindGroupLayoutDesc, BindGroupLayoutEntry, BindingResource, BindingType,
-    Color, ColorAttachment, CommandList, ComputePassDesc, ComputePipelineDesc, ComputePipelineId, DepthAttachment,
-    DeviceApi, Features, Format, RenderPassDesc, RhiError, ShaderModuleDesc, ShaderStage, ShaderStages, StorageAccess,
-    SubresourceRange, SurfaceConfig, TextureDesc, TextureId, TextureUsage, TextureViewDesc, TextureViewDimension,
+    Color, ColorAttachment, ColorTargetState, CommandList, ComputePassDesc, ComputePipelineDesc, ComputePipelineId,
+    DepthAttachment, DeviceApi, Features, Format, PrimitiveState, RenderPassDesc, RenderPipelineDesc, RhiError,
+    ShaderModuleDesc, ShaderStage, ShaderStages, StorageAccess, SubresourceRange, SurfaceConfig, TextureDesc,
+    TextureId, TextureUsage, TextureViewDesc, TextureViewDimension,
 };
 
 fn code(result: Result<(), RhiError>) -> &'static str {
@@ -1030,4 +1031,189 @@ fn unaligned_immediates_are_rejected() {
     let pipeline = immediate_pipeline(&device, 16).expect("pipeline");
     assert_eq!(code(submit_immediates(&device, Some(pipeline), 2, 4)), "R0104");
     assert_eq!(code(submit_immediates(&device, Some(pipeline), 0, 6)), "R0104");
+}
+
+fn immediate_dispatch(device: &NullDevice, steps: &[ImmediateStep]) -> Result<(), RhiError> {
+    let mut list = CommandList::new();
+    {
+        let mut pass = list.compute_pass(ComputePassDesc {
+            label: "immediates",
+            timestamps: None,
+        });
+        for step in steps {
+            match step {
+                ImmediateStep::Pipeline(pipeline) => pass.set_pipeline(*pipeline),
+                ImmediateStep::Write(offset, len) => pass.set_immediates(*offset, &vec![0; *len]),
+                ImmediateStep::Dispatch => pass.dispatch(1, 1, 1),
+            }
+        }
+    }
+    device.submit(list)
+}
+
+use ImmediateStep::{Dispatch, Pipeline, Write};
+
+enum ImmediateStep {
+    Pipeline(ComputePipelineId),
+    Write(u32, usize),
+    Dispatch,
+}
+
+#[test]
+fn a_pipeline_immediate_size_must_be_a_multiple_of_four() {
+    let device = NullDevice::with_features(Features::IMMEDIATES);
+    let error = immediate_pipeline(&device, 6).expect_err("misaligned size");
+    assert_eq!(error.code(), "R0107");
+}
+
+#[test]
+fn a_dispatch_needs_every_immediate_byte_written() {
+    let device = NullDevice::with_features(Features::IMMEDIATES);
+    let pipeline = immediate_pipeline(&device, 8).expect("pipeline");
+
+    assert_eq!(
+        code(immediate_dispatch(&device, &[Pipeline(pipeline), Dispatch])),
+        "R0104"
+    );
+    assert_eq!(
+        code(immediate_dispatch(
+            &device,
+            &[Pipeline(pipeline), Write(0, 4), Dispatch]
+        )),
+        "R0104"
+    );
+    immediate_dispatch(
+        &device,
+        &[Pipeline(pipeline), Write(4, 4), Write(0, 4), Dispatch, Dispatch],
+    )
+    .expect("two halves cover the block");
+}
+
+#[test]
+fn switching_pipeline_forgets_written_immediates() {
+    let device = NullDevice::with_features(Features::IMMEDIATES);
+    let first = immediate_pipeline(&device, 4).expect("first");
+    let second = immediate_pipeline(&device, 4).expect("second");
+
+    let steps = [Pipeline(first), Write(0, 4), Pipeline(second), Dispatch];
+    assert_eq!(code(immediate_dispatch(&device, &steps)), "R0104");
+}
+
+#[test]
+fn a_pipeline_without_immediates_dispatches_without_writes() {
+    let device = NullDevice::with_features(Features::IMMEDIATES);
+    let pipeline = immediate_pipeline(&device, 0).expect("pipeline");
+    immediate_dispatch(&device, &[ImmediateStep::Pipeline(pipeline), ImmediateStep::Dispatch]).expect("dispatch");
+}
+
+#[test]
+fn immediates_outside_a_pass_are_rejected_and_empty_writes_accepted() {
+    let device = NullDevice::with_features(Features::IMMEDIATES);
+    let pipeline = immediate_pipeline(&device, 4).expect("pipeline");
+    submit_immediates(&device, Some(pipeline), 0, 0).expect("zero-length write");
+
+    let mut list = CommandList::new();
+    list.push(pathon_rhi_types::Command::SetImmediates {
+        offset: 0,
+        data: Box::new([0; 4]),
+    });
+    assert_eq!(code(device.submit(list)), "R0104");
+}
+
+#[test]
+fn render_passes_validate_immediates_too() {
+    let device = NullDevice::with_features(Features::IMMEDIATES);
+    let module = device
+        .create_shader_module(&ShaderModuleDesc {
+            label: "render",
+            wgsl: "fn main() {}",
+        })
+        .expect("module");
+    let stage = |entry_point| ShaderStage {
+        module,
+        entry_point,
+        constants: vec![],
+    };
+    let pipeline = device
+        .create_render_pipeline(&RenderPipelineDesc {
+            label: "render",
+            bind_group_layouts: vec![],
+            vertex: stage("vs_main"),
+            vertex_buffers: vec![],
+            fragment: Some(stage("fs_main")),
+            color_targets: vec![ColorTargetState::opaque(Format::Rgba8Unorm)],
+            primitive: PrimitiveState::default(),
+            depth: None,
+            sample_count: 1,
+            immediate_size: 8,
+        })
+        .expect("pipeline");
+    let texture = render_target(&device);
+    let view = device
+        .create_texture_view(texture, &TextureViewDesc::default())
+        .expect("view");
+    let record = |writes: &[(u32, usize)]| {
+        let mut list = CommandList::new();
+        list.texture_access(texture, SubresourceRange::ALL, Access::COLOR_ATTACHMENT);
+        {
+            let mut pass = list.render_pass(RenderPassDesc {
+                label: "render",
+                color: vec![ColorAttachment::clear(view, Color::BLACK)],
+                depth: None,
+                timestamps: None,
+            });
+            pass.set_pipeline(pipeline);
+            for (offset, len) in writes {
+                pass.set_immediates(*offset, &vec![0; *len]);
+            }
+            pass.draw(0..3, 0..1);
+        }
+        list
+    };
+
+    device.submit(record(&[(0, 8)])).expect("full block");
+    assert_eq!(code(device.submit(record(&[(0, 4)]))), "R0104");
+    assert_eq!(code(device.submit(record(&[(4, 8)]))), "R0104");
+}
+
+#[test]
+fn a_duplicate_override_name_is_rejected() {
+    let device = NullDevice::new();
+    let module = device
+        .create_shader_module(&ShaderModuleDesc {
+            label: "overrides",
+            wgsl: "fn main() {}",
+        })
+        .expect("module");
+    let error = device
+        .create_compute_pipeline(&ComputePipelineDesc {
+            label: "overrides",
+            bind_group_layouts: vec![],
+            shader: ShaderStage {
+                module,
+                entry_point: "main",
+                constants: vec![("scale", 1.0.into()), ("scale", 2.0.into())],
+            },
+            immediate_size: 0,
+        })
+        .expect_err("duplicate");
+    assert_eq!(error.code(), "R0107");
+}
+
+#[test]
+fn immediate_limit_is_zero_without_the_feature() {
+    assert_eq!(
+        NullDevice::with_features(Features::empty())
+            .caps()
+            .limits
+            .max_immediate_size,
+        0
+    );
+    assert!(
+        NullDevice::with_features(Features::IMMEDIATES)
+            .caps()
+            .limits
+            .max_immediate_size
+            > 0
+    );
 }

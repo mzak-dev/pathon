@@ -88,6 +88,11 @@ pub(crate) enum BindingUse {
     Sampler,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct NullPipeline {
+    pub(crate) immediate_size: u32,
+}
+
 #[derive(Debug)]
 pub(crate) struct NullSurface {
     config: Option<SurfaceConfig>,
@@ -103,8 +108,8 @@ pub(crate) struct State {
     modules: Pool<ShaderModuleId, ()>,
     layouts: Pool<BindGroupLayoutId, BindGroupLayoutDesc>,
     pub(crate) bind_groups: Pool<BindGroupId, Arc<[BindingUse]>>,
-    pub(crate) render_pipelines: Pool<RenderPipelineId, u32>,
-    pub(crate) compute_pipelines: Pool<ComputePipelineId, u32>,
+    pub(crate) render_pipelines: Pool<RenderPipelineId, NullPipeline>,
+    pub(crate) compute_pipelines: Pool<ComputePipelineId, NullPipeline>,
     pub(crate) query_sets: Pool<QuerySetId, u32>,
     surfaces: Pool<SurfaceId, NullSurface>,
 }
@@ -148,7 +153,7 @@ impl NullDevice {
                 device_type: DeviceType::Cpu,
             },
             features,
-            limits: null_limits(),
+            limits: null_limits(features),
             formats,
             timestamp_period_ns: 1.0,
         };
@@ -161,23 +166,6 @@ impl NullDevice {
 
     pub fn simulate_device_loss(&self) {
         self.lost.store(true, Ordering::SeqCst);
-    }
-
-    fn validate_immediate_size(&self, label: &str, immediate_size: u32) -> Result<(), RhiError> {
-        if immediate_size == 0 {
-            return Ok(());
-        }
-        if !self.caps.has(Features::IMMEDIATES) {
-            return Err(RhiError::MissingFeatures(Features::IMMEDIATES));
-        }
-        let max = self.caps.limits.max_immediate_size;
-        if immediate_size > max {
-            return Err(RhiError::validation(
-                "R0107",
-                format!("pipeline '{label}': {immediate_size} bytes of immediates exceed the limit of {max}"),
-            ));
-        }
-        Ok(())
     }
 
     fn validate_binding_arrays(&self, desc: &BindGroupLayoutDesc) -> Result<(), RhiError> {
@@ -252,11 +240,13 @@ impl Default for NullDevice {
     }
 }
 
-fn null_limits() -> Limits {
+fn null_limits(features: Features) -> Limits {
     let mut limits = Limits::WEBGPU_DEFAULT;
     limits.max_binding_array_elements_per_shader_stage = 1 << 20;
     limits.max_binding_array_sampler_elements_per_shader_stage = 2048;
-    limits.max_immediate_size = 128;
+    if features.contains(Features::IMMEDIATES) {
+        limits.max_immediate_size = 128;
+    }
     limits
 }
 
@@ -514,25 +504,34 @@ impl DeviceApi for NullDevice {
     }
 
     fn create_render_pipeline(&self, desc: &RenderPipelineDesc) -> Result<RenderPipelineId, RhiError> {
-        self.validate_immediate_size(desc.label, desc.immediate_size)?;
+        self.caps.check_immediate_size(desc.label, desc.immediate_size)?;
+        desc.vertex.check_constants(desc.label)?;
+        if let Some(fragment) = &desc.fragment {
+            fragment.check_constants(desc.label)?;
+        }
         let mut state = self.lock();
         for layout in &desc.bind_group_layouts {
             if !state.layouts.contains(*layout) {
                 return Err(RhiError::InvalidHandle("bind group layout"));
             }
         }
-        Ok(state.render_pipelines.insert(desc.immediate_size))
+        Ok(state.render_pipelines.insert(NullPipeline {
+            immediate_size: desc.immediate_size,
+        }))
     }
 
     fn create_compute_pipeline(&self, desc: &ComputePipelineDesc) -> Result<ComputePipelineId, RhiError> {
-        self.validate_immediate_size(desc.label, desc.immediate_size)?;
+        self.caps.check_immediate_size(desc.label, desc.immediate_size)?;
+        desc.shader.check_constants(desc.label)?;
         let mut state = self.lock();
         for layout in &desc.bind_group_layouts {
             if !state.layouts.contains(*layout) {
                 return Err(RhiError::InvalidHandle("bind group layout"));
             }
         }
-        Ok(state.compute_pipelines.insert(desc.immediate_size))
+        Ok(state.compute_pipelines.insert(NullPipeline {
+            immediate_size: desc.immediate_size,
+        }))
     }
 
     fn create_query_set(&self, desc: &QuerySetDesc) -> Result<QuerySetId, RhiError> {

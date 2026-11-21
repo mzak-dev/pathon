@@ -31,7 +31,8 @@ fn structure_error(message: impl Into<String>) -> RhiError {
 pub(crate) struct Validator<'state> {
     state: &'state mut State,
     pass: PassKind,
-    pipeline_immediate_size: Option<u32>,
+    // One flag per 4-byte word of the current pipeline's immediates; `None` until a pipeline is set.
+    immediates_written: Option<Vec<bool>>,
     bound: Vec<(u32, BindGroupId)>,
     debug_depth: u32,
 }
@@ -41,7 +42,7 @@ impl<'state> Validator<'state> {
         Self {
             state,
             pass: PassKind::None,
-            pipeline_immediate_size: None,
+            immediates_written: None,
             bound: Vec::new(),
             debug_depth: 0,
         }
@@ -117,21 +118,23 @@ impl<'state> Validator<'state> {
             }
             Command::SetRenderPipeline(pipeline) => {
                 self.require_pass(PassKind::Render, "set render pipeline")?;
-                let immediate_size = *self
+                let immediate_size = self
                     .state
                     .render_pipelines
                     .get(pipeline)
-                    .ok_or(RhiError::InvalidHandle("render pipeline"))?;
-                self.pipeline_immediate_size = Some(immediate_size);
+                    .ok_or(RhiError::InvalidHandle("render pipeline"))?
+                    .immediate_size;
+                self.immediates_written = Some(vec![false; (immediate_size / 4) as usize]);
             }
             Command::SetComputePipeline(pipeline) => {
                 self.require_pass(PassKind::Compute, "set compute pipeline")?;
-                let immediate_size = *self
+                let immediate_size = self
                     .state
                     .compute_pipelines
                     .get(pipeline)
-                    .ok_or(RhiError::InvalidHandle("compute pipeline"))?;
-                self.pipeline_immediate_size = Some(immediate_size);
+                    .ok_or(RhiError::InvalidHandle("compute pipeline"))?
+                    .immediate_size;
+                self.immediates_written = Some(vec![false; (immediate_size / 4) as usize]);
             }
             Command::SetBindGroup { index, group } => {
                 if self.pass == PassKind::None {
@@ -268,37 +271,44 @@ impl<'state> Validator<'state> {
         }
     }
 
-    fn set_immediates(&self, offset: u32, len: usize) -> Result<(), RhiError> {
+    fn set_immediates(&mut self, offset: u32, len: usize) -> Result<(), RhiError> {
         if self.pass == PassKind::None {
             return Err(structure_error("immediates set outside a pass"));
         }
-        let Some(size) = self.pipeline_immediate_size else {
+        let Some(written) = &mut self.immediates_written else {
             return Err(structure_error("immediates set without a pipeline"));
         };
+        let size = written.len() as u64 * 4;
         let end = u64::from(offset) + len as u64;
         if !offset.is_multiple_of(4) || !len.is_multiple_of(4) {
             return Err(structure_error(format!(
                 "immediates at offset {offset} with {len} bytes are not 4-byte aligned"
             )));
         }
-        if end > u64::from(size) {
+        if end > size {
             return Err(structure_error(format!(
                 "immediates {offset}..{end} reach past the pipeline's {size} bytes"
             )));
         }
+        written[(offset / 4) as usize..(end / 4) as usize].fill(true);
         Ok(())
     }
 
     fn enter_pass(&mut self, kind: PassKind) {
         self.pass = kind;
-        self.pipeline_immediate_size = None;
+        self.immediates_written = None;
         self.bound.clear();
     }
 
     fn draw_or_dispatch(&mut self, kind: PassKind) -> Result<(), RhiError> {
         self.require_pass(kind, "draw or dispatch")?;
-        if self.pipeline_immediate_size.is_none() {
+        let Some(written) = &self.immediates_written else {
             return Err(structure_error("draw or dispatch without a pipeline"));
+        };
+        if written.iter().any(|word| !word) {
+            return Err(structure_error(
+                "draw or dispatch before every immediate byte of the pipeline was written",
+            ));
         }
         let groups: Vec<BindGroupId> = self.bound.iter().map(|(_, group)| *group).collect();
         for group in groups {

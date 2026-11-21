@@ -130,6 +130,7 @@ fn encode_transfer(objects: &Objects, encoder: &mut wgpu::CommandEncoder, transf
                 .ok_or(RhiError::InvalidHandle("query set"))?;
             encoder.resolve_query_set(query_set, queries, buffer(objects, dst)?, dst_offset);
         }
+        _ => return Err(RhiError::Unsupported("transfer not supported by the wgpu backend")),
     }
     Ok(())
 }

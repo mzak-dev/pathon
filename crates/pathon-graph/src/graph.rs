@@ -1,5 +1,6 @@
 use pathon_rhi_types::{
-    Access, BufferId, BufferUsage, Extent3d, Format, PhysicalSize, RhiError, SubresourceRange, TextureDesc, TextureId,
+    Access, BufferId, BufferUsage, Extent3d, Format, MaybeSend, PhysicalSize, RhiError, SubresourceRange, TextureDesc,
+    TextureId,
 };
 
 use crate::execute::PassContext;
@@ -7,6 +8,7 @@ use crate::history::{HistoryStore, HistoryTexture};
 
 // Coarse frame order. Ties inside a stage are broken by priority, then by registration order (with G0006).
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[non_exhaustive]
 pub enum Stage {
     Setup,
     Shadows,
@@ -175,6 +177,10 @@ impl PassDesc {
     }
 }
 
+// `MaybeSend` is not an auto trait, so a trait object names the native `Send` bound directly (ADR-0004, ADR-0012).
+#[cfg(not(target_arch = "wasm32"))]
+pub type RecordFn = Box<dyn FnOnce(&mut PassContext<'_>) -> Result<(), RhiError> + Send>;
+#[cfg(target_arch = "wasm32")]
 pub type RecordFn = Box<dyn FnOnce(&mut PassContext<'_>) -> Result<(), RhiError>>;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -549,7 +555,7 @@ impl PassBuilder<'_> {
         }
     }
 
-    pub fn record(self, record: impl FnOnce(&mut PassContext<'_>) -> Result<(), RhiError> + 'static) {
+    pub fn record(self, record: impl FnOnce(&mut PassContext<'_>) -> Result<(), RhiError> + MaybeSend + 'static) {
         self.graph.passes[self.pass].record = Some(Box::new(record));
     }
 

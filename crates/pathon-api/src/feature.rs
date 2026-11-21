@@ -50,6 +50,7 @@ impl std::fmt::Debug for Requirements {
 
 // Phase 2: decided on the real `Caps`.
 #[derive(Clone, PartialEq, Eq, Debug)]
+#[non_exhaustive]
 pub enum Negotiation {
     Full,
     Fallback { reason: String },

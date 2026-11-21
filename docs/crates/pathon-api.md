@@ -47,3 +47,34 @@ Rozmiar wyjścia i renderu, jitter, mip bias, kamera (`Camera`, reverse-Z) oraz 
 ## `TaskPool`
 
 ADR-0008: `parallel_for(len, &task)` blokuje do końca, więc zadanie może pożyczać dane klatki. `SerialTaskPool` jest domyślny (także na wasm).
+
+## Domknięcie passa jest `Send`
+
+ADR-0012: domknięcie przekazane do `PassBuilder::record` jest `MaybeSend` (`Send` natywnie, bez wymagań na wasm), żeby passy dało się kiedyś nagrywać równolegle. Paczka nie może więc przechwycić `Rc` ani innego typu bez `Send`:
+
+```rust,compile_fail
+use pathon_api::graph::{PassDesc, Stage};
+use pathon_api::{RecordCtx, RenderFeature};
+use pathon_api::rhi::RhiError;
+
+struct Pack;
+
+impl RenderFeature for Pack {
+    fn name(&self) -> &'static str {
+        "rc-pack"
+    }
+
+    fn stage(&self) -> Stage {
+        Stage::Opaque
+    }
+
+    fn record(&mut self, ctx: &mut RecordCtx<'_>) -> Result<(), RhiError> {
+        let rc = std::rc::Rc::new(0);
+        ctx.graph().add_pass(PassDesc::new("rc", Stage::Opaque)).record(move |_| {
+            let _ = &rc;
+            Ok(())
+        });
+        Ok(())
+    }
+}
+```

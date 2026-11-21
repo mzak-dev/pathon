@@ -6,6 +6,7 @@ use pathon_graph::{OrderNode, Stage, sort_nodes};
 use pathon_rhi::{Backend, Caps, DeviceApi, DeviceRequest};
 
 #[derive(Clone, PartialEq, Eq, Debug)]
+#[non_exhaustive]
 pub enum FeatureStatus {
     Active,
     Fallback { reason: String },
@@ -178,6 +179,15 @@ impl Registry {
                     self.disable(
                         index,
                         &Diagnostic::warning("F0101", format!("'{name}' disabled: {reason}")),
+                    );
+                }
+                other => {
+                    self.disable(
+                        index,
+                        &Diagnostic::warning(
+                            "F0101",
+                            format!("'{name}' disabled: unknown negotiation result {other:?}"),
+                        ),
                     );
                 }
             }

@@ -3,6 +3,7 @@ use bitflags::bitflags;
 use crate::format::Format;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[non_exhaustive]
 pub enum Backend {
     Vulkan,
     Dx12,
@@ -12,6 +13,7 @@ pub enum Backend {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[non_exhaustive]
 pub enum DeviceType {
     DiscreteGpu,
     IntegratedGpu,
@@ -109,6 +111,7 @@ pub struct AdapterInfo {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[non_exhaustive]
 pub enum Profile {
     Web,
     Desktop,

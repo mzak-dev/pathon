@@ -13,6 +13,7 @@ macro_rules! two_way {
         pub(crate) fn $to(value: $ours) -> $theirs {
             match value {
                 $(<$ours>::$variant => $($pattern)*,)*
+                other => unreachable!("no wgpu mapping for {other:?}"),
             }
         }
 
@@ -228,7 +229,9 @@ pub(crate) fn backends_to_wgpu(backend: Option<Backend>) -> wgpu::Backends {
         Some(Backend::Dx12) => wgpu::Backends::DX12,
         Some(Backend::Metal) => wgpu::Backends::METAL,
         Some(Backend::WebGpu) => wgpu::Backends::BROWSER_WEBGPU,
-        Some(Backend::Null) => wgpu::Backends::empty(),
+        // `Null` and any backend wgpu cannot select: device creation fails with a missing adapter instead of picking
+        // another one.
+        Some(_) => wgpu::Backends::empty(),
     }
 }
 
@@ -424,6 +427,7 @@ pub(crate) fn binding_type_to_wgpu(ty: BindingType) -> wgpu::BindingType {
             SamplerBindingType::NonFiltering => wgpu::SamplerBindingType::NonFiltering,
             SamplerBindingType::Comparison => wgpu::SamplerBindingType::Comparison,
         }),
+        other => unreachable!("no wgpu mapping for {other:?}"),
     }
 }
 
@@ -442,6 +446,7 @@ pub(crate) fn vertex_format_to_wgpu(format: VertexFormat) -> wgpu::VertexFormat 
         VertexFormat::Snorm8x4 => wgpu::VertexFormat::Snorm8x4,
         VertexFormat::Float16x2 => wgpu::VertexFormat::Float16x2,
         VertexFormat::Float16x4 => wgpu::VertexFormat::Float16x4,
+        other => unreachable!("no wgpu mapping for {other:?}"),
     }
 }
 

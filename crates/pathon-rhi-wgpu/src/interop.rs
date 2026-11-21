@@ -32,7 +32,8 @@ impl ExternalContext {
             .iter()
             .filter_map(|declared| match declared.resource {
                 ResourceRef::Texture(id, _) => objects.textures.get(id).map(|entry| (id, entry.texture.clone())),
-                ResourceRef::Buffer(_) => None,
+                // Buffers and any future non-texture reference carry no texture to track.
+                _ => None,
             })
             .collect();
         let encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {

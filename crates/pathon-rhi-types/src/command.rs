@@ -154,6 +154,7 @@ pub struct ScissorRect {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[non_exhaustive]
 pub enum ResourceRef {
     Texture(TextureId, SubresourceRange),
     Buffer(BufferId),
@@ -192,6 +193,7 @@ impl fmt::Debug for ExternalCommand {
 }
 
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum Command {
     TextureAccess {
         texture: TextureId,
@@ -250,6 +252,7 @@ pub enum Command {
 }
 
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum Transfer {
     BufferToBuffer {
         src: BufferId,

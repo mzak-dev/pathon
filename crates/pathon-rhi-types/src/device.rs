@@ -52,6 +52,7 @@ impl fmt::Debug for DeviceRequest {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[non_exhaustive]
 pub enum Resource {
     Buffer(BufferId),
     Texture(TextureId),

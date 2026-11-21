@@ -1,4 +1,5 @@
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[non_exhaustive]
 pub enum Format {
     R8Unorm,
     R8Uint,

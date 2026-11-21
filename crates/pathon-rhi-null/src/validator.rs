@@ -179,6 +179,7 @@ impl<'state> Validator<'state> {
                 }
                 external.callback.call(&mut ());
             }
+            _ => return Err(RhiError::Unsupported("command not handled by the null validator")),
         }
         Ok(())
     }
@@ -222,6 +223,7 @@ impl<'state> Validator<'state> {
                 }
                 self.buffer_usage(dst, BufferUsage::QUERY_RESOLVE)?;
             }
+            _ => return Err(RhiError::Unsupported("transfer not handled by the null validator")),
         }
         Ok(())
     }

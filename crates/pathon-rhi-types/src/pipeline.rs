@@ -17,6 +17,7 @@ pub struct ShaderStage {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[non_exhaustive]
 pub enum VertexFormat {
     Float32,
     Float32x2,

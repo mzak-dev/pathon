@@ -48,12 +48,14 @@ pub struct BarrierCapture {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[non_exhaustive]
 pub enum CapturedTarget {
     Texture(TextureId),
     Buffer(BufferId),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[non_exhaustive]
 pub enum CapturedKind {
     Texture,
     Buffer,

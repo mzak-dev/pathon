@@ -626,6 +626,7 @@ impl DeviceApi for WgpuDevice {
             Resource::RenderPipeline(id) => drop(objects.render_pipelines.remove(id)),
             Resource::ComputePipeline(id) => drop(objects.compute_pipelines.remove(id)),
             Resource::QuerySet(id) => drop(objects.query_sets.remove(id)),
+            other => unreachable!("wgpu device cannot destroy {other:?}"),
         }
     }
 

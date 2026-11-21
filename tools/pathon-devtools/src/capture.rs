@@ -119,6 +119,7 @@ fn view_snapshot(index: usize, capture: &GraphCapture) -> ViewSnapshot {
                     CapturedKind::Texture => "tekstura",
                     CapturedKind::Buffer => "bufor",
                     CapturedKind::History => "historia",
+                    _ => "nieznany",
                 }
                 .to_owned(),
                 imported: resource.imported,
@@ -164,6 +165,7 @@ pub fn snapshot(frame: u64, frame_ms: f32, renderer: &Renderer, report: &FrameRe
                 FeatureStatus::Disabled { code, reason } => {
                     ("wyłączona".to_owned(), Some(code.to_owned()), Some(reason))
                 }
+                _ => ("nieznany".to_owned(), None, None),
             };
             FeatureSnapshot {
                 name: info.name.to_owned(),

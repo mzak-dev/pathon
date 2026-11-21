@@ -38,6 +38,7 @@ pub enum SamplerBindingType {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[non_exhaustive]
 pub enum BindingType {
     UniformBuffer,
     StorageBuffer {

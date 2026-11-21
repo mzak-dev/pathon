@@ -422,6 +422,7 @@ impl DeviceApi for NullDevice {
             Resource::RenderPipeline(id) => drop(state.render_pipelines.remove(id)),
             Resource::ComputePipeline(id) => drop(state.compute_pipelines.remove(id)),
             Resource::QuerySet(id) => drop(state.query_sets.remove(id)),
+            _ => unreachable!("null device cannot destroy {resource:?}"),
         }
     }
 

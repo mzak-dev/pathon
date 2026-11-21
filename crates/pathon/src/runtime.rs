@@ -64,6 +64,7 @@ impl TaskPool for StdTaskPool {
 pub enum RunError {
     Platform(PlatformError),
     Render(RenderError),
+    RenderThreadPanicked,
 }
 
 impl std::error::Error for RunError {}
@@ -73,6 +74,7 @@ impl std::fmt::Display for RunError {
         match self {
             Self::Platform(error) => write!(f, "platform: {error}"),
             Self::Render(error) => write!(f, "renderer: {error}"),
+            Self::RenderThreadPanicked => write!(f, "the render thread panicked"),
         }
     }
 }
@@ -201,6 +203,7 @@ impl<Scene: FnMut(&FrameContext<'_>) -> Vec<ViewInput>> RunnerApp<Scene> {
                 && thread.join().is_err()
             {
                 log::error!("render thread panicked");
+                lock_error(&self.error).get_or_insert(RunError::RenderThreadPanicked);
             }
         }
         self.state = State::Done;
@@ -325,5 +328,83 @@ mod tests {
             }
         });
         assert!(visits.iter().all(|visit| visit.load(Ordering::Relaxed) == 1));
+    }
+
+    // Surfaces come up, a few frames run, the window closes; no real windows are opened.
+    struct ScriptedPlatform {
+        frames: usize,
+    }
+
+    struct ScriptedCtx {
+        exited: bool,
+    }
+
+    impl PlatformCtx for ScriptedCtx {
+        fn create_window(&mut self, _desc: &WindowDesc) -> Result<Arc<dyn PlatformWindow>, PlatformError> {
+            Err(PlatformError::WindowCreation(
+                "the scripted platform has no windows".into(),
+            ))
+        }
+
+        fn window(&self, _id: WindowId) -> Option<Arc<dyn PlatformWindow>> {
+            None
+        }
+
+        fn close_window(&mut self, _id: WindowId) {}
+
+        fn exit(&mut self) {
+            self.exited = true;
+        }
+    }
+
+    impl Platform for ScriptedPlatform {
+        fn run(self, mut app: Box<dyn App>) -> Result<(), PlatformError> {
+            let mut ctx = ScriptedCtx { exited: false };
+            app.on_event(&mut ctx, PlatformEvent::SurfacesAvailable);
+            for _ in 0..self.frames {
+                if ctx.exited {
+                    break;
+                }
+                app.on_frame(&mut ctx);
+            }
+            app.on_event(&mut ctx, PlatformEvent::CloseRequested(WindowId(0)));
+            Ok(())
+        }
+    }
+
+    fn null_builder() -> RendererBuilder {
+        Renderer::builder().with_device_request(pathon_rhi::DeviceRequest {
+            backend: Some(pathon_rhi::Backend::Null),
+            ..pathon_rhi::DeviceRequest::default()
+        })
+    }
+
+    #[test]
+    fn a_clean_run_renders_frames_and_returns_ok() {
+        let frames = Arc::new(AtomicUsize::new(0));
+        let counted = Arc::clone(&frames);
+        let result = run_with_hook(
+            ScriptedPlatform { frames: 3 },
+            null_builder(),
+            Vec::new(),
+            |_| Vec::new(),
+            move |_, _| {
+                counted.fetch_add(1, Ordering::SeqCst);
+            },
+        );
+        assert!(result.is_ok(), "{result:?}");
+        assert_eq!(frames.load(Ordering::SeqCst), 3);
+    }
+
+    #[test]
+    fn a_panicking_render_thread_is_an_error_not_ok() {
+        let result = run_with_hook(
+            ScriptedPlatform { frames: 3 },
+            null_builder(),
+            Vec::new(),
+            |_| Vec::new(),
+            |_, _| panic!("hook failed on the render thread"),
+        );
+        assert!(matches!(result, Err(RunError::RenderThreadPanicked)), "{result:?}");
     }
 }

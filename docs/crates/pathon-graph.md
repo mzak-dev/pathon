@@ -1,6 +1,6 @@
 # pathon-graph
 
-Graf klatki (M2-01…M2-06): paczki deklarują passy i ich dostępy do tekstur, graf ustala kolejność, usuwa zbędne passy, przydziela pamięć i zapisuje plan barier.
+Graf klatki (M2-01…M2-08): paczki deklarują passy i ich dostępy do tekstur i buforów oraz historię widoku, graf ustala kolejność, usuwa zbędne passy, przydziela pamięć i zapisuje plan barier.
 
 ## Zasoby i wersje (M2-01)
 
@@ -26,9 +26,15 @@ Bufory są zasobami grafu jak tekstury: `create_buffer(name, GraphBufferDesc)` i
 
 ## Historia (ADR-0011, M2-08)
 
-`FrameGraph::for_view(&HistoryStore, sizes)` tworzy graf, który zna historię widoku; `history_texture(name, GraphTextureDesc)` zwraca `HistoryTexture { previous, current, previous_valid }`. `previous` to treść z poprzedniej klatki (tylko do odczytu), `current` to tekstura do zapisu w tej klatce; pass zapisujący ostatnią wersję `current` jest korzeniem cullingu. W grafie z `FrameGraph::new()` `previous_valid` jest zawsze `false`. Nazwa jest unikalna w obrębie widoku i klatki.
+`FrameGraph::for_view(&HistoryStore, sizes)` tworzy graf, który zna historię widoku; `history_texture(name, GraphTextureDesc)` zwraca `HistoryTexture { previous, current, previous_valid }`. `previous` to treść z poprzedniej klatki (tylko do odczytu), `current` to tekstura do zapisu w tej klatce; pass zapisujący ostatnią wersję `current` jest korzeniem cullingu. W grafie z `FrameGraph::new()` `previous_valid` jest zawsze `false`.
 
-Fizyczne tekstury żyją w `HistoryStore` (runner trzyma po jednym na cel), poza `ResourcePool`, razem ze stanem `Access` każdej. `execute` tworzy brakującą albo nieaktualną parę od nowa (zmiana opisu, rozmiaru albo użycia; stara trafia do `DeferredRelease`), zeruje nową `previous` przed pierwszym odczytem (kolor: przezroczysta czerń, głębia: 0.0), a po klatce zapisuje stany i zamienia role pary. Klatka, która się nie powiodła, usuwa parę, bo jej komendy nie zostaną wykonane. Widok pominięty w klatce nie rusza historii; po utracie urządzenia `forget_all` czyni ją nieważną.
+**Kontrakt:** `previous_valid == true` znaczy, że `previous` zawiera dokładnie to, co ten widok zapisał do `current` w swojej ostatniej klatce, która faktycznie została wysłana. Samo istnienie pary tego nie dowodzi: ważność ustawia dopiero klatka, w której żywy pass zapisał `current` i `execute` się powiodło. Paczka czyta `previous` tylko przy `previous_valid`; gdy mimo to go czyta, dostaje zera (kolor: przezroczysta czerń, głębia: 0.0), nigdy zawartość przypadkowej pamięci.
+
+Nazwa wskazuje jedną parę w obrębie widoku i klatki: powtórne `history_texture` z tym samym opisem zwraca tę samą parę, a z innym opisem kończy kompilację błędem **G0007**.
+
+Fizyczne tekstury żyją w `HistoryStore` (runner trzyma po jednym na cel), poza `ResourcePool`, razem ze stanem `Access` i flagą ważności każdej pary. Para powstaje od razu z flagami `RENDER_TARGET | SAMPLED | COPY_SRC | COPY_DST`, żeby druga klatka nie dorzucała użycia i nie odtwarzała jej; `execute` tworzy ją od nowa tylko przy zmianie opisu, rozmiaru albo gdy pass chce użycia spoza tego zestawu (np. `STORAGE`), a stara trafia do `DeferredRelease`. Nowa albo nieważna `previous` jest zerowana przed pierwszym odczytem. Po udanej klatce graf zapisuje stany, a jeśli żywy pass zapisał `current`, zamienia role pary i oznacza ją jako ważną; nazwy, których klatka nie zadeklarowała, są zwalniane, bo wróciłyby z nieaktualną treścią. Klatka, która się nie powiodła, usuwa swoje pary, bo jej komendy nie zostaną wykonane.
+
+Widok pominięty w klatce (brak `execute` dla celu) nie rusza historii; po utracie urządzenia `forget_all` czyni ją nieważną. Historia zapisana w `execute` jest prawdziwa dopiero, gdy klatka dotarła do GPU: renderer woła `GraphRunner::commit_frame` po udanej klatce, a `abandon_frame` wszędzie tam, gdzie porzuca nagraną klatkę (błąd późniejszego widoku, `submit`, `present`), co zwalnia historię widoków, które w niej zapisały. Przy użyciu grafu bez renderera ten obowiązek spada na wołającego: po porzuconej klatce trzeba wywołać `HistoryStore::release_all`. Jedyny przypadek, w którym `previous_valid` może przesadzić, to pierwszy pass w widoku żądający użycia spoza zestawu (np. `STORAGE`) przy już ważnej historii: para zostanie odtworzona i wyzerowana, choć flaga była prawdziwa w chwili deklaracji.
 
 ## Bariery (M2-05)
 
@@ -38,9 +44,10 @@ Przed każdym passem graf porównuje potrzebny `Access` każdego subresource'u z
 
 - **G0001** — cykl (np. `after` sprzeczne z zależnością danych);
 - **G0002** — `before` / `after` wskazuje nieznany pass (ostrzeżenie);
-- **G0003** — odczyt tekstury tymczasowej, której nic nie zapisało;
+- **G0003** — odczyt zasobu tymczasowego (tekstury lub bufora), którego nic nie zapisało;
 - **G0004** — render pass miesza załączniki w rozmiarze renderu i wyjścia;
-- **G0006** — kolejność rozstrzygnięta rejestracją (ostrzeżenie).
+- **G0006** — kolejność rozstrzygnięta rejestracją (ostrzeżenie);
+- **G0007** — ta sama nazwa historii zadeklarowana z różnymi opisami.
 
 ## Nagrywanie
 
@@ -48,4 +55,4 @@ Przed każdym passem graf porównuje potrzebny `Access` każdego subresource'u z
 
 ## Capture
 
-`FrameGraph::set_capture(true)` dokłada do `Execution` obraz wykonanego grafu (`GraphCapture`): passy z kolejnością albo informacją o wycięciu, dostępy z wersjami, krawędzie zależności, teksturę fizyczną każdego zasobu (aliasing), bariery przed każdym passem i na końcu klatki. Domyślnie wyłączony, bo alokuje.
+`FrameGraph::set_capture(true)` dokłada do `Execution` obraz wykonanego grafu (`GraphCapture`): passy z kolejnością albo informacją o wycięciu, dostępy z wersjami, krawędzie zależności, zasoby (tekstury, bufory i historia, rozróżnione przez `CapturedKind`; `imported` dotyczy tylko tego, co przekazał host, więc historia się do niego nie liczy), fizyczną teksturę lub bufor każdego zasobu (aliasing), bariery przed każdym passem i na końcu klatki. Domyślnie wyłączony, bo alokuje.

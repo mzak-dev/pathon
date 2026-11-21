@@ -6,8 +6,8 @@ bitflags! {
     pub struct Access: u32 {
         const COPY_SRC = 1 << 0;
         const COPY_DST = 1 << 1;
-        const SHADER_READ = 1 << 2;
-        const SHADER_WRITE = 1 << 3;
+        const SAMPLED = 1 << 2;
+        const STORAGE_WRITE = 1 << 3;
         const COLOR_ATTACHMENT = 1 << 4;
         const DEPTH_READ = 1 << 5;
         const DEPTH_WRITE = 1 << 6;
@@ -16,9 +16,10 @@ bitflags! {
         const INDEX = 1 << 9;
         const INDIRECT = 1 << 10;
         const UNIFORM = 1 << 11;
+        const STORAGE_READ = 1 << 12;
 
         const WRITES = Self::COPY_DST.bits()
-            | Self::SHADER_WRITE.bits()
+            | Self::STORAGE_WRITE.bits()
             | Self::COLOR_ATTACHMENT.bits()
             | Self::DEPTH_WRITE.bits();
     }
@@ -41,10 +42,25 @@ impl Access {
         }
         let reads = self.difference(writes);
         match writes {
-            Self::SHADER_WRITE => reads.is_empty() || reads == Self::SHADER_READ,
+            Self::STORAGE_WRITE => reads.is_empty() || reads == Self::STORAGE_READ,
             Self::DEPTH_WRITE => reads.is_empty() || reads == Self::DEPTH_READ,
             _ => reads.is_empty(),
         }
+    }
+
+    // A texture also has a layout, so its reads must all belong to one layout class.
+    pub fn is_valid_texture_state(self) -> bool {
+        const LAYOUT_CLASSES: [Access; 7] = [
+            Access::SAMPLED.union(Access::DEPTH_READ),
+            Access::STORAGE_READ.union(Access::STORAGE_WRITE),
+            Access::COPY_SRC,
+            Access::COLOR_ATTACHMENT,
+            Access::DEPTH_READ.union(Access::DEPTH_WRITE),
+            Access::PRESENT,
+            Access::COPY_DST,
+        ];
+        let texture_bits = self.difference(Self::VERTEX | Self::INDEX | Self::INDIRECT | Self::UNIFORM);
+        self.is_valid_state() && LAYOUT_CLASSES.iter().any(|class| class.contains(texture_bits))
     }
 }
 
@@ -100,11 +116,24 @@ mod tests {
 
     #[test]
     fn reads_combine_but_writes_do_not() {
-        assert!((Access::SHADER_READ | Access::DEPTH_READ).is_valid_state());
-        assert!((Access::SHADER_READ | Access::SHADER_WRITE).is_valid_state());
-        assert!(!(Access::COLOR_ATTACHMENT | Access::SHADER_WRITE).is_valid_state());
-        assert!(!(Access::COLOR_ATTACHMENT | Access::SHADER_READ).is_valid_state());
-        assert!(!(Access::PRESENT | Access::SHADER_READ).is_valid_state());
+        assert!((Access::SAMPLED | Access::DEPTH_READ).is_valid_state());
+        assert!((Access::STORAGE_READ | Access::STORAGE_WRITE).is_valid_state());
+        assert!(!(Access::COLOR_ATTACHMENT | Access::STORAGE_WRITE).is_valid_state());
+        assert!(!(Access::COLOR_ATTACHMENT | Access::SAMPLED).is_valid_state());
+        assert!(!(Access::PRESENT | Access::SAMPLED).is_valid_state());
+    }
+
+    #[test]
+    fn a_texture_state_keeps_its_reads_in_one_layout_class() {
+        assert!((Access::SAMPLED | Access::DEPTH_READ).is_valid_texture_state());
+        assert!((Access::STORAGE_READ | Access::STORAGE_WRITE).is_valid_texture_state());
+        assert!(!(Access::SAMPLED | Access::COPY_SRC).is_valid_texture_state());
+        assert!(!(Access::SAMPLED | Access::STORAGE_READ).is_valid_texture_state());
+    }
+
+    #[test]
+    fn buffer_reads_combine_freely() {
+        assert!((Access::STORAGE_READ | Access::UNIFORM | Access::VERTEX).is_valid_state());
     }
 
     #[test]

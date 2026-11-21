@@ -199,14 +199,14 @@ fn binding_use(ty: BindingType, resource: BindingResource) -> Option<BindingUse>
     match (ty, resource) {
         (BindingType::SampledTexture { .. }, BindingResource::TextureView(view)) => Some(BindingUse::Texture {
             view,
-            access: Access::SHADER_READ,
+            access: Access::SAMPLED,
             reads: true,
         }),
         (BindingType::StorageTexture { access, .. }, BindingResource::TextureView(view)) => {
             let (needed, reads) = match access {
-                StorageAccess::ReadOnly => (Access::SHADER_READ, true),
-                StorageAccess::WriteOnly => (Access::SHADER_WRITE, false),
-                StorageAccess::ReadWrite => (Access::SHADER_READ | Access::SHADER_WRITE, true),
+                StorageAccess::ReadOnly => (Access::STORAGE_READ, true),
+                StorageAccess::WriteOnly => (Access::STORAGE_WRITE, false),
+                StorageAccess::ReadWrite => (Access::STORAGE_READ | Access::STORAGE_WRITE, true),
             };
             Some(BindingUse::Texture {
                 view,
@@ -553,7 +553,7 @@ fn check_binding_usage(state: &State, label: &str, binding_use: BindingUse) -> R
         .textures
         .get(view.texture)
         .ok_or(RhiError::InvalidHandle("texture"))?;
-    let needed = if access.contains(Access::SHADER_WRITE) {
+    let needed = if access.intersects(Access::STORAGE_READ | Access::STORAGE_WRITE) {
         TextureUsage::STORAGE
     } else {
         TextureUsage::SAMPLED

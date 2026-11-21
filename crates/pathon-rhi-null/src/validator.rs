@@ -1,7 +1,7 @@
 use pathon_rhi_types::{
-    Access, BindGroupId, BufferId, BufferUsage, Command, CommandList, DepthAccess, Extent3d, LoadOp, ResourceRef,
-    RhiError, StoreOp, SubresourceRange, TextureCopy, TextureDimension, TextureId, TextureUsage, TextureViewId,
-    Transfer,
+    Access, BindGroupId, BufferId, BufferUsage, Command, CommandList, DepthAccess, Extent3d, FormatKind, LoadOp,
+    ResourceRef, RhiError, StoreOp, SubresourceRange, TextureCopy, TextureDimension, TextureId, TextureUsage,
+    TextureViewId, Transfer,
 };
 
 use crate::device::{BindingUse, State};
@@ -62,7 +62,7 @@ impl<'state> Validator<'state> {
         match command {
             Command::TextureAccess { texture, range, access } => {
                 self.require_pass(PassKind::None, "texture access")?;
-                Self::require_valid_state(access)?;
+                Self::require_valid_texture_state(access)?;
                 let target = self
                     .state
                     .textures
@@ -228,6 +228,17 @@ impl<'state> Validator<'state> {
         Ok(())
     }
 
+    fn require_valid_texture_state(access: Access) -> Result<(), RhiError> {
+        if access.is_valid_texture_state() {
+            Ok(())
+        } else {
+            Err(RhiError::validation(
+                "R0103",
+                format!("{access:?} is not a valid texture state"),
+            ))
+        }
+    }
+
     fn require_valid_state(access: Access) -> Result<(), RhiError> {
         if access.is_valid_state() {
             Ok(())
@@ -270,8 +281,16 @@ impl<'state> Validator<'state> {
                 .ok_or(RhiError::InvalidHandle("bind group"))?
                 .clone();
             for binding_use in uses {
-                if let BindingUse::Texture { view, access, reads } = binding_use {
-                    let effect = if access.contains(Access::SHADER_WRITE) {
+                if let BindingUse::Texture {
+                    view,
+                    mut access,
+                    reads,
+                } = binding_use
+                {
+                    if access == Access::SAMPLED && self.view_is_depth(view)? {
+                        access |= Access::DEPTH_READ;
+                    }
+                    let effect = if access.contains(Access::STORAGE_WRITE) {
                         ContentEffect::Written
                     } else {
                         ContentEffect::Keep
@@ -281,6 +300,20 @@ impl<'state> Validator<'state> {
             }
         }
         Ok(())
+    }
+
+    fn view_is_depth(&self, view: TextureViewId) -> Result<bool, RhiError> {
+        let view = self
+            .state
+            .views
+            .get(view)
+            .ok_or(RhiError::InvalidHandle("texture view"))?;
+        let texture = self
+            .state
+            .textures
+            .get(view.texture)
+            .ok_or(RhiError::InvalidHandle("texture"))?;
+        Ok(texture.desc.format.kind() != FormatKind::Color)
     }
 
     fn attachment(&mut self, view: TextureViewId, needed: Access, reads: bool, store: StoreOp) -> Result<(), RhiError> {

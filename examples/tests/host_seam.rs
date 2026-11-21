@@ -10,7 +10,7 @@ use pathon::api::Camera;
 use pathon::api::glam::Vec3;
 use pathon::rhi::{
     Access, BufferCopy, BufferDesc, BufferUsage, Color, CommandList, Device, DeviceApi, Extent3d, Format, PhysicalSize,
-    TexelLayout, TextureCopy,
+    SubresourceRange, TexelLayout, TextureCopy,
 };
 use pathon::{FrameInput, Renderer, TargetId, ViewInput};
 use pathon_examples::block_on_ready;
@@ -188,6 +188,11 @@ fn render_mode_c() -> Vec<u8> {
         })
         .expect("buffer");
     let mut list = CommandList::new();
+    list.texture_access(
+        renderer.target_texture(target).expect("texture"),
+        SubresourceRange::ALL,
+        Access::COPY_SRC,
+    );
     list.copy_texture_to_buffer(
         TextureCopy::whole(renderer.target_texture(target).expect("texture")),
         BufferCopy {

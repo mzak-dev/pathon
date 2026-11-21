@@ -4,7 +4,7 @@ Graf klatki (M2-01…M2-08): paczki deklarują passy i ich dostępy do tekstur i
 
 ## Zasoby i wersje (M2-01)
 
-- `create_texture(name, GraphTextureDesc)` — zasób tymczasowy; rozmiar `Render`, `Output` albo stały. Flagi użycia (`TextureUsage`) graf wylicza sam z zadeklarowanych dostępów.
+- `create_texture(name, GraphTextureDesc)` — zasób tymczasowy; rozmiar `Render`, `Output` albo stały. Flagi użycia (`TextureUsage`) graf wylicza sam z zadeklarowanych dostępów: `SAMPLED` daje `SAMPLED`, `STORAGE_READ` i `STORAGE_WRITE` dają `STORAGE` (dla buforów także `BufferUsage::STORAGE`).
 - `import_texture(name, id, desc, initial, final)` — zasób spoza grafu (okno, offscreen, tekstura hosta). Graf przyjmuje go w stanie `initial` i oddaje w `final`.
 - Każdy zapis tworzy nową wersję (`TextureHandle`). `write` porzuca poprzednią treść, `modify` ją czyta (np. `LoadOp::Load`), `write_range` / `read_range` działają na zakresie mipów i warstw (Hi-Z). Zapis częściowy zależy od poprzedniej wersji, bo pozostałe mipy muszą zostać.
 

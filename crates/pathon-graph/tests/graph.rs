@@ -26,7 +26,7 @@ fn output_texture(device: &NullDevice) -> (TextureId, TextureDesc) {
 
 fn import_output(graph: &mut FrameGraph, device: &NullDevice) -> TextureHandle {
     let (texture, desc) = output_texture(device);
-    graph.import_texture("output", texture, desc, Access::empty(), Access::SHADER_READ)
+    graph.import_texture("output", texture, desc, Access::empty(), Access::SAMPLED)
 }
 
 fn clear(target: TextureHandle) -> impl FnOnce(&mut PassContext<'_>) -> Result<(), RhiError> {
@@ -87,7 +87,7 @@ fn order_follows_stage_priority_and_constraints_not_registration() {
         let mut graph = FrameGraph::new();
         for name in names {
             let (texture, desc) = output_texture(&device);
-            let target = graph.import_texture(name, texture, desc, Access::empty(), Access::SHADER_READ);
+            let target = graph.import_texture(name, texture, desc, Access::empty(), Access::SAMPLED);
             let desc = match name {
                 "a" => PassDesc::new("a", Stage::PostProcess).priority(10),
                 "b" => PassDesc::new("b", Stage::PostProcess).after("c"),
@@ -200,7 +200,7 @@ fn hi_z_mip_chain_orders_partial_writes() {
         current = pass.write_range(source, Access::COPY_DST, SubresourceRange::mip(mip));
     }
     let mut pass = graph.add_pass(PassDesc::new("consumer", Stage::Opaque));
-    pass.read(current, Access::SHADER_READ);
+    pass.read(current, Access::SAMPLED);
     let written = pass.write(output, Access::COLOR_ATTACHMENT);
     pass.record(clear(written));
 
@@ -215,11 +215,34 @@ fn reading_a_texture_nobody_writes_is_g0003() {
     let output = import_output(&mut graph, &device);
     let never_written = graph.create_texture("ao", GraphTextureDesc::render(Format::R8Unorm));
     let mut pass = graph.add_pass(PassDesc::new("lighting", Stage::Opaque));
-    pass.read(never_written, Access::SHADER_READ);
+    pass.read(never_written, Access::SAMPLED);
     pass.write(output, Access::COLOR_ATTACHMENT);
 
     let errors = graph.compile(FrameSizes::same(SIZE)).expect_err("must fail");
     assert_eq!(errors[0].code, "G0003");
+}
+
+#[test]
+fn a_pass_reading_a_storage_texture_nobody_writes_gets_storage_usage() {
+    let device = NullDevice::new();
+    let mut graph = FrameGraph::new();
+    let output = import_output(&mut graph, &device);
+    let scratch = graph.create_texture("scratch", GraphTextureDesc::render(Format::Rgba8Unorm));
+    let mut pass = graph.add_pass(PassDesc::new("fill", Stage::Prepass));
+    let scratch = pass.write(scratch, Access::COLOR_ATTACHMENT);
+    pass.record(clear(scratch));
+    let usage = Arc::new(Mutex::new(TextureUsage::empty()));
+    let seen = Arc::clone(&usage);
+    let mut pass = graph.add_pass(PassDesc::new("consumer", Stage::Opaque));
+    pass.read(scratch, Access::STORAGE_READ);
+    let written = pass.write(output, Access::COLOR_ATTACHMENT);
+    pass.record(move |context| {
+        *seen.lock().expect("lock") = context.desc(scratch).usage;
+        clear(written)(context)
+    });
+
+    run(graph, &device, &mut ResourcePool::new(), 0);
+    assert!(usage.lock().expect("lock").contains(TextureUsage::STORAGE));
 }
 
 #[test]
@@ -261,7 +284,7 @@ fn unordered_passes_in_one_stage_warn_g0006() {
     let mut graph = FrameGraph::new();
     for name in ["left", "right"] {
         let (texture, desc) = output_texture(&device);
-        let target = graph.import_texture(name, texture, desc, Access::empty(), Access::SHADER_READ);
+        let target = graph.import_texture(name, texture, desc, Access::empty(), Access::SAMPLED);
         let mut pass = graph.add_pass(PassDesc::new(name, Stage::Opaque));
         let written = pass.write(target, Access::COLOR_ATTACHMENT);
         pass.record(clear(written));
@@ -273,7 +296,7 @@ fn unordered_passes_in_one_stage_warn_g0006() {
 fn stable_graph(device: &NullDevice, texture: Option<(TextureId, TextureDesc)>) -> FrameGraph {
     let mut graph = FrameGraph::new();
     let (texture, desc) = texture.unwrap_or_else(|| output_texture(device));
-    let output = graph.import_texture("output", texture, desc, Access::empty(), Access::SHADER_READ);
+    let output = graph.import_texture("output", texture, desc, Access::empty(), Access::SAMPLED);
     let scene = graph.create_texture("scene", GraphTextureDesc::render(Format::Rgba8Unorm));
     let mut pass = graph.add_pass(PassDesc::new("scene", Stage::Opaque));
     let scene = pass.write(scene, Access::COPY_DST);
@@ -383,7 +406,7 @@ fn capture_describes_order_culling_dependencies_aliasing_and_barriers() {
         && barrier.access == Access::COPY_DST));
     assert!(capture.final_barriers.iter().any(|barrier| barrier.target
         == CapturedTarget::Texture(physical("output").expect("physical"))
-        && barrier.access == Access::SHADER_READ));
+        && barrier.access == Access::SAMPLED));
 }
 
 #[test]
@@ -504,7 +527,7 @@ fn render_sized_history(graph: &mut FrameGraph, device: &NullDevice, size: Physi
         TextureUsage::RENDER_TARGET | TextureUsage::SAMPLED,
     );
     let texture = device.create_texture(&desc).expect("history");
-    graph.import_texture("history", texture, desc, Access::SHADER_READ, Access::SHADER_READ)
+    graph.import_texture("history", texture, desc, Access::SAMPLED, Access::SAMPLED)
 }
 
 #[test]
@@ -549,7 +572,7 @@ fn a_compute_pass_feeding_an_indirect_draw_is_kept_and_ordered_first() {
     let args = graph.create_buffer("args", GraphBufferDesc::new(64, BufferUsage::empty()));
 
     let mut pass = graph.add_pass(PassDesc::new("a", Stage::Opaque));
-    let written = pass.write_buffer(args, Access::SHADER_WRITE);
+    let written = pass.write_buffer(args, Access::STORAGE_WRITE);
     pass.record(|_| Ok(()));
     let mut pass = graph.add_pass(PassDesc::new("b", Stage::Opaque));
     pass.read_buffer(written, Access::INDIRECT);
@@ -561,7 +584,7 @@ fn a_compute_pass_feeding_an_indirect_draw_is_kept_and_ordered_first() {
     let execution = run(graph, &device, &mut ResourcePool::new(), 0);
     assert_eq!(
         buffer_accesses(&execution.commands),
-        [Access::SHADER_WRITE, Access::INDIRECT]
+        [Access::STORAGE_WRITE, Access::INDIRECT]
     );
     device
         .submit(execution.commands)
@@ -574,7 +597,7 @@ fn a_buffer_nobody_reads_does_not_keep_its_writer() {
     let mut graph = FrameGraph::new();
     let scratch = graph.create_buffer("scratch", GraphBufferDesc::new(64, BufferUsage::empty()));
     let mut pass = graph.add_pass(PassDesc::new("writer", Stage::Opaque));
-    pass.write_buffer(scratch, Access::SHADER_WRITE);
+    pass.write_buffer(scratch, Access::STORAGE_WRITE);
     pass.record(|_| Ok(()));
 
     let execution = run(graph, &device, &mut ResourcePool::new(), 0);
@@ -595,13 +618,13 @@ fn an_imported_buffer_ends_in_its_final_state() {
     let mut graph = FrameGraph::new();
     let imported = graph.import_buffer("imported", buffer, 64, Access::COPY_DST, Access::VERTEX);
     let mut pass = graph.add_pass(PassDesc::new("fill", Stage::Opaque));
-    pass.modify_buffer(imported, Access::SHADER_WRITE | Access::SHADER_READ);
+    pass.modify_buffer(imported, Access::STORAGE_WRITE | Access::STORAGE_READ);
     pass.record(|_| Ok(()));
 
     let execution = run(graph, &device, &mut ResourcePool::new(), 0);
     assert_eq!(
         buffer_accesses(&execution.commands),
-        [Access::SHADER_WRITE | Access::SHADER_READ, Access::VERTEX]
+        [Access::STORAGE_WRITE | Access::STORAGE_READ, Access::VERTEX]
     );
     device
         .submit(execution.commands)
@@ -623,13 +646,13 @@ fn buffers_with_disjoint_lifetimes_share_memory() {
             let mut pass =
                 graph.add_pass(PassDesc::new(name, Stage::Opaque).priority(i32::try_from(index).expect("small")));
             if let Some(source) = previous {
-                pass.read_buffer(source, Access::SHADER_READ);
+                pass.read_buffer(source, Access::STORAGE_READ);
             }
-            previous = Some(pass.write_buffer(buffer, Access::SHADER_WRITE));
+            previous = Some(pass.write_buffer(buffer, Access::STORAGE_WRITE));
             pass.record(|_| Ok(()));
         }
         let mut pass = graph.add_pass(PassDesc::new("to output", Stage::Tonemap));
-        pass.read_buffer(previous.expect("chain"), Access::SHADER_READ);
+        pass.read_buffer(previous.expect("chain"), Access::STORAGE_READ);
         pass.write(output, Access::COPY_DST);
         pass.record(|_| Ok(()));
 
@@ -655,11 +678,11 @@ fn buffer_graph(device: &NullDevice) -> FrameGraph {
     let imported = graph.import_buffer("imported", buffer, 64, Access::COPY_DST, Access::VERTEX);
     let scratch = graph.create_buffer("scratch", GraphBufferDesc::new(64, BufferUsage::empty()));
     let mut pass = graph.add_pass(PassDesc::new("fill", Stage::Opaque));
-    let scratch = pass.write_buffer(scratch, Access::SHADER_WRITE);
-    pass.modify_buffer(imported, Access::SHADER_WRITE | Access::SHADER_READ);
+    let scratch = pass.write_buffer(scratch, Access::STORAGE_WRITE);
+    pass.modify_buffer(imported, Access::STORAGE_WRITE | Access::STORAGE_READ);
     pass.record(|_| Ok(()));
     let mut pass = graph.add_pass(PassDesc::new("use", Stage::Tonemap));
-    pass.read_buffer(scratch, Access::SHADER_READ);
+    pass.read_buffer(scratch, Access::STORAGE_READ);
     pass.record(|_| Ok(()));
     graph
 }
@@ -719,7 +742,7 @@ fn history_frame(
     let mut graph = FrameGraph::for_view(store, sizes);
     let history = graph.history_texture("taa history", HISTORY_DESC);
     let mut pass = graph.add_pass(PassDesc::new("resolve", Stage::Resolve));
-    pass.read(history.previous, Access::SHADER_READ);
+    pass.read(history.previous, Access::SAMPLED);
     let current = pass.write(history.current, Access::COLOR_ATTACHMENT);
     pass.record(clear(current));
 
@@ -860,11 +883,11 @@ fn capture_lists_buffers_and_history() {
     let history = graph.history_texture("taa history", HISTORY_DESC);
     let scratch = graph.create_buffer("scratch", GraphBufferDesc::new(256, BufferUsage::empty()));
     let mut pass = graph.add_pass(PassDesc::new("fill", Stage::Opaque));
-    let scratch = pass.write_buffer(scratch, Access::SHADER_WRITE);
+    let scratch = pass.write_buffer(scratch, Access::STORAGE_WRITE);
     pass.record(|_| Ok(()));
     let mut pass = graph.add_pass(PassDesc::new("resolve", Stage::Resolve));
-    pass.read_buffer(scratch, Access::SHADER_READ);
-    pass.read(history.previous, Access::SHADER_READ);
+    pass.read_buffer(scratch, Access::STORAGE_READ);
+    pass.read(history.previous, Access::SAMPLED);
     let current = pass.write(history.current, Access::COLOR_ATTACHMENT);
     pass.record(clear(current));
 
@@ -896,7 +919,7 @@ fn capture_lists_buffers_and_history() {
         .flat_map(|pass| &pass.barriers)
         .find(|barrier| matches!(barrier.target, CapturedTarget::Buffer(_)))
         .expect("a buffer barrier");
-    assert_eq!(buffer_barrier.access, Access::SHADER_WRITE);
+    assert_eq!(buffer_barrier.access, Access::STORAGE_WRITE);
 }
 
 type Seen = Arc<Mutex<Vec<TextureId>>>;
@@ -948,7 +971,7 @@ impl Probe {
             let mut pass = graph.add_pass(PassDesc::new(name, Stage::Resolve));
             let reads = history.previous_valid || !conforming;
             if reads {
-                pass.read(history.previous, Access::SHADER_READ);
+                pass.read(history.previous, Access::SAMPLED);
             }
             let written = pass.write(history.current, Access::COLOR_ATTACHMENT);
             let (previous, current) = (Arc::clone(&previous), Arc::clone(&current));
@@ -1033,7 +1056,7 @@ fn history_nobody_wrote_is_not_valid_even_though_the_pair_exists() {
         let mut graph = FrameGraph::for_view(&probe.store, sizes);
         let history = graph.history_texture("taa", HISTORY_DESC);
         let mut pass = graph.add_pass(PassDesc::new("reader", Stage::Resolve).side_effect());
-        pass.read(history.previous, Access::SHADER_READ);
+        pass.read(history.previous, Access::SAMPLED);
         pass.record(|_| Ok(()));
         let compiled = graph.compile(sizes).expect("graph compiles");
         let valid = history.previous_valid;
@@ -1068,7 +1091,7 @@ fn a_name_declared_twice_is_one_history_and_still_swaps() {
         let seen = Seen::default();
         let mut pass = graph.add_pass(PassDesc::new("resolve", Stage::Resolve));
         if first.previous_valid {
-            pass.read(second.previous, Access::SHADER_READ);
+            pass.read(second.previous, Access::SAMPLED);
         }
         let current = pass.write(first.current, Access::COLOR_ATTACHMENT);
         let (seen_in_pass, valid, previous) = (Arc::clone(&seen), first.previous_valid, second.previous);

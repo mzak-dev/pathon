@@ -256,7 +256,7 @@ impl RenderFeature for ReadsUnwrittenTexture {
         let graph = ctx.graph();
         let texture = graph.create_texture("never written", GraphTextureDesc::render(Format::Rgba8Unorm));
         let mut pass = graph.add_pass(PassDesc::new("reads unwritten", Stage::PostProcess).side_effect());
-        pass.read(texture, Access::SHADER_READ);
+        pass.read(texture, Access::SAMPLED);
         Ok(())
     }
 }
@@ -811,7 +811,7 @@ impl RenderFeature for RecordsHistoryValidity {
         let mut pass = ctx
             .graph()
             .add_pass(PassDesc::new("history writer", Stage::PostProcess));
-        pass.read(history.previous, Access::SHADER_READ);
+        pass.read(history.previous, Access::SAMPLED);
         let current = pass.write(history.current, Access::COLOR_ATTACHMENT);
         pass.record(move |pass| {
             let view = pass.view(current)?;

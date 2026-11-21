@@ -50,7 +50,7 @@ fn attachment_after_barrier_is_accepted() {
     let mut list = CommandList::new();
     list.texture_access(texture, SubresourceRange::ALL, Access::COLOR_ATTACHMENT);
     clear_pass(&device, texture, &mut list);
-    list.texture_access(texture, SubresourceRange::ALL, Access::SHADER_READ);
+    list.texture_access(texture, SubresourceRange::ALL, Access::SAMPLED);
 
     device.submit(list).expect("valid list");
 }
@@ -150,8 +150,8 @@ fn reading_hi_z_mip_before_it_is_written_is_rejected() {
         .expect("pipeline");
 
     let mut list = CommandList::new();
-    list.texture_access(hi_z, SubresourceRange::mip(1), Access::SHADER_READ);
-    list.texture_access(hi_z, SubresourceRange::mip(2), Access::SHADER_WRITE);
+    list.texture_access(hi_z, SubresourceRange::mip(1), Access::SAMPLED);
+    list.texture_access(hi_z, SubresourceRange::mip(2), Access::STORAGE_WRITE);
     {
         let mut pass = list.compute_pass(ComputePassDesc {
             label: "downsample",
@@ -163,6 +163,83 @@ fn reading_hi_z_mip_before_it_is_written_is_rejected() {
     }
 
     assert_eq!(code(device.submit(list)), "R0102");
+}
+
+#[test]
+fn a_texture_state_mixing_layouts_is_rejected() {
+    let device = NullDevice::new();
+    let texture = render_target(&device);
+    let mut list = CommandList::new();
+    list.texture_access(texture, SubresourceRange::ALL, Access::SAMPLED | Access::COPY_SRC);
+
+    assert_eq!(code(device.submit(list)), "R0103");
+}
+
+#[test]
+fn sampling_a_texture_in_a_storage_state_is_rejected() {
+    let device = NullDevice::new();
+    let texture = device
+        .create_texture(&TextureDesc::new_2d(
+            "storage",
+            4,
+            4,
+            Format::R32Float,
+            TextureUsage::STORAGE | TextureUsage::SAMPLED | TextureUsage::COPY_DST,
+        ))
+        .expect("texture");
+    let layout = device
+        .create_bind_group_layout(&BindGroupLayoutDesc {
+            label: "sampled",
+            entries: vec![BindGroupLayoutEntry {
+                binding: 0,
+                visibility: ShaderStages::COMPUTE,
+                ty: BindingType::texture_2d(),
+            }],
+        })
+        .expect("layout");
+    let view = device
+        .create_texture_view(texture, &TextureViewDesc::default())
+        .expect("view");
+    let group = device
+        .create_bind_group(&BindGroupDesc {
+            label: "sampled",
+            layout,
+            entries: vec![BindGroupEntry {
+                binding: 0,
+                resource: BindingResource::TextureView(view),
+            }],
+        })
+        .expect("bind group");
+    let module = device
+        .create_shader_module(&ShaderModuleDesc {
+            label: "sample",
+            wgsl: "fn main() {}",
+        })
+        .expect("module");
+    let pipeline = device
+        .create_compute_pipeline(&ComputePipelineDesc {
+            label: "sample",
+            bind_group_layouts: vec![layout],
+            shader: ShaderStage {
+                module,
+                entry_point: "main",
+            },
+        })
+        .expect("pipeline");
+
+    let mut list = CommandList::new();
+    list.texture_access(texture, SubresourceRange::ALL, Access::STORAGE_READ);
+    {
+        let mut pass = list.compute_pass(ComputePassDesc {
+            label: "sample",
+            timestamps: None,
+        });
+        pass.set_pipeline(pipeline);
+        pass.set_bind_group(0, group);
+        pass.dispatch(1, 1, 1);
+    }
+
+    assert_eq!(code(device.submit(list)), "R0101");
 }
 
 #[test]

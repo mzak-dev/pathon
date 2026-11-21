@@ -245,7 +245,7 @@ mod tests {
                 |graph, _output| {
                     let texture = graph.create_texture("never written", GraphTextureDesc::render(Format::Rgba8Unorm));
                     let mut pass = graph.add_pass(PassDesc::new("reads unwritten", Stage::PostProcess).side_effect());
-                    pass.read(texture, Access::SHADER_READ);
+                    pass.read(texture, Access::SAMPLED);
                     Vec::new()
                 },
                 FrameEnv {

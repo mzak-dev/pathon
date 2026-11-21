@@ -8,7 +8,7 @@ use pathon_api::{Camera, RecordCtx, RenderFeature};
 use pathon_core::{FrameInput, Renderer, ViewInput};
 use pathon_rhi::{
     Access, BufferCopy, BufferDesc, BufferUsage, Color, ColorAttachment, CommandList, DepthAttachment, DeviceApi,
-    Extent3d, Format, FormatKind, PhysicalSize, RenderPassDesc, RhiError, TexelLayout, TextureCopy,
+    Extent3d, Format, FormatKind, PhysicalSize, RenderPassDesc, RhiError, SubresourceRange, TexelLayout, TextureCopy,
 };
 use pathon_test::{GeometryPack, UnlitMeshPack, UpscalerPack, VendorDummy};
 
@@ -26,6 +26,7 @@ fn read_pixels(renderer: &Renderer, target: pathon_core::TargetId) -> Vec<u8> {
         })
         .expect("buffer");
     let mut list = CommandList::new();
+    list.texture_access(texture, SubresourceRange::ALL, Access::COPY_SRC);
     list.copy_texture_to_buffer(
         TextureCopy::whole(texture),
         BufferCopy {
@@ -152,7 +153,7 @@ impl RenderFeature for HistoryOnGpu {
         let mut pass = ctx
             .graph()
             .add_pass(PassDesc::new("history writer", Stage::PostProcess));
-        pass.read(history.previous, Access::SHADER_READ);
+        pass.read(history.previous, Access::SAMPLED);
         let written = if is_color {
             Access::COLOR_ATTACHMENT
         } else {

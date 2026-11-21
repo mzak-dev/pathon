@@ -173,7 +173,7 @@ impl RenderFeature for OnDemandConsumer {
         let mut pass = ctx
             .graph()
             .add_pass(PassDesc::new("roughness consumer", Stage::PostProcess));
-        pass.read(roughness, Access::SHADER_READ);
+        pass.read(roughness, Access::SAMPLED);
         let hdr = pass.modify(hdr, Access::COLOR_ATTACHMENT);
         pass.record(move |pass| {
             let view = pass.view(hdr)?;
@@ -214,7 +214,7 @@ impl RenderFeature for VendorDummy {
             return Ok(());
         };
         let called = Arc::clone(&self.called);
-        let access = Access::SHADER_READ | Access::SHADER_WRITE;
+        let access = Access::STORAGE_READ | Access::STORAGE_WRITE;
         let mut pass = ctx
             .graph()
             .add_pass(PassDesc::new("vendor dummy", Stage::PostProcess).priority(10));

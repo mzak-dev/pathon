@@ -51,7 +51,7 @@ pub(crate) const OFFSCREEN_USAGE: TextureUsage = TextureUsage::RENDER_TARGET
     .union(TextureUsage::COPY_DST);
 
 // Offscreen targets end every frame readable, so hosts can sample or copy them.
-pub(crate) const OFFSCREEN_FINAL: Access = Access::SHADER_READ.union(Access::COPY_SRC);
+pub(crate) const OFFSCREEN_FINAL: Access = Access::SAMPLED;
 
 pub(crate) fn offscreen_desc(size: PhysicalSize, format: Format) -> TextureDesc {
     TextureDesc::new_2d(

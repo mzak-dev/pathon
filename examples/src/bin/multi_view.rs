@@ -5,8 +5,8 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use pathon::rhi::{
-    BufferCopy, BufferDesc, BufferId, BufferUsage, CommandList, DeviceApi, DeviceRequest, Extent3d, Format,
-    PhysicalSize, SurfaceTarget, TexelLayout, TextureCopy, WindowSource,
+    Access, BufferCopy, BufferDesc, BufferId, BufferUsage, CommandList, DeviceApi, DeviceRequest, Extent3d, Format,
+    PhysicalSize, SubresourceRange, SurfaceTarget, TexelLayout, TextureCopy, WindowSource,
 };
 use pathon::{FrameInput, Renderer, TargetId, ViewInput};
 use pathon_test::UnlitMeshPack;
@@ -57,6 +57,7 @@ fn read_pixel_at_centre(renderer: &Renderer, target: TargetId, readback: BufferI
     let device = renderer.device();
     let texture = renderer.target_texture(target).expect("offscreen texture");
     let mut list = CommandList::new();
+    list.texture_access(texture, SubresourceRange::ALL, Access::COPY_SRC);
     list.copy_texture_to_buffer(
         TextureCopy::whole(texture),
         BufferCopy {

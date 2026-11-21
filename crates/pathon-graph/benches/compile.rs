@@ -33,13 +33,13 @@ fn chain(passes: usize) -> FrameGraph {
         let texture = graph.create_texture("intermediate", GraphTextureDesc::output(Format::Rgba16Float));
         let mut pass = graph.add_pass(PassDesc::new("post", Stage::PostProcess));
         if let Some(previous) = previous {
-            pass.read(previous, Access::SHADER_READ);
+            pass.read(previous, Access::SAMPLED);
         }
         previous = Some(pass.write(texture, Access::COLOR_ATTACHMENT));
     }
     let mut pass = graph.add_pass(PassDesc::new("present", Stage::Tonemap));
     if let Some(previous) = previous {
-        pass.read(previous, Access::SHADER_READ);
+        pass.read(previous, Access::SAMPLED);
     }
     pass.write(output, Access::COLOR_ATTACHMENT);
     graph

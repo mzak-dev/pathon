@@ -52,8 +52,9 @@ pub(crate) fn usage_for(access: Access) -> TextureUsage {
     let pairs = [
         (Access::COPY_SRC, TextureUsage::COPY_SRC),
         (Access::COPY_DST, TextureUsage::COPY_DST),
-        (Access::SHADER_READ, TextureUsage::SAMPLED),
-        (Access::SHADER_WRITE, TextureUsage::STORAGE),
+        (Access::SAMPLED, TextureUsage::SAMPLED),
+        (Access::STORAGE_READ, TextureUsage::STORAGE),
+        (Access::STORAGE_WRITE, TextureUsage::STORAGE),
         (Access::COLOR_ATTACHMENT, TextureUsage::RENDER_TARGET),
         (Access::DEPTH_READ, TextureUsage::RENDER_TARGET),
         (Access::DEPTH_WRITE, TextureUsage::RENDER_TARGET),
@@ -75,8 +76,8 @@ pub(crate) fn buffer_usage_for(access: Access) -> BufferUsage {
         (Access::UNIFORM, BufferUsage::UNIFORM),
         (Access::COPY_SRC, BufferUsage::COPY_SRC),
         (Access::COPY_DST, BufferUsage::COPY_DST),
-        (Access::SHADER_READ, BufferUsage::STORAGE),
-        (Access::SHADER_WRITE, BufferUsage::STORAGE),
+        (Access::STORAGE_READ, BufferUsage::STORAGE),
+        (Access::STORAGE_WRITE, BufferUsage::STORAGE),
     ];
     for (flag, needed) in pairs {
         if access.intersects(flag) {

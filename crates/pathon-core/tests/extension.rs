@@ -82,7 +82,7 @@ impl RenderFeature for OutlineComposite {
         let mut pass = ctx
             .graph()
             .add_pass(PassDesc::new("outline composite", Stage::PostProcess));
-        pass.read(mask, Access::SHADER_READ);
+        pass.read(mask, Access::SAMPLED);
         let output = pass.modify(output, Access::COLOR_ATTACHMENT);
         pass.record(move |pass| {
             let view = pass.view(output)?;

@@ -326,7 +326,7 @@ fn indexed_quad_samples_texture(device: &Device) {
     let readback = readback_buffer(device, u64::from(ROW_BYTES * target_size));
 
     let mut list = CommandList::new();
-    list.texture_access(source, SubresourceRange::ALL, Access::SHADER_READ);
+    list.texture_access(source, SubresourceRange::ALL, Access::SAMPLED);
     list.texture_access(target, SubresourceRange::ALL, Access::COLOR_ATTACHMENT);
     {
         let mut pass = list.render_pass(RenderPassDesc {

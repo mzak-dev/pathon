@@ -53,11 +53,11 @@ impl RenderFeature for ParticleBuffer {
         let mut simulate = ctx
             .graph()
             .add_pass(PassDesc::new("simulate particles", Stage::Transparent));
-        let particles = simulate.write_buffer(particles, Access::SHADER_WRITE);
+        let particles = simulate.write_buffer(particles, Access::STORAGE_WRITE);
         let mut draw = ctx
             .graph()
             .add_pass(PassDesc::new("draw particles", Stage::Transparent).side_effect());
-        draw.read_buffer(particles, Access::SHADER_READ);
+        draw.read_buffer(particles, Access::STORAGE_READ);
         Ok(())
     }
 }

@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use pathon_api::graph::{GraphTextureDesc, PassDesc, Stage};
-use pathon_api::{Camera, RecordCtx, RenderFeature};
+use pathon_api::{Camera, RecordCtx, RenderFeature, Role, SetupCtx};
 use pathon_core::{FeatureStatus, FrameInput, RenderError, Renderer, RendererBuilder, ViewInput};
 use pathon_rhi::{
     Access, Backend, Color, Device, DeviceApi, DeviceRequest, Extent3d, Format, PhysicalSize, RhiError, SurfaceTarget,
@@ -418,4 +418,88 @@ fn a_pack_that_fails_to_record_is_disabled_and_not_called_again() {
         FeatureStatus::Disabled { code: "F0105", .. }
     ));
     assert_eq!(renderer.active_features(), [] as [&str; 0]);
+}
+
+#[test]
+fn a_minimised_window_is_skipped_until_it_has_a_size_again() {
+    let mut renderer = null_builder().build().expect("renderer");
+    let window = renderer
+        .add_window(SurfaceTarget::new(Arc::new(NoWindow), SIZE, 1.0))
+        .expect("surface");
+    let input = FrameInput {
+        views: vec![ViewInput {
+            target: window,
+            camera: Camera::default(),
+        }],
+        ..FrameInput::default()
+    };
+    assert_eq!(renderer.render_frame(&input).expect("frame").skipped_views, 0);
+
+    renderer
+        .resize_target(window, PhysicalSize::new(0, 0))
+        .expect("minimising is not an error");
+    let report = renderer.render_frame(&input).expect("frame");
+    assert_eq!(report.skipped_views, 1);
+
+    renderer.resize_target(window, SIZE).expect("restore");
+    assert_eq!(renderer.render_frame(&input).expect("frame").skipped_views, 0);
+}
+
+struct ClaimsRole {
+    name: &'static str,
+    priority: i32,
+    setup_fails: bool,
+}
+
+impl RenderFeature for ClaimsRole {
+    fn name(&self) -> &'static str {
+        self.name
+    }
+
+    fn stage(&self) -> Stage {
+        Stage::Opaque
+    }
+
+    fn priority(&self) -> i32 {
+        self.priority
+    }
+
+    fn role(&self) -> Option<Role> {
+        Some(Role::new("test.exclusive"))
+    }
+
+    fn setup(&mut self, _ctx: &mut SetupCtx<'_>) -> Result<(), RhiError> {
+        if self.setup_fails {
+            Err(RhiError::InvalidHandle("setup gave up"))
+        } else {
+            Ok(())
+        }
+    }
+
+    fn record(&mut self, _ctx: &mut RecordCtx<'_>) -> Result<(), RhiError> {
+        Ok(())
+    }
+}
+
+#[test]
+fn a_role_passes_to_the_next_claimant_when_its_holder_fails_setup() {
+    let renderer = null_builder()
+        .with_feature(ClaimsRole {
+            name: "first claimant",
+            priority: 0,
+            setup_fails: true,
+        })
+        .with_feature(ClaimsRole {
+            name: "second claimant",
+            priority: 1,
+            setup_fails: false,
+        })
+        .build()
+        .expect("renderer");
+
+    assert_eq!(renderer.active_features(), ["second claimant"]);
+    assert!(matches!(
+        status_of(&renderer, "first claimant"),
+        FeatureStatus::Disabled { code: "F0104", .. }
+    ));
 }

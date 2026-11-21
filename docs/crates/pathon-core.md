@@ -31,7 +31,7 @@ Paczka, której `record` zwróci błąd, jest wyłączana z F0105 i znika z kole
 
 Paczki instaluje się przez `with_pack(pack)` (paczka może wnieść kilka klas i wspólne dane) albo `with_feature(feature)`. Dane dla paczek aplikacja podaje przez `with_shared(value)` i zmienia między klatkami przez `shared_mut()`.
 
-Przy budowie: faza 1 (`requirements` → `DeviceRequest`, konflikt backendów F0201), urządzenie, faza 2 (`negotiate`: F0101 / F0103), kolejność (`sort_nodes` po etapie, `before` / `after`, priorytecie), role (F0102 dla drugiej paczki z tą samą rolą), `setup` (F0104). `features()` zwraca status każdej paczki, `active_features()` — aktywne w kolejności klatki.
+Przy budowie: faza 1 (`requirements` → `DeviceRequest`, konflikt backendów F0201), urządzenie, faza 2 (`negotiate`: F0101 / F0103), kolejność (`sort_nodes` po etapie, `before` / `after`, priorytecie), `setup` w kolejności klatki (F0104) razem z rolami: rolę dostaje pierwsza paczka, której `setup` się udał, kolejne kandydatki są wyłączane z F0102, a paczka, która padnie w `setup`, zostawia rolę następnej. `features()` zwraca status każdej paczki, `active_features()` — aktywne w kolejności klatki.
 
 ## Utrata urządzenia (M1-03)
 

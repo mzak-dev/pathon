@@ -103,17 +103,7 @@ impl Registry {
     pub(crate) fn activate(&mut self, device: &dyn DeviceApi, task_pool: &dyn TaskPool, shared: &mut Shared) {
         self.negotiate(device.caps());
         self.sort();
-        self.assign_roles();
-        let mut ctx = SetupCtx::new(device, task_pool, shared);
-        for index in self.order.clone() {
-            if let Err(error) = self.entries[index].feature.setup(&mut ctx) {
-                let name = self.entries[index].feature.name();
-                self.disable(
-                    index,
-                    Diagnostic::error("F0104", format!("'{name}' failed during setup: {error}")),
-                );
-            }
-        }
+        self.set_up_in_order(&mut SetupCtx::new(device, task_pool, shared));
     }
 
     pub(crate) fn reset(&mut self, device: &dyn DeviceApi, task_pool: &dyn TaskPool, shared: &mut Shared) {
@@ -191,15 +181,15 @@ impl Registry {
         }
     }
 
-    // The first feature in frame order keeps a role; later claimants are disabled.
-    fn assign_roles(&mut self) {
+    // In frame order, the first feature to finish setup keeps its role and later claimants are disabled; a claimant
+    // that fails setup leaves the role to the next one.
+    fn set_up_in_order(&mut self, ctx: &mut SetupCtx<'_>) {
         let mut holders: Vec<(Role, usize)> = Vec::new();
         for index in self.order.clone() {
-            let Some(role) = self.entries[index].feature.role() else {
-                continue;
-            };
-            if let Some((_, holder)) = holders.iter().find(|(held, _)| *held == role) {
-                let name = self.entries[index].feature.name();
+            let name = self.entries[index].feature.name();
+            let role = self.entries[index].feature.role();
+            let held_by = role.and_then(|role| holders.iter().find(|(held, _)| *held == role));
+            if let (Some(role), Some((_, holder))) = (role, held_by) {
                 let holder = self.entries[*holder].feature.name();
                 self.disable(
                     index,
@@ -211,7 +201,16 @@ impl Registry {
                 );
                 continue;
             }
-            holders.push((role, index));
+            if let Err(error) = self.entries[index].feature.setup(ctx) {
+                self.disable(
+                    index,
+                    Diagnostic::error("F0104", format!("'{name}' failed during setup: {error}")),
+                );
+                continue;
+            }
+            if let Some(role) = role {
+                holders.push((role, index));
+            }
         }
         self.temporal_owner = holders
             .iter()

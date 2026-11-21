@@ -343,7 +343,8 @@ impl Renderer {
         let target = self.targets.get_mut(id).ok_or(RenderError::UnknownTarget)?;
         let output = match &mut target.kind {
             TargetKind::Surface { surface, config, .. } => {
-                if config.format.is_none() {
+                // A minimised window keeps its last configuration on the device; it waits for a real size.
+                if config.format.is_none() || config.size.is_empty() {
                     return Ok(None);
                 }
                 let frame = match device.acquire_surface(*surface) {

@@ -1,6 +1,6 @@
 # Kontrakt paczki w `pathon-api` — plan wdrożenia
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Cel:** paczka widzi tylko to, czego potrzebuje do deklarowania pracy, a API może rosnąć bez zmian łamiących.
 
@@ -34,10 +34,10 @@
 **Interfaces:**
 - Produces: `pub type RecordFn = Box<dyn FnOnce(&mut PassContext<'_>) -> Result<(), RhiError> + MaybeSend>`; `PassBuilder::record(self, record: impl FnOnce(&mut PassContext<'_>) -> Result<(), RhiError> + MaybeSend + 'static)`.
 
-- [ ] **Step 1: Test RED** — w `docs/crates/pathon-api.md` blok ```` ```rust,compile_fail ```` z paczką, której pass przechwytuje `std::rc::Rc` w domknięciu `record` (ma się nie skompilować); uruchom `cargo test -p pathon-api --doc` — blok się kompiluje, więc test pada.
-- [ ] **Step 2: Implementacja** `MaybeSend` i `#[non_exhaustive]`; w kodzie poza crate'em enumu dopisz ramiona `_` tylko tam, gdzie kompilator ich wymaga, z sensownym zachowaniem (błąd / `Unsupported` / diagnostyka), nigdy cichym pominięciem.
-- [ ] **Step 3: Uruchom** `cargo test --workspace --all-features`, `cargo test -p pathon-api --doc`, `cargo check --target wasm32-unknown-unknown -p pathon-core -p pathon-test -p pathon --no-default-features`, clippy `-D warnings`.
-- [ ] **Step 4: Commit** `feat(api)!: require Send pass closures and mark growing enums non_exhaustive (ADR-0012)`
+- [x] **Step 1: Test RED** — w `docs/crates/pathon-api.md` blok ```` ```rust,compile_fail ```` z paczką, której pass przechwytuje `std::rc::Rc` w domknięciu `record` (ma się nie skompilować); uruchom `cargo test -p pathon-api --doc` — blok się kompiluje, więc test pada.
+- [x] **Step 2: Implementacja** `MaybeSend` i `#[non_exhaustive]`; w kodzie poza crate'em enumu dopisz ramiona `_` tylko tam, gdzie kompilator ich wymaga, z sensownym zachowaniem (błąd / `Unsupported` / diagnostyka), nigdy cichym pominięciem.
+- [x] **Step 3: Uruchom** `cargo test --workspace --all-features`, `cargo test -p pathon-api --doc`, `cargo check --target wasm32-unknown-unknown -p pathon-core -p pathon-test -p pathon --no-default-features`, clippy `-D warnings`.
+- [x] **Step 4: Commit** `feat(api)!: require Send pass closures and mark growing enums non_exhaustive (ADR-0012)`
 
 ### Task 2: `GraphBuilder` i jawny re-eksport grafu
 
@@ -53,8 +53,8 @@
   - `pathon_api::graph` = jawna lista z ADR-0012.
   - `#[doc(hidden)]` na `SetupCtx::new`, `PrepareCtx::new`, `RecordCtx::new`.
 
-- [ ] **Step 1: Test RED** — trzy bloki ```` ```rust,compile_fail ```` w `docs/crates/pathon-api.md`: `use pathon_api::graph::GraphCache;`, `use pathon_api::graph::ResourcePool;`, paczka wołająca `ctx.graph().compile(...)`; uruchom `cargo test -p pathon-api --doc` — bloki się kompilują, test pada.
-- [ ] **Step 2: Implementacja** według Interfaces; popraw paczki i dema, które nazywały `FrameGraph` przez `pathon-api`.
-- [ ] **Step 3: Uruchom** pełny zestaw jak w Task 1.
-- [ ] **Step 4: Docs** `docs/crates/pathon-api.md`: krótka sekcja „Co widzi paczka” z listą z ADR-0012.
-- [ ] **Step 5: Commit** `feat(api)!: give packs a declaration-only GraphBuilder (ADR-0012)`
+- [x] **Step 1: Test RED** — trzy bloki ```` ```rust,compile_fail ```` w `docs/crates/pathon-api.md`: `use pathon_api::graph::GraphCache;`, `use pathon_api::graph::ResourcePool;`, paczka wołająca `ctx.graph().compile(...)`; uruchom `cargo test -p pathon-api --doc` — bloki się kompilują, test pada.
+- [x] **Step 2: Implementacja** według Interfaces; popraw paczki i dema, które nazywały `FrameGraph` przez `pathon-api`.
+- [x] **Step 3: Uruchom** pełny zestaw jak w Task 1.
+- [x] **Step 4: Docs** `docs/crates/pathon-api.md`: krótka sekcja „Co widzi paczka” z listą z ADR-0012.
+- [x] **Step 5: Commit** `feat(api)!: give packs a declaration-only GraphBuilder (ADR-0012)`

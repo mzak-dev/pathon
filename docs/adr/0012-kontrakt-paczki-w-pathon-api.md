@@ -9,8 +9,8 @@
 
 ## Decyzja
 
-- **Paczka dostaje graf przez `GraphBuilder`.** `RecordCtx::graph()` zwraca `GraphBuilder<'_>` z `pathon-api`, który pozwala tylko deklarować: `create_texture`, `import_texture`, `create_buffer`, `import_buffer`, `history_texture`, `add_pass` i odczyty opisu (`resource_name`, `texture_format`, `is_latest`). Kompilacja, wykonanie, cache i pule zostają w rdzeniu.
-- **`pathon_api::graph` re-eksportuje jawną listę:** `GraphBuilder`, `PassBuilder`, `PassContext`, `PassDesc`, `Stage`, `GraphTextureDesc`, `GraphSize`, `GraphBufferDesc`, `TextureHandle`, `BufferHandle`, `HistoryTexture`. Rdzeń, devtools i testy grafu korzystają z `pathon-graph` bezpośrednio.
+- **Paczka dostaje graf przez `GraphBuilder`.** `RecordCtx` trzyma `GraphBuilder` z `pathon-api`, a `RecordCtx::graph()` zwraca `&mut GraphBuilder`, który pozwala tylko deklarować: `create_texture`, `import_texture`, `create_buffer`, `import_buffer`, `history_texture`, `add_pass` (pożycza builder, więc kilka passów z jednego `let graph = ctx.graph();` działa) i odczyty opisu (`resource_name`, `texture_format`, `is_latest`). Kompilacja, wykonanie, cache i pule zostają w rdzeniu.
+- **`pathon_api::graph` re-eksportuje jawną listę:** `GraphBuilder`, `PassBuilder`, `PassContext`, `PassDesc`, `Stage`, `GraphTextureDesc`, `GraphSize`, `GraphBufferDesc`, `TextureHandle`, `BufferHandle`, `HistoryTexture`. Rdzeń, devtools i testy grafu korzystają z `pathon-graph` bezpośrednio. Struktury widoczne dla paczki (`GraphTextureDesc`, `GraphBufferDesc`, `PassDesc`, `HistoryTexture`) zostają z publicznymi polami i są zamrożone do decyzji w M5-07; `GraphSize` jest `#[non_exhaustive]`.
 - **Konstruktory kontekstów** (`SetupCtx::new`, `PrepareCtx::new`, `RecordCtx::new`) są `#[doc(hidden)]`: muszą być publiczne, bo woła je inny crate (rdzeń), ale nie są częścią kontraktu paczki.
 - **Domknięcie passa jest `MaybeSend`** (`Send` natywnie, bez wymagań na wasm). Równoległe nagrywanie passów będzie można dodać bez zmiany w paczkach.
 - **`#[non_exhaustive]` na enumach, które urosną:** `Format`, `Command`, `Transfer`, `RhiError`, `BindingType`, `Resource`, `ResourceRef`, `Backend`, `DeviceType`, `Profile`, `VertexFormat`, `Stage`, `Negotiation`, `FeatureStatus`, `CapturedKind`, `CapturedTarget`. Nowy wariant nie łamie paczek, które dopasowują te enumy.
@@ -25,5 +25,6 @@
 ## Konsekwencje
 
 - Paczki zmieniają się tylko tam, gdzie nazywały typ `FrameGraph` albo dopasowywały enum bez `_`; wywołania `ctx.graph().add_pass(...)` zostają bez zmian.
+- `GraphBuilder` jest jedynym sposobem na graf w `RecordCtx`; `FrameGraph` nie ma `Default`, więc paczka nie wywnioskuje go przez `RecordCtx::new`.
 - Domknięcie passa nie może trzymać `Rc` ani innych typów bez `Send` (natywnie).
 - Testy `compile_fail` w dokumentacji `pathon-api` pilnują, że wnętrze grafu nie jest widoczne dla paczek.

@@ -1,14 +1,14 @@
 use pathon_diag::Diagnostic;
 use pathon_resources::DeferredRelease;
 use pathon_rhi_types::{
-    Access, BindGroupDesc, BindGroupId, Command, CommandList, DeviceApi, Resource, RhiError, SubresourceRange,
-    TextureDesc, TextureDimension, TextureId, TextureUsage, TextureViewDesc, TextureViewId,
+    Access, BindGroupDesc, BindGroupId, BufferDesc, BufferId, Command, CommandList, DeviceApi, Resource, RhiError,
+    SubresourceRange, TextureDesc, TextureDimension, TextureId, TextureUsage, TextureViewDesc, TextureViewId,
 };
 
 use crate::capture::{AccessCapture, BarrierCapture, GraphCapture, PassCapture, ResourceCapture};
 use crate::compile::{CompiledGraph, GraphStats};
-use crate::graph::{FrameGraph, PassAccess, PassNode, ResourceKind, TextureHandle};
-use crate::pool::TexturePool;
+use crate::graph::{BufferHandle, FrameGraph, PassAccess, PassNode, ResourceKind, TextureHandle};
+use crate::pool::ResourcePool;
 
 #[derive(Clone, Copy, Debug)]
 struct PhysicalTexture {
@@ -27,8 +27,9 @@ pub struct Execution {
 pub struct PassContext<'exec> {
     device: &'exec dyn DeviceApi,
     commands: &'exec mut CommandList,
-    pool: &'exec mut TexturePool,
+    pool: &'exec mut ResourcePool,
     physical: &'exec [Option<PhysicalTexture>],
+    physical_buffers: &'exec [Option<BufferId>],
     frame_resources: &'exec mut Vec<Resource>,
 }
 
@@ -53,6 +54,11 @@ impl PassContext<'_> {
 
     pub fn texture(&self, handle: TextureHandle) -> TextureId {
         self.physical(handle).texture
+    }
+
+    pub fn buffer(&self, handle: BufferHandle) -> BufferId {
+        self.physical_buffers[handle.resource as usize]
+            .expect("a pass only sees resources it declared, which are allocated")
     }
 
     pub fn desc(&self, handle: TextureHandle) -> TextureDesc {
@@ -126,6 +132,45 @@ impl StateTracker {
     }
 }
 
+struct BufferStateTracker {
+    states: Vec<(BufferId, Access)>,
+}
+
+impl BufferStateTracker {
+    fn state_mut(&mut self, buffer: BufferId, initial: Access) -> &mut Access {
+        let existing = self.states.iter().position(|(known, _)| *known == buffer);
+        let index = existing.unwrap_or_else(|| {
+            self.states.push((buffer, initial));
+            self.states.len() - 1
+        });
+        &mut self.states[index].1
+    }
+
+    // Same rule as for textures: a barrier on any state change and after any write.
+    fn transition(&mut self, buffer: BufferId, needed: Access, commands: &mut CommandList) {
+        let current = self.state_mut(buffer, Access::empty());
+        if needed.is_empty() || (needed == *current && current.writes().is_empty()) {
+            return;
+        }
+        commands.buffer_access(buffer, needed);
+        *current = needed;
+    }
+}
+
+fn needed_buffer_states(accesses: &[PassAccess], physical: &[Option<BufferId>]) -> Vec<(BufferId, Access)> {
+    let mut needed: Vec<(BufferId, Access)> = Vec::new();
+    for access in accesses {
+        let Some(buffer) = physical[access.resource as usize] else {
+            continue;
+        };
+        match needed.iter_mut().find(|(known, _)| *known == buffer) {
+            Some((_, state)) => *state |= access.access,
+            None => needed.push((buffer, access.access)),
+        }
+    }
+    needed
+}
+
 fn needed_states(accesses: &[PassAccess], physical: &[Option<PhysicalTexture>]) -> Vec<(PhysicalTexture, Vec<Access>)> {
     let mut needed: Vec<(PhysicalTexture, Vec<Access>)> = Vec::new();
     for access in accesses {
@@ -151,13 +196,20 @@ impl FrameGraph {
         self,
         compiled: &CompiledGraph,
         device: &dyn DeviceApi,
-        pool: &mut TexturePool,
+        pool: &mut ResourcePool,
         release: &mut DeferredRelease,
         frame: u64,
     ) -> Result<Execution, RhiError> {
         pool.begin_frame();
         let (physical, physical_count) = self.allocate(compiled, device, pool, frame)?;
+        let (physical_buffers, physical_buffer_count) = self.allocate_buffers(compiled, device, pool, frame)?;
         let mut tracker = StateTracker { states: Vec::new() };
+        let mut buffer_tracker = BufferStateTracker { states: Vec::new() };
+        for (resource, buffer) in self.resources.iter().zip(&physical_buffers) {
+            if let (ResourceKind::ImportedBuffer { initial, .. }, Some(buffer)) = (resource.kind, buffer) {
+                *buffer_tracker.state_mut(*buffer, initial) = initial;
+            }
+        }
         for (resource, texture) in self.resources.iter().zip(&physical) {
             if let (ResourceKind::Imported { initial, .. }, Some(texture)) = (resource.kind, texture) {
                 tracker.states_mut(*texture, initial);
@@ -176,6 +228,9 @@ impl FrameGraph {
             for (texture, needed) in needed_states(&pass.accesses, &physical) {
                 tracker.transition(texture, &needed, &mut commands);
             }
+            for (buffer, needed) in needed_buffer_states(&pass.accesses, &physical_buffers) {
+                buffer_tracker.transition(buffer, needed, &mut commands);
+            }
             if let Some(capture) = &mut capture {
                 capture.passes[*index].barriers = barriers_since(&commands, barriers_start);
             }
@@ -185,6 +240,7 @@ impl FrameGraph {
                     commands: &mut commands,
                     pool: &mut *pool,
                     physical: &physical,
+                    physical_buffers: &physical_buffers,
                     frame_resources: &mut frame_resources,
                 };
                 if let Err(error) = record(&mut context) {
@@ -203,6 +259,11 @@ impl FrameGraph {
                 pool.release_views_of(texture.texture, release, frame);
             }
         }
+        for (resource, buffer) in self.resources.iter().zip(&physical_buffers) {
+            if let (ResourceKind::ImportedBuffer { final_access, .. }, Some(buffer)) = (resource.kind, buffer) {
+                buffer_tracker.transition(*buffer, final_access, &mut commands);
+            }
+        }
         if let Some(capture) = &mut capture {
             capture.final_barriers = barriers_since(&commands, final_start);
             capture.stats.physical_textures = physical_count;
@@ -217,6 +278,7 @@ impl FrameGraph {
 
         let stats = GraphStats {
             physical_textures: physical_count,
+            physical_buffers: physical_buffer_count,
             ..compiled.stats
         };
         Ok(Execution {
@@ -263,7 +325,7 @@ impl FrameGraph {
             .zip(&compiled.lifetimes)
             .map(|((resource, physical), lifetime)| ResourceCapture {
                 name: resource.name,
-                imported: matches!(resource.kind, ResourceKind::Imported { .. }),
+                imported: resource.kind.is_imported(),
                 desc: physical.map(|physical| physical.desc),
                 physical: physical.map(|physical| physical.texture),
                 lifetime: *lifetime,
@@ -301,7 +363,7 @@ impl FrameGraph {
         &self,
         compiled: &CompiledGraph,
         device: &dyn DeviceApi,
-        pool: &mut TexturePool,
+        pool: &mut ResourcePool,
         frame: u64,
     ) -> Result<(Vec<Option<PhysicalTexture>>, usize), RhiError> {
         let mut physical: Vec<Option<PhysicalTexture>> = vec![None; self.resources.len()];
@@ -324,7 +386,8 @@ impl FrameGraph {
                     };
                     transients.push((index, first, last, desc));
                 }
-                (ResourceKind::Transient(_), None) => {}
+                (ResourceKind::Transient(_), None)
+                | (ResourceKind::TransientBuffer(_) | ResourceKind::ImportedBuffer { .. }, _) => {}
             }
         }
         transients.sort_by_key(|(_, first, _, _)| *first);
@@ -360,4 +423,54 @@ fn same_shape(a: &TextureDesc, b: &TextureDesc) -> bool {
         ..*desc
     };
     strip(a) == strip(b)
+}
+
+impl FrameGraph {
+    // Same aliasing as for textures: equal sizes with disjoint lifetimes share one buffer carrying the union of usages.
+    fn allocate_buffers(
+        &self,
+        compiled: &CompiledGraph,
+        device: &dyn DeviceApi,
+        pool: &mut ResourcePool,
+        frame: u64,
+    ) -> Result<(Vec<Option<BufferId>>, usize), RhiError> {
+        let mut physical: Vec<Option<BufferId>> = vec![None; self.resources.len()];
+        let mut transients = Vec::new();
+        for (index, resource) in self.resources.iter().enumerate() {
+            match (resource.kind, compiled.lifetimes[index]) {
+                (ResourceKind::ImportedBuffer { buffer, .. }, _) => physical[index] = Some(buffer),
+                (ResourceKind::TransientBuffer(graph_desc), Some((first, last))) => {
+                    let desc = BufferDesc {
+                        label: resource.name,
+                        size: graph_desc.size,
+                        usage: graph_desc.usage | compiled.buffer_usages[index],
+                    };
+                    transients.push((index, first, last, desc));
+                }
+                _ => {}
+            }
+        }
+        transients.sort_by_key(|(_, first, _, _)| *first);
+
+        let mut slots: Vec<(BufferDesc, usize, Vec<usize>)> = Vec::new();
+        for (index, first, last, desc) in transients {
+            let reusable = slots
+                .iter_mut()
+                .find(|(slot, busy_until, _)| *busy_until < first && slot.size == desc.size);
+            if let Some((slot, busy_until, members)) = reusable {
+                slot.usage |= desc.usage;
+                *busy_until = last;
+                members.push(index);
+            } else {
+                slots.push((desc, last, vec![index]));
+            }
+        }
+        for (desc, _, members) in &slots {
+            let buffer = pool.acquire_buffer(device, desc, frame)?;
+            for member in members {
+                physical[*member] = Some(buffer);
+            }
+        }
+        Ok((physical, slots.len()))
+    }
 }

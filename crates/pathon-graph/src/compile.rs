@@ -1,5 +1,5 @@
 use pathon_diag::Diagnostic;
-use pathon_rhi_types::{Access, PhysicalSize, TextureUsage};
+use pathon_rhi_types::{Access, BufferUsage, PhysicalSize, TextureUsage};
 
 use crate::graph::{FrameGraph, FrameSizes, GraphSize, PassAccess, ResourceKind};
 use crate::order::{OrderNode, sort_nodes};
@@ -10,6 +10,8 @@ pub struct GraphStats {
     pub passes_live: usize,
     pub logical_textures: usize,
     pub physical_textures: usize,
+    pub logical_buffers: usize,
+    pub physical_buffers: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -18,6 +20,7 @@ pub struct CompiledGraph {
     pub(crate) names: Vec<&'static str>,
     pub(crate) sizes: FrameSizes,
     pub(crate) usages: Vec<TextureUsage>,
+    pub(crate) buffer_usages: Vec<BufferUsage>,
     // First and last position in `order` at which a resource is touched.
     pub(crate) lifetimes: Vec<Option<(usize, usize)>>,
     // Dependencies between live passes (data and before/after), by pass index.
@@ -63,6 +66,26 @@ pub(crate) fn usage_for(access: Access) -> TextureUsage {
     usage
 }
 
+pub(crate) fn buffer_usage_for(access: Access) -> BufferUsage {
+    let mut usage = BufferUsage::empty();
+    let pairs = [
+        (Access::VERTEX, BufferUsage::VERTEX),
+        (Access::INDEX, BufferUsage::INDEX),
+        (Access::INDIRECT, BufferUsage::INDIRECT),
+        (Access::UNIFORM, BufferUsage::UNIFORM),
+        (Access::COPY_SRC, BufferUsage::COPY_SRC),
+        (Access::COPY_DST, BufferUsage::COPY_DST),
+        (Access::SHADER_READ, BufferUsage::STORAGE),
+        (Access::SHADER_WRITE, BufferUsage::STORAGE),
+    ];
+    for (flag, needed) in pairs {
+        if access.intersects(flag) {
+            usage |= needed;
+        }
+    }
+    usage
+}
+
 // A version is written before it is read, so `Write` sorts first.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 enum Hazard {
@@ -94,28 +117,38 @@ impl FrameGraph {
         let (order, edges) = self.order(&live, &mut warnings)?;
 
         let mut usages = vec![TextureUsage::empty(); self.resources.len()];
+        let mut buffer_usages = vec![BufferUsage::empty(); self.resources.len()];
         let mut lifetimes: Vec<Option<(usize, usize)>> = vec![None; self.resources.len()];
         for (position, pass) in order.iter().enumerate() {
             for access in &self.passes[*pass].accesses {
                 let resource = access.resource as usize;
-                usages[resource] |= usage_for(access.access);
+                if self.resources[resource].kind.is_buffer() {
+                    buffer_usages[resource] |= buffer_usage_for(access.access);
+                } else {
+                    usages[resource] |= usage_for(access.access);
+                }
                 lifetimes[resource] = Some(match lifetimes[resource] {
                     Some((first, _)) => (first, position),
                     None => (position, position),
                 });
             }
         }
-        let logical_textures = self
-            .resources
-            .iter()
-            .zip(&lifetimes)
-            .filter(|(resource, lifetime)| matches!(resource.kind, ResourceKind::Transient(_)) && lifetime.is_some())
-            .count();
+        let logical = |buffers: bool| {
+            self.resources
+                .iter()
+                .zip(&lifetimes)
+                .filter(|(resource, lifetime)| {
+                    resource.kind.is_transient() && resource.kind.is_buffer() == buffers && lifetime.is_some()
+                })
+                .count()
+        };
         let stats = GraphStats {
             passes_total: self.passes.len(),
             passes_live: order.len(),
-            logical_textures,
+            logical_textures: logical(false),
             physical_textures: 0,
+            logical_buffers: logical(true),
+            physical_buffers: 0,
         };
         let names = order.iter().map(|pass| self.passes[*pass].desc.name).collect();
         Ok(CompiledGraph {
@@ -123,6 +156,7 @@ impl FrameGraph {
             names,
             sizes,
             usages,
+            buffer_usages,
             lifetimes,
             edges,
             warnings,
@@ -137,7 +171,7 @@ impl FrameGraph {
             let mut output_sized = false;
             for access in &pass.accesses {
                 let resource = &self.resources[access.resource as usize];
-                if let (Some(version), ResourceKind::Transient(_)) = (access.read_version, resource.kind)
+                if let (Some(version), true) = (access.read_version, resource.kind.is_transient())
                     && resource.producers.get(version as usize).copied().flatten().is_none()
                 {
                     errors.push(
@@ -148,7 +182,7 @@ impl FrameGraph {
                                 pass.desc.name, resource.name
                             ),
                         )
-                        .with_hint("write the texture in an earlier pass, or import it"),
+                        .with_hint("write the resource in an earlier pass, or import it"),
                     );
                 }
                 if is_attachment(access.access) {
@@ -161,7 +195,10 @@ impl FrameGraph {
                             render_sized |= size == sizes.render;
                             output_sized |= size == sizes.output;
                         }
-                        ResourceKind::Imported { .. } | ResourceKind::Transient(_) => {}
+                        ResourceKind::Imported { .. }
+                        | ResourceKind::Transient(_)
+                        | ResourceKind::TransientBuffer(_)
+                        | ResourceKind::ImportedBuffer { .. } => {}
                     }
                 }
             }
@@ -192,7 +229,7 @@ impl FrameGraph {
             }
         }
         for resource in &self.resources {
-            if let ResourceKind::Imported { .. } = resource.kind
+            if resource.kind.is_imported()
                 && let Some(Some(producer)) = resource.producers.last()
             {
                 stack.push(*producer);

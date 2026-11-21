@@ -18,7 +18,11 @@ Korzenie to passy `side_effect()` i producenci ostatniej wersji każdego zasobu 
 
 ## Pamięć (M2-04)
 
-Tekstury tymczasowe o tym samym kształcie i rozłącznych czasach życia dzielą jedną teksturę fizyczną (z sumą flag użycia). `TexturePool` trzyma tekstury między klatkami, więc stabilna scena po pierwszej klatce nic nie alokuje; nieużywane przez 3 klatki trafiają do `DeferredRelease`.
+Tekstury tymczasowe o tym samym kształcie i rozłącznych czasach życia dzielą jedną teksturę fizyczną (z sumą flag użycia). `ResourcePool` trzyma tekstury między klatkami, więc stabilna scena po pierwszej klatce nic nie alokuje; nieużywane przez 3 klatki trafiają do `DeferredRelease`.
+
+## Bufory (ADR-0011)
+
+Bufory są zasobami grafu jak tekstury: `create_buffer(name, GraphBufferDesc)` i `import_buffer(name, id, size, initial, final)`, a passy deklarują je przez `read_buffer` / `write_buffer` / `modify_buffer` z tą samą semantyką wersji, cullingu i kolejności. Flagi `BufferUsage` graf wylicza z `Access` (`SHADER_*` daje `STORAGE`), a bufory tymczasowe o tym samym rozmiarze i rozłącznych czasach życia dzielą pamięć w `ResourcePool` (dawny `TexturePool`). Przed passem graf wpisuje `BufferAccess` według tej samej reguły co dla tekstur, a zaimportowane bufory na końcu przechodzą do `final`; w passie id bufora daje `PassContext::buffer`.
 
 ## Bariery (M2-05)
 

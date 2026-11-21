@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use pathon_diag::Diagnostic;
 use pathon_graph::{
-    FrameGraph, FrameSizes, GraphCache, GraphCapture, GraphStats, PassDesc, Stage, TextureHandle, TexturePool,
+    FrameGraph, FrameSizes, GraphCache, GraphCapture, GraphStats, PassDesc, ResourcePool, Stage, TextureHandle,
 };
 use pathon_resources::DeferredRelease;
 use pathon_rhi::{
@@ -38,7 +38,7 @@ pub(crate) struct ViewRun {
 
 // Compiles and executes one view's frame graph; compiled graphs are cached per target, so view order does not matter.
 pub(crate) struct GraphRunner {
-    pool: TexturePool,
+    pool: ResourcePool,
     caches: HashMap<TargetId, GraphCache>,
     capture: bool,
     clear_color: Color,
@@ -47,7 +47,7 @@ pub(crate) struct GraphRunner {
 impl GraphRunner {
     pub(crate) fn new(clear_color: Color) -> Self {
         Self {
-            pool: TexturePool::new(),
+            pool: ResourcePool::new(),
             caches: HashMap::new(),
             capture: false,
             clear_color,

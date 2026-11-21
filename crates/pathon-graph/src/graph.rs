@@ -1,4 +1,6 @@
-use pathon_rhi_types::{Access, Extent3d, Format, PhysicalSize, RhiError, SubresourceRange, TextureDesc, TextureId};
+use pathon_rhi_types::{
+    Access, BufferId, BufferUsage, Extent3d, Format, PhysicalSize, RhiError, SubresourceRange, TextureDesc, TextureId,
+};
 
 use crate::execute::PassContext;
 
@@ -97,10 +99,28 @@ impl GraphTextureDesc {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct GraphBufferDesc {
+    pub size: u64,
+    pub usage: BufferUsage,
+}
+
+impl GraphBufferDesc {
+    pub const fn new(size: u64, usage: BufferUsage) -> Self {
+        Self { size, usage }
+    }
+}
+
 // A resource plus the version a pass saw. Every write creates a new version, so readers name exactly the contents they
 // depend on.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct TextureHandle {
+    pub(crate) resource: u32,
+    pub(crate) version: u32,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct BufferHandle {
     pub(crate) resource: u32,
     pub(crate) version: u32,
 }
@@ -165,6 +185,27 @@ pub(crate) enum ResourceKind {
         initial: Access,
         final_access: Access,
     },
+    TransientBuffer(GraphBufferDesc),
+    ImportedBuffer {
+        buffer: BufferId,
+        size: u64,
+        initial: Access,
+        final_access: Access,
+    },
+}
+
+impl ResourceKind {
+    pub(crate) fn is_imported(self) -> bool {
+        matches!(self, Self::Imported { .. } | Self::ImportedBuffer { .. })
+    }
+
+    pub(crate) fn is_transient(self) -> bool {
+        matches!(self, Self::Transient(_) | Self::TransientBuffer(_))
+    }
+
+    pub(crate) fn is_buffer(self) -> bool {
+        matches!(self, Self::TransientBuffer(_) | Self::ImportedBuffer { .. })
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -214,7 +255,8 @@ impl FrameGraph {
     }
 
     pub fn create_texture(&mut self, name: &'static str, desc: GraphTextureDesc) -> TextureHandle {
-        self.add_resource(name, ResourceKind::Transient(desc))
+        let resource = self.add_resource(name, ResourceKind::Transient(desc));
+        TextureHandle { resource, version: 0 }
     }
 
     pub fn import_texture(
@@ -225,7 +267,7 @@ impl FrameGraph {
         initial: Access,
         final_access: Access,
     ) -> TextureHandle {
-        self.add_resource(
+        let resource = self.add_resource(
             name,
             ResourceKind::Imported {
                 texture,
@@ -233,17 +275,43 @@ impl FrameGraph {
                 initial,
                 final_access,
             },
-        )
+        );
+        TextureHandle { resource, version: 0 }
     }
 
-    fn add_resource(&mut self, name: &'static str, kind: ResourceKind) -> TextureHandle {
+    pub fn create_buffer(&mut self, name: &'static str, desc: GraphBufferDesc) -> BufferHandle {
+        let resource = self.add_resource(name, ResourceKind::TransientBuffer(desc));
+        BufferHandle { resource, version: 0 }
+    }
+
+    pub fn import_buffer(
+        &mut self,
+        name: &'static str,
+        buffer: BufferId,
+        size: u64,
+        initial: Access,
+        final_access: Access,
+    ) -> BufferHandle {
+        let resource = self.add_resource(
+            name,
+            ResourceKind::ImportedBuffer {
+                buffer,
+                size,
+                initial,
+                final_access,
+            },
+        );
+        BufferHandle { resource, version: 0 }
+    }
+
+    fn add_resource(&mut self, name: &'static str, kind: ResourceKind) -> u32 {
         let resource = u32::try_from(self.resources.len()).expect("fewer than u32::MAX graph resources");
         self.resources.push(ResourceNode {
             name,
             kind,
             producers: vec![None],
         });
-        TextureHandle { resource, version: 0 }
+        resource
     }
 
     pub fn add_pass(&mut self, desc: PassDesc) -> PassBuilder<'_> {
@@ -275,6 +343,7 @@ impl FrameGraph {
         match self.resources.get(handle.resource as usize)?.kind {
             ResourceKind::Transient(desc) => Some(desc.format),
             ResourceKind::Imported { desc, .. } => Some(desc.format),
+            ResourceKind::TransientBuffer(_) | ResourceKind::ImportedBuffer { .. } => None,
         }
     }
 
@@ -297,7 +366,7 @@ impl PassBuilder<'_> {
     }
 
     pub fn read_range(&mut self, handle: TextureHandle, access: Access, range: SubresourceRange) -> TextureHandle {
-        self.push(handle, Some(handle.version), None, access, range);
+        self.push(handle.resource, Some(handle.version), None, access, range);
         handle
     }
 
@@ -307,8 +376,8 @@ impl PassBuilder<'_> {
     }
 
     pub fn write_range(&mut self, handle: TextureHandle, access: Access, range: SubresourceRange) -> TextureHandle {
-        let version = self.new_version(handle);
-        self.push(handle, None, Some(version), access, range);
+        let version = self.new_version(handle.resource);
+        self.push(handle.resource, None, Some(version), access, range);
         TextureHandle {
             resource: handle.resource,
             version,
@@ -321,9 +390,45 @@ impl PassBuilder<'_> {
     }
 
     pub fn modify_range(&mut self, handle: TextureHandle, access: Access, range: SubresourceRange) -> TextureHandle {
-        let version = self.new_version(handle);
-        self.push(handle, Some(handle.version), Some(version), access, range);
+        let version = self.new_version(handle.resource);
+        self.push(handle.resource, Some(handle.version), Some(version), access, range);
         TextureHandle {
+            resource: handle.resource,
+            version,
+        }
+    }
+
+    pub fn read_buffer(&mut self, handle: BufferHandle, access: Access) -> BufferHandle {
+        self.push(
+            handle.resource,
+            Some(handle.version),
+            None,
+            access,
+            SubresourceRange::ALL,
+        );
+        handle
+    }
+
+    // Discards the previous contents, like `write` on a texture.
+    pub fn write_buffer(&mut self, handle: BufferHandle, access: Access) -> BufferHandle {
+        let version = self.new_version(handle.resource);
+        self.push(handle.resource, None, Some(version), access, SubresourceRange::ALL);
+        BufferHandle {
+            resource: handle.resource,
+            version,
+        }
+    }
+
+    pub fn modify_buffer(&mut self, handle: BufferHandle, access: Access) -> BufferHandle {
+        let version = self.new_version(handle.resource);
+        self.push(
+            handle.resource,
+            Some(handle.version),
+            Some(version),
+            access,
+            SubresourceRange::ALL,
+        );
+        BufferHandle {
             resource: handle.resource,
             version,
         }
@@ -333,8 +438,8 @@ impl PassBuilder<'_> {
         self.graph.passes[self.pass].record = Some(Box::new(record));
     }
 
-    fn new_version(&mut self, handle: TextureHandle) -> u32 {
-        let resource = &mut self.graph.resources[handle.resource as usize];
+    fn new_version(&mut self, resource: u32) -> u32 {
+        let resource = &mut self.graph.resources[resource as usize];
         let version = u32::try_from(resource.producers.len()).expect("fewer than u32::MAX versions");
         resource.producers.push(Some(self.pass));
         version
@@ -342,14 +447,14 @@ impl PassBuilder<'_> {
 
     fn push(
         &mut self,
-        handle: TextureHandle,
+        resource: u32,
         read_version: Option<u32>,
         write_version: Option<u32>,
         access: Access,
         range: SubresourceRange,
     ) {
         self.graph.passes[self.pass].accesses.push(PassAccess {
-            resource: handle.resource,
+            resource,
             read_version,
             write_version,
             access,

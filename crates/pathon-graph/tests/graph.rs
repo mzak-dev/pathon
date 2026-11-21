@@ -1,11 +1,12 @@
 use pathon_graph::{
-    FrameGraph, FrameSizes, GraphTextureDesc, PassContext, PassDesc, Stage, TextureHandle, TexturePool,
+    FrameGraph, FrameSizes, GraphBufferDesc, GraphTextureDesc, PassContext, PassDesc, ResourcePool, Stage,
+    TextureHandle,
 };
 use pathon_resources::DeferredRelease;
 use pathon_rhi_null::NullDevice;
 use pathon_rhi_types::{
-    Access, BindGroupDesc, BindGroupLayoutDesc, Color, ColorAttachment, DeviceApi, Format, PhysicalSize,
-    RenderPassDesc, RhiError, SubresourceRange, TextureCopy, TextureDesc, TextureId, TextureUsage,
+    Access, BindGroupDesc, BindGroupLayoutDesc, BufferUsage, Color, ColorAttachment, Command, DeviceApi, Format,
+    PhysicalSize, RenderPassDesc, RhiError, SubresourceRange, TextureCopy, TextureDesc, TextureId, TextureUsage,
 };
 
 const SIZE: PhysicalSize = PhysicalSize::new(8, 8);
@@ -53,7 +54,7 @@ fn copy(
     }
 }
 
-fn run(graph: FrameGraph, device: &NullDevice, pool: &mut TexturePool, frame: u64) -> pathon_graph::Execution {
+fn run(graph: FrameGraph, device: &NullDevice, pool: &mut ResourcePool, frame: u64) -> pathon_graph::Execution {
     let compiled = graph.compile(FrameSizes::same(SIZE)).expect("graph compiles");
     let mut release = DeferredRelease::new(2);
     let execution = graph
@@ -137,7 +138,7 @@ fn passes_without_consumers_are_culled_unless_they_have_side_effects() {
 #[test]
 fn transient_textures_with_disjoint_lifetimes_share_memory_and_pass_state_validation() {
     let device = NullDevice::new();
-    let mut pool = TexturePool::new();
+    let mut pool = ResourcePool::new();
     for frame in 0..3 {
         let mut graph = FrameGraph::new();
         let output = import_output(&mut graph, &device);
@@ -321,7 +322,7 @@ fn structural_change_recompiles() {
 #[test]
 fn capture_describes_order_culling_dependencies_aliasing_and_barriers() {
     let device = NullDevice::new();
-    let mut pool = TexturePool::new();
+    let mut pool = ResourcePool::new();
     let mut graph = FrameGraph::new();
     graph.set_capture(true);
     let output = import_output(&mut graph, &device);
@@ -397,7 +398,7 @@ fn capture_is_off_by_default() {
     let mut pass = graph.add_pass(PassDesc::new("clear", Stage::Opaque));
     let written = pass.write(output, Access::COLOR_ATTACHMENT);
     pass.record(clear(written));
-    assert_eq!(run(graph, &device, &mut TexturePool::new(), 0).capture, None);
+    assert_eq!(run(graph, &device, &mut ResourcePool::new(), 0).capture, None);
 }
 
 #[test]
@@ -434,7 +435,7 @@ fn writes_stay_ordered_when_an_intermediate_writer_is_culled() {
 #[test]
 fn a_failing_pass_still_hands_its_frame_resources_to_deferred_release() {
     let device = NullDevice::new();
-    let mut pool = TexturePool::new();
+    let mut pool = ResourcePool::new();
     let mut release = DeferredRelease::new(2);
     let mut graph = FrameGraph::new();
     let output = import_output(&mut graph, &device);
@@ -494,4 +495,117 @@ fn a_render_sized_import_next_to_a_render_sized_transient_is_not_g0004() {
         let compiled = graph.compile(sizes);
         assert!(compiled.is_ok(), "{sizes:?}: {:?}", compiled.err());
     }
+}
+
+fn buffer_accesses(commands: &pathon_rhi_types::CommandList) -> Vec<Access> {
+    commands
+        .commands()
+        .iter()
+        .filter_map(|command| match command {
+            Command::BufferAccess { access, .. } => Some(*access),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_compute_pass_feeding_an_indirect_draw_is_kept_and_ordered_first() {
+    let device = NullDevice::new();
+    let mut graph = FrameGraph::new();
+    let output = import_output(&mut graph, &device);
+    let args = graph.create_buffer("args", GraphBufferDesc::new(64, BufferUsage::empty()));
+
+    let mut pass = graph.add_pass(PassDesc::new("a", Stage::Opaque));
+    let written = pass.write_buffer(args, Access::SHADER_WRITE);
+    pass.record(|_| Ok(()));
+    let mut pass = graph.add_pass(PassDesc::new("b", Stage::Opaque));
+    pass.read_buffer(written, Access::INDIRECT);
+    pass.write(output, Access::COPY_DST);
+    pass.record(|_| Ok(()));
+
+    let compiled = graph.compile(FrameSizes::same(SIZE)).expect("graph compiles");
+    assert_eq!(compiled.order(), ["a", "b"]);
+    let execution = run(graph, &device, &mut ResourcePool::new(), 0);
+    assert_eq!(
+        buffer_accesses(&execution.commands),
+        [Access::SHADER_WRITE, Access::INDIRECT]
+    );
+    device
+        .submit(execution.commands)
+        .expect("buffer barriers pass null validation");
+}
+
+#[test]
+fn a_buffer_nobody_reads_does_not_keep_its_writer() {
+    let device = NullDevice::new();
+    let mut graph = FrameGraph::new();
+    let scratch = graph.create_buffer("scratch", GraphBufferDesc::new(64, BufferUsage::empty()));
+    let mut pass = graph.add_pass(PassDesc::new("writer", Stage::Opaque));
+    pass.write_buffer(scratch, Access::SHADER_WRITE);
+    pass.record(|_| Ok(()));
+
+    let execution = run(graph, &device, &mut ResourcePool::new(), 0);
+    assert_eq!(execution.stats.passes_live, 0);
+    assert_eq!(execution.stats.logical_buffers, 0);
+}
+
+#[test]
+fn an_imported_buffer_ends_in_its_final_state() {
+    let device = NullDevice::new();
+    let buffer = device
+        .create_buffer(&pathon_rhi_types::BufferDesc {
+            label: "imported",
+            size: 64,
+            usage: BufferUsage::COPY_DST | BufferUsage::VERTEX | BufferUsage::STORAGE,
+        })
+        .expect("buffer");
+    let mut graph = FrameGraph::new();
+    let imported = graph.import_buffer("imported", buffer, 64, Access::COPY_DST, Access::VERTEX);
+    let mut pass = graph.add_pass(PassDesc::new("fill", Stage::Opaque));
+    pass.modify_buffer(imported, Access::SHADER_WRITE | Access::SHADER_READ);
+    pass.record(|_| Ok(()));
+
+    let execution = run(graph, &device, &mut ResourcePool::new(), 0);
+    assert_eq!(
+        buffer_accesses(&execution.commands),
+        [Access::SHADER_WRITE | Access::SHADER_READ, Access::VERTEX]
+    );
+    device
+        .submit(execution.commands)
+        .expect("buffer barriers pass null validation");
+}
+
+#[test]
+fn buffers_with_disjoint_lifetimes_share_memory() {
+    let device = NullDevice::new();
+    let mut pool = ResourcePool::new();
+    for frame in 0..3 {
+        let mut graph = FrameGraph::new();
+        let output = import_output(&mut graph, &device);
+        let desc = GraphBufferDesc::new(256, BufferUsage::empty());
+
+        let mut previous = None;
+        for (index, name) in ["b1", "b2", "b3"].into_iter().enumerate() {
+            let buffer = graph.create_buffer(name, desc);
+            let mut pass =
+                graph.add_pass(PassDesc::new(name, Stage::Opaque).priority(i32::try_from(index).expect("small")));
+            if let Some(source) = previous {
+                pass.read_buffer(source, Access::SHADER_READ);
+            }
+            previous = Some(pass.write_buffer(buffer, Access::SHADER_WRITE));
+            pass.record(|_| Ok(()));
+        }
+        let mut pass = graph.add_pass(PassDesc::new("to output", Stage::Tonemap));
+        pass.read_buffer(previous.expect("chain"), Access::SHADER_READ);
+        pass.write(output, Access::COPY_DST);
+        pass.record(|_| Ok(()));
+
+        let execution = run(graph, &device, &mut pool, frame);
+        assert_eq!(execution.stats.logical_buffers, 3);
+        assert_eq!(execution.stats.physical_buffers, 2);
+        device
+            .submit(execution.commands)
+            .expect("barrier plan passes null validation");
+    }
+    assert_eq!(pool.created_total(), 2);
 }

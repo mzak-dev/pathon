@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 
 use pathon_resources::DeferredRelease;
-use pathon_rhi_types::{DeviceApi, RhiError, TextureDesc, TextureId, TextureViewDesc, TextureViewId};
+use pathon_rhi_types::{
+    BufferDesc, BufferId, DeviceApi, RhiError, TextureDesc, TextureId, TextureViewDesc, TextureViewId,
+};
 
 // Textures unused for this many frames leave the pool.
 const KEEP_UNUSED_FRAMES: u64 = 3;
@@ -14,15 +16,24 @@ struct PooledTexture {
     in_use: bool,
 }
 
-// Physical textures that outlive one frame graph, so a stable scene allocates nothing per frame.
+#[derive(Debug)]
+struct PooledBuffer {
+    buffer: BufferId,
+    desc: BufferDesc,
+    last_used: u64,
+    in_use: bool,
+}
+
+// Physical textures and buffers that outlive one frame graph, so a stable scene allocates nothing per frame.
 #[derive(Debug, Default)]
-pub struct TexturePool {
+pub struct ResourcePool {
     textures: Vec<PooledTexture>,
+    buffers: Vec<PooledBuffer>,
     views: HashMap<(TextureId, TextureViewDesc), TextureViewId>,
     created: usize,
 }
 
-impl TexturePool {
+impl ResourcePool {
     pub fn new() -> Self {
         Self::default()
     }
@@ -37,6 +48,9 @@ impl TexturePool {
 
     pub(crate) fn begin_frame(&mut self) {
         for pooled in &mut self.textures {
+            pooled.in_use = false;
+        }
+        for pooled in &mut self.buffers {
             pooled.in_use = false;
         }
     }
@@ -65,6 +79,32 @@ impl TexturePool {
             in_use: true,
         });
         Ok(texture)
+    }
+
+    pub(crate) fn acquire_buffer(
+        &mut self,
+        device: &dyn DeviceApi,
+        desc: &BufferDesc,
+        frame: u64,
+    ) -> Result<BufferId, RhiError> {
+        if let Some(pooled) = self
+            .buffers
+            .iter_mut()
+            .find(|pooled| !pooled.in_use && pooled.desc.size == desc.size && pooled.desc.usage == desc.usage)
+        {
+            pooled.in_use = true;
+            pooled.last_used = frame;
+            return Ok(pooled.buffer);
+        }
+        let buffer = device.create_buffer(desc)?;
+        self.created += 1;
+        self.buffers.push(PooledBuffer {
+            buffer,
+            desc: *desc,
+            last_used: frame,
+            in_use: true,
+        });
+        Ok(buffer)
     }
 
     pub(crate) fn view(
@@ -100,6 +140,13 @@ impl TexturePool {
             }
             keep
         });
+        self.buffers.retain(|pooled| {
+            let keep = pooled.in_use || pooled.last_used + KEEP_UNUSED_FRAMES > frame;
+            if !keep {
+                release.release(frame, pooled.buffer);
+            }
+            keep
+        });
         for texture in expired {
             self.release_views_of(texture, release, frame);
             release.release(frame, texture);
@@ -109,6 +156,7 @@ impl TexturePool {
     // After device loss every handle is dead; drop them without destroying.
     pub fn forget_all(&mut self) {
         self.textures.clear();
+        self.buffers.clear();
         self.views.clear();
     }
 }

@@ -1009,3 +1009,151 @@ fn a_pack_disabled_for_other_reasons_stays_off_after_reset() {
         FeatureStatus::Disabled { code: "F0102", .. }
     ));
 }
+
+#[derive(Clone, Default)]
+struct ProbeControl {
+    record_fails: Arc<AtomicBool>,
+    setup_fails: Arc<AtomicBool>,
+    claims_role: Arc<AtomicBool>,
+    setups: Arc<AtomicUsize>,
+    resets: Arc<AtomicUsize>,
+}
+
+struct Probe {
+    name: &'static str,
+    priority: i32,
+    control: ProbeControl,
+}
+
+impl Probe {
+    fn new(name: &'static str, priority: i32, control: &ProbeControl) -> Self {
+        Self {
+            name,
+            priority,
+            control: control.clone(),
+        }
+    }
+}
+
+impl RenderFeature for Probe {
+    fn name(&self) -> &'static str {
+        self.name
+    }
+
+    fn stage(&self) -> Stage {
+        Stage::Opaque
+    }
+
+    fn priority(&self) -> i32 {
+        self.priority
+    }
+
+    fn role(&self) -> Option<Role> {
+        self.control
+            .claims_role
+            .load(Ordering::SeqCst)
+            .then(|| Role::new("test.exclusive"))
+    }
+
+    fn setup(&mut self, _ctx: &mut SetupCtx<'_>) -> Result<(), RhiError> {
+        self.control.setups.fetch_add(1, Ordering::SeqCst);
+        if self.control.setup_fails.load(Ordering::SeqCst) {
+            Err(RhiError::InvalidHandle("setup gave up"))
+        } else {
+            Ok(())
+        }
+    }
+
+    fn on_device_reset(&mut self, _ctx: &mut SetupCtx<'_>) -> Result<(), RhiError> {
+        self.control.resets.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+
+    fn record(&mut self, _ctx: &mut RecordCtx<'_>) -> Result<(), RhiError> {
+        if self.control.record_fails.load(Ordering::SeqCst) {
+            Err(RhiError::InvalidHandle("probe failed"))
+        } else {
+            Ok(())
+        }
+    }
+}
+
+fn lose_device_and_recover(renderer: &mut Renderer, input: &FrameInput) {
+    renderer
+        .device()
+        .as_null()
+        .expect("null backend")
+        .simulate_device_loss();
+    assert!(matches!(renderer.render_frame(input), Err(RenderError::DeviceLost)));
+    renderer.recover().expect("recover");
+}
+
+#[test]
+fn a_restored_pack_is_set_up_and_a_pack_that_stayed_active_is_only_reset() {
+    let restored = ProbeControl::default();
+    let stayed = ProbeControl::default();
+    restored.record_fails.store(true, Ordering::SeqCst);
+    let mut renderer = null_builder()
+        .with_feature(Probe::new("restored", 0, &restored))
+        .with_feature(Probe::new("stayed", 1, &stayed))
+        .build()
+        .expect("renderer");
+    let input = one_view(&mut renderer, Format::Rgba8Unorm);
+    renderer.render_frame(&input).expect("frame");
+    restored.record_fails.store(false, Ordering::SeqCst);
+
+    lose_device_and_recover(&mut renderer, &input);
+
+    assert_eq!(renderer.active_features(), ["restored", "stayed"]);
+    assert_eq!(restored.setups.load(Ordering::SeqCst), 2);
+    assert_eq!(restored.resets.load(Ordering::SeqCst), 0);
+    assert_eq!(stayed.setups.load(Ordering::SeqCst), 1);
+    assert_eq!(stayed.resets.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn a_restored_pack_does_not_take_a_role_from_a_pack_that_stayed_active() {
+    let restored = ProbeControl::default();
+    let holder = ProbeControl::default();
+    holder.claims_role.store(true, Ordering::SeqCst);
+    restored.record_fails.store(true, Ordering::SeqCst);
+    let mut renderer = null_builder()
+        .with_feature(Probe::new("restored claimant", 0, &restored))
+        .with_feature(Probe::new("holder", 1, &holder))
+        .build()
+        .expect("renderer");
+    let input = one_view(&mut renderer, Format::Rgba8Unorm);
+    renderer.render_frame(&input).expect("frame");
+    restored.record_fails.store(false, Ordering::SeqCst);
+    restored.claims_role.store(true, Ordering::SeqCst);
+
+    lose_device_and_recover(&mut renderer, &input);
+
+    assert_eq!(renderer.active_features(), ["holder"]);
+    assert!(matches!(
+        status_of(&renderer, "restored claimant"),
+        FeatureStatus::Disabled { code: "F0102", .. }
+    ));
+    assert_eq!(restored.setups.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn a_restored_pack_whose_setup_fails_on_the_new_device_is_disabled_with_f0104() {
+    let restored = ProbeControl::default();
+    restored.record_fails.store(true, Ordering::SeqCst);
+    let mut renderer = null_builder()
+        .with_feature(Probe::new("restored", 0, &restored))
+        .build()
+        .expect("renderer");
+    let input = one_view(&mut renderer, Format::Rgba8Unorm);
+    renderer.render_frame(&input).expect("frame");
+    restored.setup_fails.store(true, Ordering::SeqCst);
+
+    lose_device_and_recover(&mut renderer, &input);
+
+    assert_eq!(renderer.active_features(), [] as [&str; 0]);
+    assert!(matches!(
+        status_of(&renderer, "restored"),
+        FeatureStatus::Disabled { code: "F0104", .. }
+    ));
+}

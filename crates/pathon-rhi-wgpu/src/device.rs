@@ -52,6 +52,48 @@ pub(crate) struct Objects {
     surfaces: Pool<SurfaceId, SurfaceEntry>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ChosenSurfaceFormat {
+    configured: wgpu::TextureFormat,
+    view: wgpu::TextureFormat,
+}
+
+impl ChosenSurfaceFormat {
+    fn view_formats(self) -> Vec<wgpu::TextureFormat> {
+        if self.view == self.configured {
+            Vec::new()
+        } else {
+            vec![self.view]
+        }
+    }
+}
+
+// WebGPU surfaces offer only non-sRGB formats; rendering through an sRGB view of them keeps colours equal to native.
+fn choose_surface_format(
+    wanted: Option<wgpu::TextureFormat>,
+    available: &[wgpu::TextureFormat],
+) -> Option<ChosenSurfaceFormat> {
+    let understood = |format: &wgpu::TextureFormat| convert::format_from_wgpu(*format).is_some();
+    if let Some(wanted) = wanted.filter(|format| available.contains(format)) {
+        return Some(ChosenSurfaceFormat {
+            configured: wanted,
+            view: wanted,
+        });
+    }
+    let candidates: Vec<wgpu::TextureFormat> = available.iter().copied().filter(understood).collect();
+    if let Some(srgb) = candidates.iter().copied().find(wgpu::TextureFormat::is_srgb) {
+        return Some(ChosenSurfaceFormat {
+            configured: srgb,
+            view: srgb,
+        });
+    }
+    let configured = candidates.first().copied()?;
+    let view = Some(configured.add_srgb_suffix())
+        .filter(understood)
+        .unwrap_or(configured);
+    Some(ChosenSurfaceFormat { configured, view })
+}
+
 // Lets wgpu own a surface for as long as pathon keeps the window alive.
 struct SharedWindow(Arc<dyn WindowSource>);
 
@@ -676,28 +718,16 @@ impl DeviceApi for WgpuDevice {
             .get_mut(surface)
             .ok_or(RhiError::InvalidHandle("surface"))?;
         let capabilities = entry.surface.get_capabilities(&self.adapter);
-        let mut supported = capabilities
-            .formats
-            .iter()
-            .filter_map(|format| convert::format_from_wgpu(*format));
-        let format = match config.format {
-            Some(wanted)
-                if convert::format_to_wgpu(wanted).is_ok_and(|format| capabilities.formats.contains(&format)) =>
-            {
-                wanted
-            }
-            _ => {
-                let candidates: Vec<Format> = supported.by_ref().collect();
-                let srgb = candidates.iter().copied().find(|format| format.is_srgb());
-                srgb.or_else(|| candidates.first().copied())
-                    .ok_or(RhiError::Unsupported("surface offers no format pathon understands"))?
-            }
-        };
+        let wanted = config.format.and_then(|format| convert::format_to_wgpu(format).ok());
+        let chosen = choose_surface_format(wanted, &capabilities.formats)
+            .ok_or(RhiError::Unsupported("surface offers no format pathon understands"))?;
+        let format = convert::format_from_wgpu(chosen.view).ok_or(RhiError::Unsupported("surface format"))?;
         let mut wgpu_config = entry
             .surface
             .get_default_config(&self.adapter, config.size.width, config.size.height)
             .ok_or(RhiError::Unsupported("surface is not supported by this adapter"))?;
-        wgpu_config.format = convert::format_to_wgpu(format)?;
+        wgpu_config.format = chosen.configured;
+        wgpu_config.view_formats = chosen.view_formats();
         wgpu_config.present_mode = convert::present_mode_to_wgpu(config.present_mode, &capabilities.present_modes);
         wgpu_config.usage = wgpu::TextureUsages::RENDER_ATTACHMENT
             | (capabilities.usages & (wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::COPY_SRC));
@@ -746,7 +776,8 @@ impl DeviceApi for WgpuDevice {
                 ));
             }
         };
-        let format = convert::format_from_wgpu(config.format).ok_or(RhiError::Unsupported("surface format"))?;
+        let view_format = config.view_formats.first().copied().unwrap_or(config.format);
+        let format = convert::format_from_wgpu(view_format).ok_or(RhiError::Unsupported("surface format"))?;
         let desc = TextureDesc::new_2d(
             "surface frame",
             config.width,
@@ -754,9 +785,10 @@ impl DeviceApi for WgpuDevice {
             format,
             convert::texture_usage_from_wgpu(config.usage),
         );
-        let view = surface_texture
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
+        let view = surface_texture.texture.create_view(&wgpu::TextureViewDescriptor {
+            format: Some(view_format),
+            ..Default::default()
+        });
         let texture = objects.textures.insert(TextureEntry {
             texture: surface_texture.texture.clone(),
             desc,
@@ -894,4 +926,55 @@ fn pipeline_layout(
         bind_group_layouts: &bind_group_layouts,
         immediate_size: 0,
     }))
+}
+
+#[cfg(test)]
+mod surface_format_tests {
+    use wgpu::TextureFormat as F;
+
+    use super::*;
+
+    fn chosen(wanted: Option<F>, available: &[F]) -> Option<(F, F)> {
+        choose_surface_format(wanted, available).map(|chosen| (chosen.configured, chosen.view))
+    }
+
+    #[test]
+    fn native_srgb_is_kept_without_view_formats() {
+        let picked = choose_surface_format(None, &[F::Bgra8Unorm, F::Bgra8UnormSrgb]).unwrap();
+        assert_eq!((picked.configured, picked.view), (F::Bgra8UnormSrgb, F::Bgra8UnormSrgb));
+        assert_eq!(picked.view_formats(), Vec::<wgpu::TextureFormat>::new());
+    }
+
+    #[test]
+    fn web_unorm_is_viewed_as_srgb() {
+        let picked = choose_surface_format(None, &[F::Bgra8Unorm, F::Rgba8Unorm]).unwrap();
+        assert_eq!((picked.configured, picked.view), (F::Bgra8Unorm, F::Bgra8UnormSrgb));
+        assert_eq!(picked.view_formats(), vec![F::Bgra8UnormSrgb]);
+    }
+
+    #[test]
+    fn explicit_supported_format_is_honoured() {
+        assert_eq!(
+            chosen(Some(F::Rgba8Unorm), &[F::Bgra8Unorm, F::Rgba8Unorm]),
+            Some((F::Rgba8Unorm, F::Rgba8Unorm))
+        );
+    }
+
+    #[test]
+    fn unsupported_wanted_falls_back_to_default_choice() {
+        assert_eq!(
+            chosen(Some(F::Rgba16Float), &[F::Bgra8Unorm]),
+            Some((F::Bgra8Unorm, F::Bgra8UnormSrgb))
+        );
+    }
+
+    #[test]
+    fn format_without_srgb_counterpart_is_used_as_is() {
+        assert_eq!(chosen(None, &[F::Rgba16Float]), Some((F::Rgba16Float, F::Rgba16Float)));
+    }
+
+    #[test]
+    fn nothing_offered_yields_none() {
+        assert_eq!(chosen(None, &[]), None);
+    }
 }

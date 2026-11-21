@@ -25,6 +25,30 @@ pub enum PowerPreference {
     LowPower,
 }
 
+/// Opaque pipeline cache blob (ADR-0019); only bytes produced by `DeviceApi::pipeline_cache_data` are valid input.
+#[derive(Clone)]
+pub struct PipelineCacheData(Vec<u8>);
+
+impl PipelineCacheData {
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.0
+    }
+
+    /// # Safety
+    ///
+    /// `bytes` must come from `DeviceApi::pipeline_cache_data` (for example read back from disk unchanged): the
+    /// driver is not required to survive arbitrary data, the same contract as wgpu's `create_pipeline_cache`.
+    pub unsafe fn from_bytes(bytes: Vec<u8>) -> Self {
+        Self(bytes)
+    }
+}
+
+impl fmt::Debug for PipelineCacheData {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PipelineCacheData").field("len", &self.0.len()).finish()
+    }
+}
+
 #[derive(Clone, Default)]
 pub struct DeviceRequest {
     pub label: &'static str,
@@ -33,6 +57,8 @@ pub struct DeviceRequest {
     pub required_features: Features,
     pub optional_features: Features,
     pub compatible_surface: Option<SurfaceTarget>,
+    // Ignored unless `Features::PIPELINE_CACHE` ends up enabled on the device.
+    pub pipeline_cache: Option<PipelineCacheData>,
     // Backend-specific hooks, downcast by the backend that understands them (e.g. extra Vulkan extensions).
     pub extensions: Vec<Arc<dyn Any + Send + Sync>>,
 }
@@ -46,6 +72,7 @@ impl fmt::Debug for DeviceRequest {
             .field("required_features", &self.required_features)
             .field("optional_features", &self.optional_features)
             .field("compatible_surface", &self.compatible_surface)
+            .field("pipeline_cache", &self.pipeline_cache)
             .field("extensions", &self.extensions.len())
             .finish()
     }
@@ -149,4 +176,7 @@ pub trait DeviceApi: MaybeSendSync {
     fn read_buffer(&self, buffer: BufferId) -> Result<Vec<u8>, RhiError>;
 
     fn wait_idle(&self) -> Result<(), RhiError>;
+
+    // Current blob for the host to persist; `None` without a cache or without `Features::PIPELINE_CACHE`.
+    fn pipeline_cache_data(&self) -> Option<PipelineCacheData>;
 }

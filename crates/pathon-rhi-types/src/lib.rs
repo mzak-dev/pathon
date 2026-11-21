@@ -29,7 +29,7 @@ pub use desc::{
     SamplerDesc, TexelLayout, TextureAspect, TextureCopy, TextureDesc, TextureDimension, TextureUsage, TextureViewDesc,
     TextureViewDimension,
 };
-pub use device::{DeviceApi, DeviceRequest, PowerPreference, Resource};
+pub use device::{DeviceApi, DeviceRequest, PipelineCacheData, PowerPreference, Resource};
 pub use error::RhiError;
 pub use format::{Compression, Format, FormatKind, SampleKind};
 pub use id::{

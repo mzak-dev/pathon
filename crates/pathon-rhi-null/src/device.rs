@@ -5,8 +5,8 @@ use pathon_rhi_types::{
     Access, AdapterInfo, Backend, BindGroupDesc, BindGroupId, BindGroupLayoutDesc, BindGroupLayoutEntry,
     BindGroupLayoutId, BindingResource, BindingType, BufferDesc, BufferId, BufferUsage, Caps, CommandList,
     ComputePipelineDesc, ComputePipelineId, DeviceApi, DeviceType, Extent3d, Features, Format, FormatCaps, FormatKind,
-    Limits, Pool, Profile, QuerySetDesc, QuerySetId, RenderPipelineDesc, RenderPipelineId, Resource, RhiError,
-    SamplerDesc, SamplerId, ShaderModuleDesc, ShaderModuleId, ShaderStages, StorageAccess, SubresourceRange,
+    Limits, PipelineCacheData, Pool, Profile, QuerySetDesc, QuerySetId, RenderPipelineDesc, RenderPipelineId, Resource,
+    RhiError, SamplerDesc, SamplerId, ShaderModuleDesc, ShaderModuleId, ShaderStages, StorageAccess, SubresourceRange,
     SurfaceConfig, SurfaceFrame, SurfaceId, SurfaceTarget, TexelLayout, TextureCopy, TextureDesc, TextureDimension,
     TextureId, TextureUsage, TextureViewDesc, TextureViewId,
 };
@@ -670,6 +670,10 @@ impl DeviceApi for NullDevice {
 
     fn wait_idle(&self) -> Result<(), RhiError> {
         self.ensure_alive()
+    }
+
+    fn pipeline_cache_data(&self) -> Option<PipelineCacheData> {
+        None
     }
 }
 

@@ -98,4 +98,5 @@ delegate! {
     submit(&self, commands: CommandList) -> Result<(), RhiError>;
     read_buffer(&self, buffer: BufferId) -> Result<Vec<u8>, RhiError>;
     wait_idle(&self) -> Result<(), RhiError>;
+    pipeline_cache_data(&self) -> Option<PipelineCacheData>;
 }

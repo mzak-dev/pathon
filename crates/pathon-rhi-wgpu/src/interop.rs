@@ -64,7 +64,7 @@ impl ExternalContext {
 
 // Build a pathon device on top of a device the host already owns (integration modes A and B, ADR-0005).
 pub fn adopt(instance: wgpu::Instance, adapter: wgpu::Adapter, device: wgpu::Device, queue: wgpu::Queue) -> WgpuDevice {
-    WgpuDevice::from_parts(instance, adapter, device, queue)
+    WgpuDevice::from_parts(instance, adapter, device, queue, None)
 }
 
 impl WgpuDevice {

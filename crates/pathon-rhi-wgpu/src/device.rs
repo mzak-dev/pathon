@@ -7,10 +7,10 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use pathon_rhi_types::{
     AdapterInfo, Backend, BindGroupDesc, BindGroupId, BindGroupLayoutDesc, BindGroupLayoutId, BindingResource,
     BufferDesc, BufferId, Caps, CommandList, Compression, ComputePipelineDesc, ComputePipelineId, DeviceApi,
-    DeviceRequest, Extent3d, Features, Format, FormatCaps, Pool, PowerPreference, QuerySetDesc, QuerySetId,
-    RenderPipelineDesc, RenderPipelineId, Resource, RhiError, SamplerDesc, SamplerId, ShaderModuleDesc, ShaderModuleId,
-    ShaderStage, SurfaceConfig, SurfaceFrame, SurfaceId, SurfaceTarget, TexelLayout, TextureCopy, TextureDesc,
-    TextureId, TextureViewDesc, TextureViewId, WindowSource,
+    DeviceRequest, Extent3d, Features, Format, FormatCaps, PipelineCacheData, Pool, PowerPreference, QuerySetDesc,
+    QuerySetId, RenderPipelineDesc, RenderPipelineId, Resource, RhiError, SamplerDesc, SamplerId, ShaderModuleDesc,
+    ShaderModuleId, ShaderStage, SurfaceConfig, SurfaceFrame, SurfaceId, SurfaceTarget, TexelLayout, TextureCopy,
+    TextureDesc, TextureId, TextureViewDesc, TextureViewId, WindowSource,
 };
 use raw_window_handle::{DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, WindowHandle};
 
@@ -125,6 +125,7 @@ pub struct WgpuDevice {
     queue: wgpu::Queue,
     caps: Caps,
     objects: Mutex<Objects>,
+    pipeline_cache: Option<wgpu::PipelineCache>,
     lost: Arc<AtomicBool>,
 }
 
@@ -192,7 +193,7 @@ impl WgpuDevice {
             .await
             .map_err(|error| RhiError::DeviceCreation(error.to_string()))?;
 
-        let this = Self::from_parts(instance, adapter, device, queue);
+        let this = Self::from_parts(instance, adapter, device, queue, request.pipeline_cache.as_ref());
         this.install_handlers();
         if let Some((window, surface)) = compatible {
             this.lock().surfaces.insert(SurfaceEntry {
@@ -216,8 +217,10 @@ impl WgpuDevice {
         adapter: wgpu::Adapter,
         device: wgpu::Device,
         queue: wgpu::Queue,
+        seed: Option<&PipelineCacheData>,
     ) -> Self {
         let caps = build_caps(&adapter, &device, &queue);
+        let pipeline_cache = create_pipeline_cache(&device, seed);
         Self {
             instance,
             adapter,
@@ -225,6 +228,7 @@ impl WgpuDevice {
             queue,
             caps,
             objects: Mutex::new(Objects::default()),
+            pipeline_cache,
             lost: Arc::new(AtomicBool::new(false)),
         }
     }
@@ -695,7 +699,7 @@ impl DeviceApi for WgpuDevice {
                 },
                 fragment,
                 multiview_mask: None,
-                cache: None,
+                cache: self.pipeline_cache.as_ref(),
             })
         })?;
         drop(buffers);
@@ -719,7 +723,7 @@ impl DeviceApi for WgpuDevice {
                 module,
                 entry_point: Some(desc.shader.entry_point),
                 compilation_options: compilation_options(&shader_constants),
-                cache: None,
+                cache: self.pipeline_cache.as_ref(),
             })
         })?;
         Ok(objects.compute_pipelines.insert(pipeline))
@@ -976,6 +980,28 @@ impl DeviceApi for WgpuDevice {
             .map(|_| ())
             .map_err(|error| RhiError::Backend(error.to_string()))
     }
+
+    fn pipeline_cache_data(&self) -> Option<PipelineCacheData> {
+        let bytes = self.pipeline_cache.as_ref()?.get_data()?;
+        // SAFETY: the bytes come straight from `PipelineCache::get_data`, which is what the contract requires.
+        Some(unsafe { PipelineCacheData::from_bytes(bytes) })
+    }
+}
+
+// Foreign devices get a cache too (without data) so the host can still save what their pipelines produce.
+fn create_pipeline_cache(device: &wgpu::Device, seed: Option<&PipelineCacheData>) -> Option<wgpu::PipelineCache> {
+    if !device.features().contains(wgpu::Features::PIPELINE_CACHE) {
+        return None;
+    }
+    // SAFETY: `PipelineCacheData` can only hold bytes its constructor's caller vouched for as coming from
+    // `pipeline_cache_data`, and `fallback: true` makes wgpu start empty when they do not fit this device.
+    Some(unsafe {
+        device.create_pipeline_cache(&wgpu::PipelineCacheDescriptor {
+            label: Some("pathon pipeline cache"),
+            data: seed.map(PipelineCacheData::as_bytes),
+            fallback: true,
+        })
+    })
 }
 
 fn override_constants(stage: &ShaderStage) -> Vec<(&'static str, f64)> {

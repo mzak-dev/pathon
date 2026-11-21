@@ -142,13 +142,17 @@ impl Registry {
 
     // Phase 2, on the real capabilities, then order, roles and setup.
     pub(crate) fn activate(&mut self, device: &dyn DeviceApi, task_pool: &dyn TaskPool, shared: &mut Shared) {
-        self.negotiate(device.caps());
+        let all: Vec<usize> = (0..self.entries.len()).collect();
+        self.negotiate(&all, device.caps());
         self.sort();
-        self.set_up_in_order(&mut SetupCtx::new(device, task_pool, shared));
+        self.set_up_in_order(&mut SetupCtx::new(device, task_pool, shared), &[]);
     }
 
+    // Features that kept working get `on_device_reset`; those switched off by F0105 on the old device are given a
+    // fresh start (negotiation, order, role, setup) because the failure may have belonged to that device.
     pub(crate) fn reset(&mut self, device: &dyn DeviceApi, task_pool: &dyn TaskPool, shared: &mut Shared) {
         let mut ctx = SetupCtx::new(device, task_pool, shared);
+        let mut kept = Vec::new();
         for index in self.order.clone() {
             if let Err(error) = self.entries[index].feature.on_device_reset(&mut ctx) {
                 let name = self.entries[index].feature.name();
@@ -156,12 +160,31 @@ impl Registry {
                     index,
                     &Diagnostic::error("F0104", format!("'{name}' failed after device reset: {error}")),
                 );
+            } else {
+                kept.push(index);
             }
         }
+        let restored: Vec<usize> = (0..self.entries.len())
+            .filter(|index| {
+                matches!(
+                    self.entries[*index].status,
+                    FeatureStatus::Disabled { code: "F0105", .. }
+                )
+            })
+            .collect();
+        if restored.is_empty() {
+            return;
+        }
+        for index in &restored {
+            self.entries[*index].status = FeatureStatus::Active;
+        }
+        self.negotiate(&restored, device.caps());
+        self.sort();
+        self.set_up_in_order(&mut ctx, &kept);
     }
 
-    fn negotiate(&mut self, caps: &Caps) {
-        for index in 0..self.entries.len() {
+    fn negotiate(&mut self, indices: &[usize], caps: &Caps) {
+        for &index in indices {
             if !self.entries[index].status.is_active() {
                 continue;
             }
@@ -232,10 +255,16 @@ impl Registry {
     }
 
     // In frame order, the first feature to finish setup keeps its role and later claimants are disabled; a claimant
-    // that fails setup leaves the role to the next one.
-    fn set_up_in_order(&mut self, ctx: &mut SetupCtx<'_>) {
-        let mut holders: Vec<(Role, usize)> = Vec::new();
+    // that fails setup leaves the role to the next one. `already_set_up` features skip setup and keep their roles.
+    fn set_up_in_order(&mut self, ctx: &mut SetupCtx<'_>, already_set_up: &[usize]) {
+        let mut holders: Vec<(Role, usize)> = already_set_up
+            .iter()
+            .filter_map(|index| self.entries[*index].feature.role().map(|role| (role, *index)))
+            .collect();
         for index in self.order.clone() {
+            if already_set_up.contains(&index) {
+                continue;
+            }
             let name = self.entries[index].feature.name();
             let role = self.entries[index].feature.role();
             let held_by = role.and_then(|role| holders.iter().find(|(held, _)| *held == role));

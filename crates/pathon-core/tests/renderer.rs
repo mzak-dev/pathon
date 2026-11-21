@@ -378,7 +378,9 @@ fn a_failed_frame_gives_back_the_window_frames_it_acquired() {
 }
 
 // Fails to record, and leaves a pass that reports the device lost, so the same frame fails.
-struct FailsThenLosesDevice;
+struct FailsThenLosesDevice {
+    already_failed: bool,
+}
 
 impl RenderFeature for FailsThenLosesDevice {
     fn name(&self) -> &'static str {
@@ -390,6 +392,10 @@ impl RenderFeature for FailsThenLosesDevice {
     }
 
     fn record(&mut self, ctx: &mut RecordCtx<'_>) -> Result<(), RhiError> {
+        if self.already_failed {
+            return Ok(());
+        }
+        self.already_failed = true;
         let pass = ctx
             .graph()
             .add_pass(PassDesc::new("loses device", Stage::PostProcess).side_effect());
@@ -515,7 +521,7 @@ fn a_failed_pack_and_a_failed_pass_are_each_reported_once() {
 #[test]
 fn a_failed_frame_does_not_leak_its_diagnostics_into_the_next_report() {
     let mut renderer = null_builder()
-        .with_feature(FailsThenLosesDevice)
+        .with_feature(FailsThenLosesDevice { already_failed: false })
         .build()
         .expect("renderer");
     let input = one_view(&mut renderer, Format::Rgba8Unorm);
@@ -916,4 +922,90 @@ fn history_stays_valid_across_frames_that_succeed() {
     }
 
     assert_eq!(*seen.lock().expect("mutex"), [false, true, true]);
+}
+
+struct FailsToRecordOnFirstDevice {
+    on_first_device: Arc<AtomicBool>,
+    setups: Arc<AtomicUsize>,
+}
+
+impl RenderFeature for FailsToRecordOnFirstDevice {
+    fn name(&self) -> &'static str {
+        "fails on first device"
+    }
+
+    fn stage(&self) -> Stage {
+        Stage::PostProcess
+    }
+
+    fn setup(&mut self, _ctx: &mut SetupCtx<'_>) -> Result<(), RhiError> {
+        self.setups.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+
+    fn record(&mut self, _ctx: &mut RecordCtx<'_>) -> Result<(), RhiError> {
+        if self.on_first_device.load(Ordering::SeqCst) {
+            Err(RhiError::InvalidHandle("first device only"))
+        } else {
+            Ok(())
+        }
+    }
+}
+
+#[test]
+fn a_pack_disabled_while_recording_comes_back_after_reset() {
+    let on_first_device = Arc::new(AtomicBool::new(true));
+    let setups = Arc::new(AtomicUsize::new(0));
+    let mut renderer = null_builder()
+        .with_feature(FailsToRecordOnFirstDevice {
+            on_first_device: Arc::clone(&on_first_device),
+            setups: Arc::clone(&setups),
+        })
+        .build()
+        .expect("renderer");
+    let input = one_view(&mut renderer, Format::Rgba8Unorm);
+    renderer.render_frame(&input).expect("frame");
+    assert!(matches!(
+        status_of(&renderer, "fails on first device"),
+        FeatureStatus::Disabled { code: "F0105", .. }
+    ));
+
+    on_first_device.store(false, Ordering::SeqCst);
+    renderer
+        .device()
+        .as_null()
+        .expect("null backend")
+        .simulate_device_loss();
+    assert!(matches!(renderer.render_frame(&input), Err(RenderError::DeviceLost)));
+    renderer.recover().expect("recover");
+
+    assert_eq!(renderer.active_features(), ["fails on first device"]);
+    assert_eq!(setups.load(Ordering::SeqCst), 2);
+    renderer.render_frame(&input).expect("frame after recovery");
+    assert_eq!(renderer.active_features(), ["fails on first device"]);
+}
+
+#[test]
+fn a_pack_disabled_for_other_reasons_stays_off_after_reset() {
+    let mut renderer = null_builder()
+        .with_feature(GeometryPack::new("default geometry", Color::BLACK, 10))
+        .with_feature(GeometryPack::new("custom geometry", Color::BLACK, 0))
+        .build()
+        .expect("renderer");
+    let input = one_view(&mut renderer, Format::Rgba8Unorm);
+    renderer.render_frame(&input).expect("frame");
+
+    renderer
+        .device()
+        .as_null()
+        .expect("null backend")
+        .simulate_device_loss();
+    assert!(matches!(renderer.render_frame(&input), Err(RenderError::DeviceLost)));
+    renderer.recover().expect("recover");
+
+    assert_eq!(renderer.active_features(), ["custom geometry"]);
+    assert!(matches!(
+        status_of(&renderer, "default geometry"),
+        FeatureStatus::Disabled { code: "F0102", .. }
+    ));
 }

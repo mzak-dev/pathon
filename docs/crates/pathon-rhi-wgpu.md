@@ -13,7 +13,7 @@ Backend RHI na wgpu 30 — jedyny crate, który importuje wgpu (M0-08).
 
 Moduł z surowymi obiektami wgpu dla paczek vendorowych i adapterów hostów (`kind = "vendor"` / `"host"`):
 
-- `adopt(instance, adapter, device, queue)` — pathon na urządzeniu hosta (tryby A i B, ADR-0005);
+- `adopt(instance, adapter, device, queue)` — pathon na urządzeniu hosta (tryby A i B, ADR-0005); handler błędów i callback utraty urządzenia zostają hosta, a utratę host zgłasza przez `Renderer::reset`;
 - `raw_device()`, `raw_queue()`, `raw_texture()` — dostęp w drugą stronę;
 - `import_texture(label, wgpu::Texture)` / `forget_texture` — tekstura hosta jako cel lub zasób grafu;
 - `encode_into(list, &mut encoder)` — lista pathon nagrana do enkodera hosta (tryb A);

@@ -4,6 +4,7 @@
 // (mode B, must equal mode C pixel for pixel) or records into the host's encoder on top of the host's image (mode A).
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use pathon::api::Camera;
 use pathon::api::glam::Vec3;
@@ -245,4 +246,44 @@ fn mode_a_draws_on_top_of_the_host_image_in_the_host_encoder() {
         HOST_IMAGE,
         "pathon's pass drew on top"
     );
+}
+
+fn counter() -> (Arc<AtomicUsize>, Arc<AtomicUsize>) {
+    let count = Arc::new(AtomicUsize::new(0));
+    (Arc::clone(&count), count)
+}
+
+#[test]
+fn adopting_keeps_the_host_error_handler() {
+    let host = Host::new();
+    let (errors, counted) = counter();
+    host.device.on_uncaptured_error(Arc::new(move |_: wgpu::Error| {
+        counted.fetch_add(1, Ordering::SeqCst);
+    }));
+    let _pathon = host.adopt_into_renderer();
+
+    drop(host.device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("invalid on purpose"),
+        size: 4,
+        usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::MAP_WRITE,
+        mapped_at_creation: false,
+    }));
+    assert_eq!(errors.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn adopting_keeps_the_host_device_lost_callback() {
+    let host = Host::new();
+    let (losses, counted) = counter();
+    host.device.set_device_lost_callback(move |_, _| {
+        counted.fetch_add(1, Ordering::SeqCst);
+    });
+    let _pathon = host.adopt_into_renderer();
+
+    host.device.destroy();
+    let _ = host.device.poll(wgpu::PollType::Wait {
+        submission_index: None,
+        timeout: None,
+    });
+    assert_eq!(losses.load(Ordering::SeqCst), 1);
 }

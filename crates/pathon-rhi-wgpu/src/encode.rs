@@ -4,7 +4,7 @@ use pathon_rhi_types::{
 };
 
 use crate::convert;
-use crate::device::Objects;
+use crate::device::{Objects, WgpuDevice};
 use crate::interop::ExternalContext;
 
 fn structure_error(message: String) -> RhiError {
@@ -17,13 +17,11 @@ fn new_encoder(device: &wgpu::Device) -> wgpu::CommandEncoder {
 
 // External callbacks get their own encoder, so the list is split into several command buffers that keep the
 // recorded order when submitted together. wgpu rejects an encoder finished with an open debug group, so open groups
-// are closed before the split and reopened on the next encoder.
-pub(crate) fn encode_list(
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    objects: &Objects,
-    list: CommandList,
-) -> Result<Vec<wgpu::CommandBuffer>, RhiError> {
+// are closed before the split and reopened on the next encoder. The callback may call back into this device, so the
+// object lock is released around it.
+pub(crate) fn encode_list(this: &WgpuDevice, list: CommandList) -> Result<Vec<wgpu::CommandBuffer>, RhiError> {
+    let (device, queue) = (this.device(), this.queue());
+    let mut objects = this.lock();
     let mut buffers = Vec::new();
     let mut encoder = new_encoder(device);
     let mut open_groups: Vec<&'static str> = Vec::new();
@@ -35,8 +33,10 @@ pub(crate) fn encode_list(
                     encoder.pop_debug_group();
                 }
                 buffers.push(encoder.finish());
-                let mut context = ExternalContext::new(device, queue, objects, &external.accesses);
+                let mut context = ExternalContext::new(device, queue, &objects, &external.accesses);
+                drop(objects);
                 external.callback.call(&mut context);
+                objects = this.lock();
                 buffers.push(context.finish());
                 encoder = new_encoder(device);
                 for label in &open_groups {
@@ -51,7 +51,7 @@ pub(crate) fn encode_list(
                 encoder.pop_debug_group();
                 open_groups.pop();
             }
-            command => encode_command(objects, &mut encoder, command, &mut commands)?,
+            command => encode_command(&objects, &mut encoder, command, &mut commands)?,
         }
     }
     buffers.push(encoder.finish());

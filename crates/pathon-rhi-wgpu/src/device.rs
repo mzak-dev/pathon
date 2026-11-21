@@ -151,6 +151,7 @@ impl WgpuDevice {
             .map_err(|error| RhiError::DeviceCreation(error.to_string()))?;
 
         let this = Self::from_parts(instance, adapter, device, queue);
+        this.install_handlers();
         if let Some((window, surface)) = compatible {
             this.lock().surfaces.insert(SurfaceEntry {
                 surface,
@@ -174,13 +175,6 @@ impl WgpuDevice {
         device: wgpu::Device,
         queue: wgpu::Queue,
     ) -> Self {
-        let lost = Arc::new(AtomicBool::new(false));
-        let lost_flag = Arc::clone(&lost);
-        device.set_device_lost_callback(move |reason, message| {
-            log::warn!("wgpu device lost ({reason:?}): {message}");
-            lost_flag.store(true, Ordering::SeqCst);
-        });
-        device.on_uncaptured_error(Arc::new(|error: wgpu::Error| log::error!("wgpu: {error}")));
         let caps = build_caps(&adapter, &device, &queue);
         Self {
             instance,
@@ -189,8 +183,20 @@ impl WgpuDevice {
             queue,
             caps,
             objects: Mutex::new(Objects::default()),
-            lost,
+            lost: Arc::new(AtomicBool::new(false)),
         }
+    }
+
+    // Only on devices pathon creates: wgpu keeps one handler of each kind, and an adopted device keeps the host's
+    // (the host reports loss through `Renderer::reset`, ADR-0005).
+    fn install_handlers(&self) {
+        let lost = Arc::clone(&self.lost);
+        self.device.set_device_lost_callback(move |reason, message| {
+            log::warn!("wgpu device lost ({reason:?}): {message}");
+            lost.store(true, Ordering::SeqCst);
+        });
+        self.device
+            .on_uncaptured_error(Arc::new(|error: wgpu::Error| log::error!("wgpu: {error}")));
     }
 
     pub(crate) fn lock(&self) -> MutexGuard<'_, Objects> {
@@ -795,11 +801,9 @@ impl DeviceApi for WgpuDevice {
         if self.is_lost() {
             return Err(RhiError::DeviceLost);
         }
-        let objects = self.lock();
         let scope = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
-        let buffers = encode::encode_list(&self.device, &self.queue, &objects, commands)?;
+        let buffers = encode::encode_list(self, commands)?;
         self.queue.submit(buffers);
-        drop(objects);
         match poll::ready(scope.pop()) {
             Some(Some(error)) => Err(RhiError::Backend(error.to_string())),
             _ => Ok(()),

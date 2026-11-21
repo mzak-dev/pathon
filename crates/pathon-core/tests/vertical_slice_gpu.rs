@@ -98,3 +98,30 @@ fn vendor_external_command_inside_a_pass_submits_on_wgpu() {
         .expect("the frame with an external command submits");
     assert!(called.load(std::sync::atomic::Ordering::SeqCst));
 }
+
+#[test]
+fn an_external_callback_may_call_the_pathon_device() {
+    let device = std::sync::Arc::new(pathon_rhi::Device::build(&pathon_rhi::DeviceRequest::default()).expect("GPU"));
+    let inner = std::sync::Arc::clone(&device);
+    let mut list = CommandList::new();
+    list.external(pathon_rhi::ExternalCommand {
+        label: "calls back into pathon",
+        accesses: Vec::new(),
+        callback: Box::new(move |_: &mut dyn std::any::Any| {
+            let buffer = inner.create_buffer(&BufferDesc {
+                label: "created by a vendor callback",
+                size: 4,
+                usage: BufferUsage::COPY_DST,
+            });
+            assert!(buffer.is_ok());
+        }),
+    });
+    let (done, finished) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = done.send(device.submit(list));
+    });
+    let submitted = finished
+        .recv_timeout(std::time::Duration::from_secs(10))
+        .expect("submit returns instead of deadlocking");
+    submitted.expect("submit");
+}

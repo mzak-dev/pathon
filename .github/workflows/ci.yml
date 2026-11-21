@@ -55,6 +55,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Core builds for the web (single thread, no platform)
         run: cargo check --target wasm32-unknown-unknown -p pathon-core -p pathon-test -p pathon --no-default-features
+      - name: Lint the web runner, platform and example
+        run: cargo clippy --target wasm32-unknown-unknown -p pathon -p pathon-platform-winit -p pathon-example-web -- -D warnings
       - uses: taiki-e/install-action@v2
         with:
           tool: wasm-pack
@@ -63,8 +65,9 @@ jobs:
       - name: WASM size report
         run: |
           wasm=examples/web/pkg/pathon_example_web_bg.wasm
-          echo "WASM raw: $(stat -c %s "$wasm") bytes" >> "$GITHUB_STEP_SUMMARY"
-          echo "WASM gzip: $(gzip -c "$wasm" | wc -c) bytes" >> "$GITHUB_STEP_SUMMARY"
+          echo "### WASM size" >> "$GITHUB_STEP_SUMMARY"
+          echo "- raw: $(stat -c %s "$wasm") bytes" >> "$GITHUB_STEP_SUMMARY"
+          echo "- gzip: $(gzip -c "$wasm" | wc -c) bytes" >> "$GITHUB_STEP_SUMMARY"
 
   gpu:
     runs-on: ubuntu-latest

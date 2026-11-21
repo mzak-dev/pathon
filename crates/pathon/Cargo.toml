@@ -19,13 +19,19 @@ pathon-rhi.workspace = true
 crossbeam-channel = { workspace = true, optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-js-sys.workspace = true
-wasm-bindgen-futures.workspace = true
-web-sys = { workspace = true, features = ["Document", "Element", "HtmlCollection", "Navigator", "Performance", "Window"] }
+js-sys = { workspace = true, optional = true }
+wasm-bindgen-futures = { workspace = true, optional = true }
+web-sys = { workspace = true, optional = true, features = ["Document", "Element", "HtmlCollection", "Navigator", "Performance", "Window"] }
 
 [features]
 default = ["winit"]
-runtime = ["dep:pathon-platform", "dep:crossbeam-channel"]
+runtime = [
+    "dep:pathon-platform",
+    "dep:crossbeam-channel",
+    "dep:js-sys",
+    "dep:wasm-bindgen-futures",
+    "dep:web-sys",
+]
 winit = ["runtime", "dep:pathon-platform-winit"]
 
 [lints]

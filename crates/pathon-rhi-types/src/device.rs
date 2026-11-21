@@ -137,6 +137,9 @@ pub trait DeviceApi: MaybeSendSync {
 
     fn present_surface(&self, surface: SurfaceId) -> Result<(), RhiError>;
 
+    // Gives an acquired frame back without showing it, e.g. when the frame failed to record.
+    fn discard_surface(&self, surface: SurfaceId);
+
     fn destroy_surface(&self, surface: SurfaceId);
 
     fn submit(&self, commands: CommandList) -> Result<(), RhiError>;

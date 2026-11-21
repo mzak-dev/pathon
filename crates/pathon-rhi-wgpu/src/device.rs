@@ -770,6 +770,16 @@ impl DeviceApi for WgpuDevice {
         Ok(())
     }
 
+    // Dropping an unpresented `SurfaceTexture` discards it.
+    fn discard_surface(&self, surface: SurfaceId) {
+        let mut guard = self.lock();
+        let objects = &mut *guard;
+        if let Some(frame) = objects.surfaces.get_mut(surface).and_then(|entry| entry.frame.take()) {
+            objects.views.remove(frame.view);
+            objects.textures.remove(frame.texture);
+        }
+    }
+
     fn destroy_surface(&self, surface: SurfaceId) {
         let mut guard = self.lock();
         let objects = &mut *guard;

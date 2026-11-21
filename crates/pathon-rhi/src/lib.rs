@@ -93,6 +93,7 @@ delegate! {
     configure_surface(&self, surface: SurfaceId, config: &SurfaceConfig) -> Result<Format, RhiError>;
     acquire_surface(&self, surface: SurfaceId) -> Result<SurfaceFrame, RhiError>;
     present_surface(&self, surface: SurfaceId) -> Result<(), RhiError>;
+    discard_surface(&self, surface: SurfaceId) -> ();
     destroy_surface(&self, surface: SurfaceId) -> ();
     submit(&self, commands: CommandList) -> Result<(), RhiError>;
     read_buffer(&self, buffer: BufferId) -> Result<Vec<u8>, RhiError>;

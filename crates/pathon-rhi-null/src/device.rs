@@ -89,6 +89,20 @@ pub(crate) struct State {
     surfaces: Pool<SurfaceId, NullSurface>,
 }
 
+impl State {
+    fn remove_views_of(&mut self, texture: TextureId) {
+        let views: Vec<TextureViewId> = self
+            .views
+            .iter()
+            .filter(|(_, view)| view.texture == texture)
+            .map(|(id, _)| id)
+            .collect();
+        for view in views {
+            self.views.remove(view);
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct NullDevice {
     caps: Caps,
@@ -455,15 +469,7 @@ impl DeviceApi for NullDevice {
             .subresources
             .iter()
             .all(|sub| sub.access == Access::PRESENT && sub.initialized);
-        let views: Vec<TextureViewId> = state
-            .views
-            .iter()
-            .filter(|(_, view)| view.texture == texture)
-            .map(|(id, _)| id)
-            .collect();
-        for view in views {
-            state.views.remove(view);
-        }
+        state.remove_views_of(texture);
         if presentable {
             Ok(())
         } else {
@@ -471,6 +477,14 @@ impl DeviceApi for NullDevice {
                 "R0106",
                 "surface frame presented without being written and moved to PRESENT",
             ))
+        }
+    }
+
+    fn discard_surface(&self, surface: SurfaceId) {
+        let mut state = self.lock();
+        if let Some(texture) = state.surfaces.get_mut(surface).and_then(|target| target.frame.take()) {
+            state.textures.remove(texture);
+            state.remove_views_of(texture);
         }
     }
 

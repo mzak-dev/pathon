@@ -5,8 +5,8 @@ use pathon_diag::Diagnostic;
 use pathon_graph::{FrameGraph, FrameSizes, GraphCapture, GraphStats, TextureHandle};
 use pathon_resources::DeferredRelease;
 use pathon_rhi::{
-    Access, Color, CommandList, Device, DeviceApi, DeviceRequest, Format, PhysicalSize, Pool, PresentMode, RhiError,
-    SurfaceConfig, SurfaceId, SurfaceTarget, TextureId,
+    Access, Color, CommandList, Device, DeviceApi, DeviceRequest, Format, Id, PhysicalSize, Pool, PresentMode,
+    RhiError, SurfaceConfig, SurfaceId, SurfaceTarget, TextureId,
 };
 
 use crate::builder::RendererBuilder;
@@ -269,12 +269,12 @@ impl Renderer {
         presents: &mut Vec<SurfaceId>,
         report: &mut FrameReport,
     ) -> Result<(), RenderError> {
-        for (index, view) in input.views.iter().enumerate() {
+        for view in &input.views {
             let Some(output) = self.acquire_output(view.target, presents)? else {
                 report.skipped_views += 1;
                 continue;
             };
-            let (stats, compiled) = self.record_view(index, view, input, output, commands)?;
+            let (stats, compiled) = self.record_view(view, input, output, commands)?;
             report.views.push(stats);
             report.compiled_views += usize::from(compiled);
         }
@@ -285,7 +285,7 @@ impl Renderer {
     pub fn record_frame(&mut self, input: &FrameInput) -> Result<CommandList, RenderError> {
         self.ensure_device()?;
         let mut commands = CommandList::new();
-        for (index, view) in input.views.iter().enumerate() {
+        for view in &input.views {
             let target = self.targets.get(view.target).ok_or(RenderError::UnknownTarget)?;
             if let TargetKind::Surface { .. } = target.kind {
                 return Err(RenderError::SurfaceInRecordFrame);
@@ -293,7 +293,7 @@ impl Renderer {
             let Some(output) = self.acquire_output(view.target, &mut Vec::new())? else {
                 continue;
             };
-            self.record_view(index, view, input, output, &mut commands)?;
+            self.record_view(view, input, output, &mut commands)?;
         }
         self.end_frame();
         self.frame_captures.clear();
@@ -370,15 +370,13 @@ impl Renderer {
 
     fn record_view(
         &mut self,
-        index: usize,
         view: &ViewInput,
         input: &FrameInput,
         output: OutputTarget,
         commands: &mut CommandList,
     ) -> Result<(GraphStats, bool), RenderError> {
         let output_size = PhysicalSize::new(output.desc.size.width, output.desc.size.height);
-        let view_id = ViewId(u32::try_from(index).expect("fewer than u32::MAX views"));
-        let mut view_ctx = ViewCtx::new(view_id, output_size, view.camera);
+        let mut view_ctx = ViewCtx::new(view_id(view.target), output_size, view.camera);
         view_ctx.frame_index = input.frame_index;
         view_ctx.time_seconds = input.time_seconds;
         view_ctx.delta_seconds = input.delta_seconds;
@@ -469,4 +467,10 @@ impl Renderer {
         }
         Ok(())
     }
+}
+
+// Generation in the high half: a re-created target reuses the slot index but gets a new id.
+fn view_id(target: TargetId) -> ViewId {
+    let raw = target.raw();
+    ViewId((u64::from(raw.generation()) << 32) | u64::from(raw.index()))
 }

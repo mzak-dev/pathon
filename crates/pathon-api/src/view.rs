@@ -4,7 +4,7 @@ use pathon_rhi_types::PhysicalSize;
 use crate::slot::Slot;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub struct ViewId(pub u32);
+pub struct ViewId(pub u64);
 
 // Right-handed, Y up, metres; projection uses reverse-Z (docs/slots.md).
 #[derive(Clone, Copy, PartialEq, Debug)]

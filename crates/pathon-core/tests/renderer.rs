@@ -1,8 +1,8 @@
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 
 use pathon_api::graph::{GraphTextureDesc, PassDesc, Stage};
-use pathon_api::{Camera, RecordCtx, RenderFeature, Role, SetupCtx};
+use pathon_api::{Camera, PrepareCtx, RecordCtx, RenderFeature, Role, SetupCtx, ViewId};
 use pathon_core::{FeatureStatus, FrameInput, RenderError, Renderer, RendererBuilder, ViewInput};
 use pathon_rhi::{
     Access, Backend, Color, Device, DeviceApi, DeviceRequest, Extent3d, Format, PhysicalSize, RhiError, SurfaceTarget,
@@ -569,4 +569,71 @@ fn two_views_on_one_target_still_render() {
         })
         .expect("frame");
     assert_eq!(report.views.len(), 2);
+}
+
+struct RecordsViewIds {
+    seen: Arc<Mutex<Vec<ViewId>>>,
+}
+
+impl RenderFeature for RecordsViewIds {
+    fn name(&self) -> &'static str {
+        "records view ids"
+    }
+
+    fn stage(&self) -> Stage {
+        Stage::Opaque
+    }
+
+    fn prepare_view(&mut self, ctx: &mut PrepareCtx<'_>) {
+        self.seen.lock().expect("lock").push(ctx.view().view);
+    }
+
+    fn record(&mut self, _ctx: &mut RecordCtx<'_>) -> Result<(), RhiError> {
+        Ok(())
+    }
+}
+
+#[test]
+fn a_view_keeps_its_id_while_its_target_lives() {
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let mut renderer = null_builder()
+        .with_feature(RecordsViewIds {
+            seen: Arc::clone(&seen),
+        })
+        .build()
+        .expect("renderer");
+    let a = renderer
+        .add_offscreen_target(SIZE, Format::Rgba8Unorm)
+        .expect("target a");
+    let b = renderer
+        .add_offscreen_target(SIZE, Format::Rgba8Unorm)
+        .expect("target b");
+    let view = |target| ViewInput {
+        target,
+        camera: Camera::default(),
+    };
+    let frame = |renderer: &mut Renderer, targets: [_; 2]| {
+        seen.lock().expect("lock").clear();
+        renderer
+            .render_frame(&FrameInput {
+                views: targets.map(view).to_vec(),
+                ..FrameInput::default()
+            })
+            .expect("frame");
+        seen.lock().expect("lock").clone()
+    };
+
+    let ab = frame(&mut renderer, [a, b]);
+    let ba = frame(&mut renderer, [b, a]);
+    assert_eq!(ab[0], ba[1], "target a keeps its id when it moves in the list");
+    assert_eq!(ab[1], ba[0]);
+    assert_ne!(ab[0], ab[1]);
+
+    renderer.remove_target(a).expect("remove a");
+    let a2 = renderer
+        .add_offscreen_target(SIZE, Format::Rgba8Unorm)
+        .expect("target a2");
+    let recreated = frame(&mut renderer, [a2, b]);
+    assert_ne!(recreated[0], ab[0], "a re-created target is a new view");
+    assert_eq!(recreated[1], ab[1]);
 }

@@ -25,6 +25,8 @@ Dla każdego widoku z `FrameInput::views`:
 
 Paczka, której `record` zwróci błąd, jest wyłączana z F0105 i znika z kolejności klatki; reszta klatki idzie dalej. Gdy graf się nie skompiluje albo pass zawiedzie, cel wraca w stanie końcowym: wyczyszczony, a obraz hosta (tryb A) nietknięty.
 
+Cache grafu i `ViewId` są per cel, nie per pozycja widoku: zmiana kolejności widoków nie rekompiluje grafów, a odtworzony cel dostaje nowe `ViewId` ([ADR-0010](../adr/0010-tozsamosc-widoku-i-runner-grafu.md)).
+
 `FrameReport::diagnostics` zbiera diagnostyki z tej klatki (F0105, ostrzeżenia grafu). Po `set_capture(true)` `FrameReport::captures` ma jeden `GraphCapture` na widok, a `feature_details()` opisuje każdą paczkę (status, etap, priorytet, rola, kolejność). Z tego korzystają [devtools](../devtools.md).
 
 ## Rejestr paczek

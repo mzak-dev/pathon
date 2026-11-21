@@ -42,6 +42,8 @@ Mapa typ → wartość. Paczka publikuje dane w `setup` albo `record`, inne je c
 
 Rozmiar wyjścia i renderu, jitter, mip bias, kamera (`Camera`, reverse-Z) oraz czas i numer klatki od wołającego — rdzeń nie czyta zegara.
 
+`ViewId` to tożsamość celu widoku: stała, dopóki cel żyje, i nowa po jego ponownym utworzeniu (nie zależy od pozycji widoku w klatce).
+
 ## `TaskPool`
 
 ADR-0008: `parallel_for(len, &task)` blokuje do końca, więc zadanie może pożyczać dane klatki. `SerialTaskPool` jest domyślny (także na wasm).

@@ -80,10 +80,12 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers gdb
       - name: GPU tests on lavapipe
         # Core dumps let the next step print where a driver crash (SIGSEGV) happened.
+        # Serial tests: the Ubuntu 24.04 Vulkan loader races vkSetDebugUtilsObjectNameEXT against
+        # vkCreateDevice/vkDestroyDevice on other threads and segfaults.
         run: |
           sudo sysctl -w kernel.core_pattern=/tmp/core.%p
           ulimit -c unlimited
-          cargo test --workspace --all-features
+          cargo test --workspace --all-features -- --test-threads=1
       - name: Backtrace of crashed tests
         if: failure()
         run: |

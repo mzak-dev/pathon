@@ -472,6 +472,10 @@ impl Renderer {
         let DeviceOwnership::Owned(request) = &self.ownership else {
             return Err(RenderError::BorrowedDevice);
         };
+        #[cfg_attr(
+            target_arch = "wasm32",
+            expect(clippy::arc_with_non_send_sync, reason = "one thread on the web (ADR-0004)")
+        )]
         let device = Arc::new(Device::build_async(request).await?);
         self.reset(device)
     }

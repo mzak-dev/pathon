@@ -1520,6 +1520,7 @@ name = "pathon"
 version = "0.0.1"
 dependencies = [
  "crossbeam-channel",
+ "js-sys",
  "log",
  "pathon-api",
  "pathon-core",
@@ -1527,6 +1528,8 @@ dependencies = [
  "pathon-platform",
  "pathon-platform-winit",
  "pathon-rhi",
+ "wasm-bindgen-futures",
+ "web-sys",
 ]
 
 [[package]]
@@ -1622,6 +1625,8 @@ version = "0.0.1"
 dependencies = [
  "pathon-platform",
  "raw-window-handle",
+ "wasm-bindgen",
+ "web-sys",
  "winit",
 ]
 

@@ -163,6 +163,10 @@ impl RendererBuilder {
         if let Some(device) = prepared.borrowed.take() {
             return Ok(prepared.finish(device, DeviceOwnership::Borrowed));
         }
+        #[cfg_attr(
+            target_arch = "wasm32",
+            expect(clippy::arc_with_non_send_sync, reason = "one thread on the web (ADR-0004)")
+        )]
         let device = Arc::new(Device::build_async(&prepared.request).await?);
         let ownership = DeviceOwnership::Owned(prepared.request.clone());
         Ok(prepared.finish(device, ownership))

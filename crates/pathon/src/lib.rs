@@ -11,5 +11,5 @@ pub use pathon_platform as platform;
 pub use pathon_platform_winit::WinitPlatform;
 pub use pathon_rhi as rhi;
 
-#[cfg(all(feature = "runtime", not(target_arch = "wasm32")))]
+#[cfg(feature = "runtime")]
 pub mod runtime;

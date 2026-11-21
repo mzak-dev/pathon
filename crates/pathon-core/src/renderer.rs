@@ -2,19 +2,18 @@ use std::sync::Arc;
 
 use pathon_api::{RecordCtx, Shared, Slot, Slots, TaskPool, ViewCtx, ViewId};
 use pathon_diag::Diagnostic;
-use pathon_graph::{
-    FrameGraph, FrameSizes, GraphCache, GraphCapture, GraphStats, PassDesc, Stage, TextureHandle, TexturePool,
-};
+use pathon_graph::{FrameGraph, FrameSizes, GraphCapture, GraphStats, TextureHandle};
 use pathon_resources::DeferredRelease;
 use pathon_rhi::{
-    Access, Color, ColorAttachment, CommandList, Device, DeviceApi, DeviceRequest, Format, PhysicalSize, Pool,
-    PresentMode, RenderPassDesc, RhiError, SurfaceConfig, SurfaceId, SurfaceTarget, TextureDesc, TextureId,
+    Access, Color, CommandList, Device, DeviceApi, DeviceRequest, Format, PhysicalSize, Pool, PresentMode, RhiError,
+    SurfaceConfig, SurfaceId, SurfaceTarget, TextureId,
 };
 
 use crate::builder::RendererBuilder;
 use crate::error::RenderError;
 use crate::frame::{FrameInput, FrameReport, ViewInput};
 use crate::registry::{FeatureInfo, FeatureStatus, Registry};
+use crate::runner::{FrameEnv, GraphRunner, OutputTarget};
 use crate::target::{self, OFFSCREEN_FINAL, Target, TargetId, TargetKind};
 
 pub(crate) enum DeviceOwnership {
@@ -27,16 +26,6 @@ type ReuploadFn = Box<dyn FnMut(&Device) + Send>;
 #[cfg(target_arch = "wasm32")]
 type ReuploadFn = Box<dyn FnMut(&Device)>;
 
-#[derive(Clone, Copy, Debug)]
-struct OutputTarget {
-    texture: TextureId,
-    desc: TextureDesc,
-    initial: Access,
-    final_access: Access,
-    // Host textures keep their contents (mode A); targets pathon owns start cleared.
-    keeps_contents: bool,
-}
-
 // The renderer owns no thread, loop, window or ECS (ADR-0004, ADR-0005): the host calls it, supplies time and views,
 // and may own the device and the render targets.
 pub struct Renderer {
@@ -45,14 +34,11 @@ pub struct Renderer {
     registry: Registry,
     task_pool: Arc<dyn TaskPool>,
     targets: Pool<TargetId, Target>,
-    pool: TexturePool,
-    caches: Vec<GraphCache>,
+    runner: GraphRunner,
     release: DeferredRelease,
     frame: u64,
-    clear_color: Color,
     on_reupload: Option<ReuploadFn>,
     shared: Shared,
-    capture: bool,
     frame_captures: Vec<GraphCapture>,
     frame_diagnostics: Vec<Diagnostic>,
 }
@@ -87,14 +73,11 @@ impl Renderer {
             registry,
             task_pool,
             targets: Pool::new(),
-            pool: TexturePool::new(),
-            caches: Vec::new(),
+            runner: GraphRunner::new(clear_color),
             release: DeferredRelease::new(frames_in_flight),
             frame: 0,
-            clear_color,
             on_reupload: None,
             shared,
-            capture: false,
             frame_captures: Vec::new(),
             frame_diagnostics: Vec::new(),
         }
@@ -102,7 +85,7 @@ impl Renderer {
 
     // Tools (pathon-devtools): every `FrameReport` then carries a `GraphCapture` per view.
     pub fn set_capture(&mut self, enabled: bool) {
-        self.capture = enabled;
+        self.runner.set_capture(enabled);
     }
 
     pub fn feature_details(&self) -> Vec<FeatureInfo> {
@@ -205,6 +188,7 @@ impl Renderer {
 
     pub fn remove_target(&mut self, id: TargetId) -> Result<(), RenderError> {
         let removed = self.targets.remove(id).ok_or(RenderError::UnknownTarget)?;
+        self.runner.forget_target(id);
         match removed.kind {
             TargetKind::Surface { surface, .. } => self.device.destroy_surface(surface),
             TargetKind::Offscreen { texture, .. } => self.release.release(self.frame, texture),
@@ -400,136 +384,35 @@ impl Renderer {
         view_ctx.delta_seconds = input.delta_seconds;
         self.registry.prepare_view(&mut view_ctx, &self.shared);
 
-        let mut graph = FrameGraph::new();
-        let output_handle = self.import_output(&mut graph, output);
-        let mut slots = Slots::new();
-        let mut diagnostics = Vec::new();
-        let record_failures;
-        {
-            let mut ctx = RecordCtx::new(
-                &mut graph,
-                &mut slots,
-                &view_ctx,
-                self.device.as_ref(),
-                &mut diagnostics,
-                &mut self.shared,
-            );
-            ctx.set_slot(Slot::OUTPUT, output_handle);
-            record_failures = self.registry.record_view(&mut ctx);
-        }
-        for diagnostic in &diagnostics {
-            self.report(diagnostic);
-        }
-        for diagnostic in &record_failures {
-            self.report(diagnostic);
-        }
-        graph.set_capture(self.capture);
-
         let sizes = FrameSizes {
             render: view_ctx.render_size,
             output: output_size,
         };
-        if self.caches.len() <= index {
-            self.caches.resize_with(index + 1, GraphCache::new);
-        }
-        let (compiled, fresh) = match self.caches[index].compile(&graph, sizes) {
-            Ok(result) => result,
-            Err(errors) => {
-                for error in &errors {
-                    self.report(error);
-                }
-                return self.record_fallback(output, commands).map(|stats| (stats, true));
-            }
+        let device = self.device.as_ref();
+        let registry = &mut self.registry;
+        let shared = &mut self.shared;
+        let fill = |graph: &mut FrameGraph, output_handle: TextureHandle| {
+            let mut slots = Slots::new();
+            let mut diagnostics = Vec::new();
+            let mut ctx = RecordCtx::new(graph, &mut slots, &view_ctx, device, &mut diagnostics, shared);
+            ctx.set_slot(Slot::OUTPUT, output_handle);
+            let record_failures = registry.record_view(&mut ctx);
+            diagnostics.extend(record_failures);
+            diagnostics
         };
-        let fresh_warnings = if fresh {
-            compiled.warnings().to_vec()
-        } else {
-            Vec::new()
+        let env = FrameEnv {
+            device,
+            release: &mut self.release,
+            frame: self.frame,
         };
-        let outcome = graph.execute(
-            compiled,
-            self.device.as_ref(),
-            &mut self.pool,
-            &mut self.release,
-            self.frame,
-        );
-        for warning in &fresh_warnings {
-            self.report(warning);
-        }
-        match outcome {
-            Ok(execution) => {
-                commands.append(execution.commands);
-                if let Some(capture) = execution.capture {
-                    self.frame_captures.push(capture);
-                }
-                Ok((execution.stats, fresh))
-            }
-            Err(RhiError::DeviceLost) => Err(RenderError::DeviceLost),
-            Err(error) => {
-                self.report(&Diagnostic::error("F0105", format!("a pass failed to record: {error}")));
-                self.record_fallback(output, commands).map(|stats| (stats, true))
-            }
-        }
-    }
+        let run = self.runner.run_view(view.target, output, sizes, fill, env)?;
 
-    // A host image (mode A) is kept as the host rendered it; every other target starts cleared.
-    fn import_output(&self, graph: &mut FrameGraph, output: OutputTarget) -> TextureHandle {
-        if output.keeps_contents {
-            graph.import_texture(
-                "output",
-                output.texture,
-                output.desc,
-                output.initial,
-                output.final_access,
-            )
-        } else {
-            self.add_output_clear(graph, output)
+        for diagnostic in &run.diagnostics {
+            self.report(diagnostic);
         }
-    }
-
-    fn add_output_clear(&self, graph: &mut FrameGraph, output: OutputTarget) -> TextureHandle {
-        let handle = graph.import_texture(
-            "output",
-            output.texture,
-            output.desc,
-            output.initial,
-            output.final_access,
-        );
-        let clear_color = self.clear_color;
-        let mut pass = graph.add_pass(PassDesc::new("clear output", Stage::Setup));
-        let cleared = pass.write(handle, Access::COLOR_ATTACHMENT);
-        pass.record(move |ctx| {
-            let view = ctx.view(cleared)?;
-            drop(ctx.commands().render_pass(RenderPassDesc {
-                label: "clear output",
-                color: vec![ColorAttachment::clear(view, clear_color)],
-                depth: None,
-                timestamps: None,
-            }));
-            Ok(())
-        });
-        cleared
-    }
-
-    // A broken graph still hands the target back in its final state: cleared, or untouched for a host image.
-    fn record_fallback(&mut self, output: OutputTarget, commands: &mut CommandList) -> Result<GraphStats, RenderError> {
-        let mut graph = FrameGraph::new();
-        self.import_output(&mut graph, output);
-        let compiled = graph
-            .compile(FrameSizes::same(PhysicalSize::new(
-                output.desc.size.width,
-                output.desc.size.height,
-            )))
-            .map_err(|mut errors| RenderError::Diagnostic(errors.remove(0)))?;
-        let execution = graph.execute(
-            &compiled,
-            self.device.as_ref(),
-            &mut self.pool,
-            &mut self.release,
-            self.frame,
-        )?;
-        commands.append(execution.commands);
-        Ok(execution.stats)
+        commands.append(run.commands);
+        self.frame_captures.extend(run.capture);
+        Ok((run.stats, run.compiled))
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -553,7 +436,7 @@ impl Renderer {
     // textures the host handed in are dropped and must be added again.
     pub fn reset(&mut self, device: Arc<Device>) -> Result<(), RenderError> {
         self.device = device;
-        self.pool.forget_all();
+        self.runner.forget_device();
         self.release.forget_all();
         let ids: Vec<TargetId> = self.targets.iter().map(|(id, _)| id).collect();
         for id in ids {

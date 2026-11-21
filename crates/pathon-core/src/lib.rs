@@ -5,6 +5,7 @@ mod error;
 mod frame;
 mod registry;
 mod renderer;
+mod runner;
 mod target;
 
 pub use builder::RendererBuilder;

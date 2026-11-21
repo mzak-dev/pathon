@@ -519,3 +519,54 @@ fn a_role_passes_to_the_next_claimant_when_its_holder_fails_setup() {
         FeatureStatus::Disabled { code: "F0104", .. }
     ));
 }
+
+#[test]
+fn reordering_views_does_not_recompile_their_graphs() {
+    let mut renderer = null_builder().build().expect("renderer");
+    let a = renderer
+        .add_offscreen_target(PhysicalSize::new(64, 32), Format::Rgba8Unorm)
+        .expect("target a");
+    let b = renderer
+        .add_offscreen_target(PhysicalSize::new(32, 16), Format::Rgba8Unorm)
+        .expect("target b");
+    let view = |target| ViewInput {
+        target,
+        camera: Camera::default(),
+    };
+
+    let first = renderer
+        .render_frame(&FrameInput {
+            views: vec![view(a), view(b)],
+            ..FrameInput::default()
+        })
+        .expect("first frame");
+    assert_eq!(first.compiled_views, 2);
+
+    let second = renderer
+        .render_frame(&FrameInput {
+            views: vec![view(b), view(a)],
+            ..FrameInput::default()
+        })
+        .expect("reordered frame");
+    assert_eq!(second.compiled_views, 0);
+}
+
+#[test]
+fn two_views_on_one_target_still_render() {
+    let mut renderer = null_builder().build().expect("renderer");
+    let target = renderer
+        .add_offscreen_target(SIZE, Format::Rgba8Unorm)
+        .expect("offscreen target");
+    let view = ViewInput {
+        target,
+        camera: Camera::default(),
+    };
+
+    let report = renderer
+        .render_frame(&FrameInput {
+            views: vec![view, view],
+            ..FrameInput::default()
+        })
+        .expect("frame");
+    assert_eq!(report.views.len(), 2);
+}

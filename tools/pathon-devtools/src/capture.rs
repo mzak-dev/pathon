@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use pathon_core::{FeatureStatus, FrameReport, Renderer};
 use pathon_diag::Severity;
-use pathon_graph::{BarrierCapture, GraphCapture, Stage};
-use pathon_rhi::{Access, SubresourceRange, TextureId, TextureUsage};
+use pathon_graph::{BarrierCapture, CapturedKind, CapturedTarget, GraphCapture, ResourceCapture, Stage};
+use pathon_rhi::{Access, SubresourceRange, TextureUsage};
 
 use crate::protocol::{
     AccessSnapshot, BarrierSnapshot, DiagnosticSnapshot, FeatureSnapshot, PassSnapshot, ResourceSnapshot, Snapshot,
@@ -55,16 +55,23 @@ fn stage_rank(stage: Stage) -> u8 {
     u8::try_from(index).unwrap_or(u8::MAX)
 }
 
+fn physical_target(resource: &ResourceCapture) -> Option<CapturedTarget> {
+    resource
+        .physical
+        .map(CapturedTarget::Texture)
+        .or(resource.physical_buffer.map(CapturedTarget::Buffer))
+}
+
 fn view_snapshot(index: usize, capture: &GraphCapture) -> ViewSnapshot {
-    let mut aliases: HashMap<TextureId, Vec<usize>> = HashMap::new();
+    let mut aliases: HashMap<CapturedTarget, Vec<usize>> = HashMap::new();
     for (resource, entry) in capture.resources.iter().enumerate() {
-        if let Some(texture) = entry.physical {
-            aliases.entry(texture).or_default().push(resource);
+        if let Some(target) = physical_target(entry) {
+            aliases.entry(target).or_default().push(resource);
         }
     }
-    let mut groups: HashMap<TextureId, usize> = HashMap::new();
+    let mut groups: HashMap<CapturedTarget, usize> = HashMap::new();
     let barrier = |barrier: &BarrierCapture| BarrierSnapshot {
-        resources: aliases.get(&barrier.texture).cloned().unwrap_or_default(),
+        resources: aliases.get(&barrier.target).cloned().unwrap_or_default(),
         access: access_names(barrier.access),
         range: range_text(barrier.range),
     };
@@ -96,18 +103,25 @@ fn view_snapshot(index: usize, capture: &GraphCapture) -> ViewSnapshot {
         .resources
         .iter()
         .map(|resource| {
-            let alias_group = match (resource.imported, resource.physical) {
-                (false, Some(texture)) => {
+            let alias_group = match (resource.imported, physical_target(resource)) {
+                (false, Some(target)) => {
                     let next = groups.len();
-                    Some(*groups.entry(texture).or_insert(next))
+                    Some(*groups.entry(target).or_insert(next))
                 }
                 _ => None,
             };
             ResourceSnapshot {
                 name: resource.name.to_owned(),
+                kind: match resource.kind {
+                    CapturedKind::Texture => "tekstura",
+                    CapturedKind::Buffer => "bufor",
+                    CapturedKind::History => "historia",
+                }
+                .to_owned(),
                 imported: resource.imported,
                 format: resource.desc.map(|desc| format!("{:?}", desc.format)),
                 size: resource.desc.map(|desc| (desc.size.width, desc.size.height)),
+                bytes: resource.buffer_size,
                 mips: resource.desc.map_or(0, |desc| desc.mip_level_count),
                 layers: resource.desc.map_or(0, |desc| desc.array_layers()),
                 usage: resource.desc.map_or_default(|desc| usage_names(desc.usage)),
@@ -128,6 +142,8 @@ fn view_snapshot(index: usize, capture: &GraphCapture) -> ViewSnapshot {
             passes_live: capture.stats.passes_live,
             logical_textures: capture.stats.logical_textures,
             physical_textures: capture.stats.physical_textures,
+            logical_buffers: capture.stats.logical_buffers,
+            physical_buffers: capture.stats.physical_buffers,
         },
     }
 }

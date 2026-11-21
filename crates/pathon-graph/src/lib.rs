@@ -10,7 +10,9 @@ mod order;
 mod pool;
 
 pub use cache::GraphCache;
-pub use capture::{AccessCapture, BarrierCapture, GraphCapture, PassCapture, ResourceCapture};
+pub use capture::{
+    AccessCapture, BarrierCapture, CapturedKind, CapturedTarget, GraphCapture, PassCapture, ResourceCapture,
+};
 pub use compile::{CompiledGraph, GraphStats};
 pub use execute::{Execution, PassContext};
 pub use graph::{

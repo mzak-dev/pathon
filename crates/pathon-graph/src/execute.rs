@@ -6,7 +6,9 @@ use pathon_rhi_types::{
     TextureDimension, TextureId, TextureUsage, TextureViewDesc, TextureViewDimension, TextureViewId,
 };
 
-use crate::capture::{AccessCapture, BarrierCapture, GraphCapture, PassCapture, ResourceCapture};
+use crate::capture::{
+    AccessCapture, BarrierCapture, CapturedKind, CapturedTarget, GraphCapture, PassCapture, ResourceCapture,
+};
 use crate::compile::{CompiledGraph, GraphStats};
 use crate::graph::{BufferHandle, FrameGraph, HistoryDecl, PassAccess, PassNode, ResourceKind, TextureHandle};
 use crate::history::{HistoryEntry, HistoryStore};
@@ -239,7 +241,9 @@ impl FrameGraph {
             tracker.seed(entry.current, entry.current_states.clone());
         }
 
-        let mut capture = self.capture.then(|| self.begin_capture(compiled, &physical));
+        let mut capture = self
+            .capture
+            .then(|| self.begin_capture(compiled, &physical, &physical_buffers));
         let mut commands = CommandList::new();
         let mut failure = self
             .zero_fresh_history(&fresh_history, &physical, pool, &mut tracker, &mut commands, device)
@@ -300,6 +304,7 @@ impl FrameGraph {
         if let Some(capture) = &mut capture {
             capture.final_barriers = barriers_since(&commands, final_start);
             capture.stats.physical_textures = physical_count;
+            capture.stats.physical_buffers = physical_buffer_count;
         }
         for resource in frame_resources {
             release.release(frame, resource);
@@ -322,7 +327,12 @@ impl FrameGraph {
         })
     }
 
-    fn begin_capture(&self, compiled: &CompiledGraph, physical: &[Option<PhysicalTexture>]) -> GraphCapture {
+    fn begin_capture(
+        &self,
+        compiled: &CompiledGraph,
+        physical: &[Option<PhysicalTexture>],
+        physical_buffers: &[Option<BufferId>],
+    ) -> GraphCapture {
         let mut positions = vec![None; self.passes.len()];
         for (position, index) in compiled.order.iter().enumerate() {
             positions[*index] = Some(position);
@@ -355,12 +365,24 @@ impl FrameGraph {
             .resources
             .iter()
             .zip(physical)
+            .zip(physical_buffers)
             .zip(&compiled.lifetimes)
-            .map(|((resource, physical), lifetime)| ResourceCapture {
+            .map(|(((resource, physical), buffer), lifetime)| ResourceCapture {
                 name: resource.name,
+                kind: match resource.kind {
+                    ResourceKind::History { .. } => CapturedKind::History,
+                    ResourceKind::TransientBuffer(_) | ResourceKind::ImportedBuffer { .. } => CapturedKind::Buffer,
+                    ResourceKind::Transient(_) | ResourceKind::Imported { .. } => CapturedKind::Texture,
+                },
                 imported: resource.kind.is_imported(),
                 desc: physical.map(|physical| physical.desc),
                 physical: physical.map(|physical| physical.texture),
+                buffer_size: match resource.kind {
+                    ResourceKind::TransientBuffer(desc) => Some(desc.size),
+                    ResourceKind::ImportedBuffer { size, .. } => Some(size),
+                    _ => None,
+                },
+                physical_buffer: *buffer,
                 lifetime: *lifetime,
                 versions: resource.producers.len(),
             })
@@ -381,8 +403,13 @@ fn barriers_since(commands: &CommandList, start: usize) -> Vec<BarrierCapture> {
         .iter()
         .filter_map(|command| match command {
             Command::TextureAccess { texture, range, access } => Some(BarrierCapture {
-                texture: *texture,
+                target: CapturedTarget::Texture(*texture),
                 range: *range,
+                access: *access,
+            }),
+            Command::BufferAccess { buffer, access } => Some(BarrierCapture {
+                target: CapturedTarget::Buffer(*buffer),
+                range: SubresourceRange::ALL,
                 access: *access,
             }),
             _ => None,

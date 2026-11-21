@@ -2,10 +2,10 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crossbeam_channel::Sender;
-use pathon_api::graph::{GraphTextureDesc, PassDesc, Stage};
+use pathon_api::graph::{GraphBufferDesc, GraphTextureDesc, PassDesc, Stage};
 use pathon_api::{Camera, RecordCtx, RenderFeature};
 use pathon_core::{FrameInput, Renderer, ViewInput};
-use pathon_rhi::{Access, Backend, Color, DeviceRequest, Format, PhysicalSize, RhiError};
+use pathon_rhi::{Access, Backend, BufferUsage, Color, DeviceRequest, Format, PhysicalSize, RhiError};
 use pathon_test::{GeometryPack, OnDemandConsumer, UnlitMeshPack, UpscalerPack, VendorDummy};
 
 use crate::capture::snapshot;
@@ -34,6 +34,34 @@ impl RenderFeature for DebugMask {
     }
 }
 
+// A compute-style pass fills a transient buffer that a later pass consumes, so the demo shows a buffer.
+struct ParticleBuffer;
+
+impl RenderFeature for ParticleBuffer {
+    fn name(&self) -> &'static str {
+        "particle buffer"
+    }
+
+    fn stage(&self) -> Stage {
+        Stage::Transparent
+    }
+
+    fn record(&mut self, ctx: &mut RecordCtx<'_>) -> Result<(), RhiError> {
+        let particles = ctx
+            .graph()
+            .create_buffer("particles", GraphBufferDesc::new(256, BufferUsage::STORAGE));
+        let mut simulate = ctx
+            .graph()
+            .add_pass(PassDesc::new("simulate particles", Stage::Transparent));
+        let particles = simulate.write_buffer(particles, Access::SHADER_WRITE);
+        let mut draw = ctx
+            .graph()
+            .add_pass(PassDesc::new("draw particles", Stage::Transparent).side_effect());
+        draw.read_buffer(particles, Access::SHADER_READ);
+        Ok(())
+    }
+}
+
 // The packs of pathon-test on the null backend: no GPU, no application, two views.
 pub(crate) fn demo_renderer() -> (Renderer, FrameInput) {
     let mut renderer = Renderer::builder()
@@ -48,6 +76,7 @@ pub(crate) fn demo_renderer() -> (Renderer, FrameInput) {
         .with_feature(UpscalerPack::new(0.67))
         .with_feature(UnlitMeshPack::new())
         .with_feature(DebugMask)
+        .with_feature(ParticleBuffer)
         .build()
         .expect("the null backend always builds");
     renderer.set_capture(true);

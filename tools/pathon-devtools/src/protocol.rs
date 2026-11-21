@@ -45,7 +45,7 @@ pub struct AccessSnapshot {
 
 #[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
 pub struct BarrierSnapshot {
-    // Resources living in the transitioned physical texture (aliases share one).
+    // Resources living in the transitioned physical texture or buffer (aliases share one).
     pub resources: Vec<usize>,
     pub access: Vec<String>,
     pub range: String,
@@ -54,13 +54,17 @@ pub struct BarrierSnapshot {
 #[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
 pub struct ResourceSnapshot {
     pub name: String,
+    // "tekstura", "bufor" or "historia".
+    pub kind: String,
     pub imported: bool,
     pub format: Option<String>,
     pub size: Option<(u32, u32)>,
+    // Buffers only.
+    pub bytes: Option<u64>,
     pub mips: u32,
     pub layers: u32,
     pub usage: Vec<String>,
-    // Transients sharing a group share one physical texture.
+    // Transients sharing a group share one physical texture or buffer.
     pub alias_group: Option<usize>,
     pub lifetime: Option<(usize, usize)>,
     pub versions: usize,
@@ -72,6 +76,8 @@ pub struct StatsSnapshot {
     pub passes_live: usize,
     pub logical_textures: usize,
     pub physical_textures: usize,
+    pub logical_buffers: usize,
+    pub physical_buffers: usize,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]

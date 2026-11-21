@@ -364,7 +364,13 @@ mod tests {
     fn panels_show_resources_packs_and_role_conflicts() {
         let mut app = demo_app();
         app.on_key(KeyCode::Char('2'));
-        assert!(screen(&app).contains("hdr"));
+        let resources = screen(&app);
+        assert!(resources.contains("hdr"));
+        assert!(resources.contains("bufor"), "the demo buffer is listed: {resources}");
+        assert!(
+            resources.contains("256 B"),
+            "buffer sizes are shown in bytes: {resources}"
+        );
         app.on_key(KeyCode::Char('3'));
         let packs = screen(&app);
         assert!(packs.contains("fallback geometry"));

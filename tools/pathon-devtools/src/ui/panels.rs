@@ -244,9 +244,17 @@ pub(super) fn draw_resources(frame: &mut Frame<'_>, area: Rect, view: &ViewSnaps
             };
             Row::new(vec![
                 Cell::from(resource.name.clone()),
-                Cell::from(if resource.imported { "import" } else { "tymczasowa" }),
+                Cell::from(if resource.imported {
+                    format!("{} (import)", resource.kind)
+                } else {
+                    resource.kind.clone()
+                }),
                 Cell::from(resource.format.clone().unwrap_or_else(|| "—".into())),
-                Cell::from(resource.size.map_or_else(|| "—".into(), |(w, h)| format!("{w}×{h}"))),
+                Cell::from(match (resource.bytes, resource.size) {
+                    (Some(bytes), _) => format!("{bytes} B"),
+                    (None, Some((w, h))) => format!("{w}×{h}"),
+                    (None, None) => "—".into(),
+                }),
                 Cell::from(
                     resource
                         .alias_group
@@ -258,7 +266,7 @@ pub(super) fn draw_resources(frame: &mut Frame<'_>, area: Rect, view: &ViewSnaps
         .collect();
     let widths = [
         Constraint::Length(18),
-        Constraint::Length(11),
+        Constraint::Length(16),
         Constraint::Length(16),
         Constraint::Length(11),
         Constraint::Length(7),
@@ -277,7 +285,7 @@ pub(super) fn draw_resources(frame: &mut Frame<'_>, area: Rect, view: &ViewSnaps
         .header(header)
         .block(
             Block::bordered()
-                .title(" zasoby · kolor = wspólna tekstura fizyczna (aliasing) ")
+                .title(" zasoby · kolor = wspólna pamięć fizyczna (aliasing) ")
                 .border_style(dim()),
         )
         .row_highlight_style(Style::default().bg(Color::Rgb(40, 40, 60)));

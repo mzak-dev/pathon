@@ -1,6 +1,6 @@
 use pathon_graph::{
-    FrameGraph, FrameSizes, GraphBufferDesc, GraphTextureDesc, HistoryStore, PassContext, PassDesc, ResourcePool,
-    Stage, TextureHandle,
+    CapturedKind, CapturedTarget, FrameGraph, FrameSizes, GraphBufferDesc, GraphTextureDesc, HistoryStore, PassContext,
+    PassDesc, ResourcePool, Stage, TextureHandle,
 };
 use pathon_resources::DeferredRelease;
 use pathon_rhi_null::NullDevice;
@@ -376,18 +376,12 @@ fn capture_describes_order_culling_dependencies_aliasing_and_barriers() {
     assert_eq!(capture.stats.physical_textures, 2);
 
     let to_output = &capture.passes[3];
-    assert!(
-        to_output
-            .barriers
-            .iter()
-            .any(|barrier| Some(barrier.texture) == physical("output") && barrier.access == Access::COPY_DST)
-    );
-    assert!(
-        capture
-            .final_barriers
-            .iter()
-            .any(|barrier| Some(barrier.texture) == physical("output") && barrier.access == Access::SHADER_READ)
-    );
+    assert!(to_output.barriers.iter().any(|barrier| barrier.target
+        == CapturedTarget::Texture(physical("output").expect("physical"))
+        && barrier.access == Access::COPY_DST));
+    assert!(capture.final_barriers.iter().any(|barrier| barrier.target
+        == CapturedTarget::Texture(physical("output").expect("physical"))
+        && barrier.access == Access::SHADER_READ));
 }
 
 #[test]
@@ -765,4 +759,52 @@ fn the_pass_writing_history_is_not_culled() {
 fn a_graph_without_history_never_reports_valid_history() {
     let mut graph = FrameGraph::new();
     assert!(!graph.history_texture("taa history", HISTORY_DESC).previous_valid);
+}
+
+#[test]
+fn capture_lists_buffers_and_history() {
+    let device = NullDevice::new();
+    let mut pool = ResourcePool::new();
+    let mut store = HistoryStore::new();
+    let mut release = DeferredRelease::new(2);
+    let sizes = FrameSizes::same(SIZE);
+
+    let mut graph = FrameGraph::for_view(&store, sizes);
+    graph.set_capture(true);
+    let history = graph.history_texture("taa history", HISTORY_DESC);
+    let scratch = graph.create_buffer("scratch", GraphBufferDesc::new(256, BufferUsage::empty()));
+    let mut pass = graph.add_pass(PassDesc::new("fill", Stage::Opaque));
+    let scratch = pass.write_buffer(scratch, Access::SHADER_WRITE);
+    pass.record(|_| Ok(()));
+    let mut pass = graph.add_pass(PassDesc::new("resolve", Stage::Resolve));
+    pass.read_buffer(scratch, Access::SHADER_READ);
+    pass.read(history.previous, Access::SHADER_READ);
+    let current = pass.write(history.current, Access::COLOR_ATTACHMENT);
+    pass.record(clear(current));
+
+    let compiled = graph.compile(sizes).expect("graph compiles");
+    let execution = graph
+        .execute(&compiled, &device, &mut pool, &mut store, &mut release, 0)
+        .expect("graph executes");
+    let capture = execution.capture.expect("capture was enabled");
+
+    let resource = |name: &str| {
+        capture
+            .resources
+            .iter()
+            .find(|resource| resource.name == name)
+            .expect("resource")
+    };
+    assert_eq!(resource("scratch").kind, CapturedKind::Buffer);
+    assert_eq!(resource("scratch").buffer_size, Some(256));
+    assert_eq!(resource("taa history").kind, CapturedKind::History);
+    assert_eq!(resource("taa history").buffer_size, None);
+    assert_eq!(capture.stats.physical_buffers, 1);
+    let buffer_barrier = capture
+        .passes
+        .iter()
+        .flat_map(|pass| &pass.barriers)
+        .find(|barrier| matches!(barrier.target, CapturedTarget::Buffer(_)))
+        .expect("a buffer barrier");
+    assert_eq!(buffer_barrier.access, Access::SHADER_WRITE);
 }

@@ -1,5 +1,5 @@
 use pathon_diag::Diagnostic;
-use pathon_rhi_types::{Access, SubresourceRange, TextureDesc, TextureId};
+use pathon_rhi_types::{Access, BufferId, SubresourceRange, TextureDesc, TextureId};
 
 use crate::compile::GraphStats;
 use crate::graph::Stage;
@@ -42,18 +42,34 @@ pub struct AccessCapture {
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct BarrierCapture {
-    pub texture: TextureId,
+    pub target: CapturedTarget,
     pub range: SubresourceRange,
     pub access: Access,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum CapturedTarget {
+    Texture(TextureId),
+    Buffer(BufferId),
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum CapturedKind {
+    Texture,
+    Buffer,
+    History,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct ResourceCapture {
     pub name: &'static str,
+    pub kind: CapturedKind,
     pub imported: bool,
-    // Resolved description and physical texture; `None` for transients no live pass touched.
+    // Resolved description and physical texture; `None` for buffers and for transients no live pass touched.
     pub desc: Option<TextureDesc>,
     pub physical: Option<TextureId>,
+    pub buffer_size: Option<u64>,
+    pub physical_buffer: Option<BufferId>,
     // First and last position in the executed order.
     pub lifetime: Option<(usize, usize)>,
     pub versions: usize,

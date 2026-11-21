@@ -7,7 +7,7 @@ use pathon_rhi::{
     BufferCopy, BufferDesc, BufferUsage, Color, CommandList, DeviceApi, Extent3d, Format, PhysicalSize, TexelLayout,
     TextureCopy,
 };
-use pathon_test::UnlitMeshPack;
+use pathon_test::{GeometryPack, UnlitMeshPack, UpscalerPack, VendorDummy};
 
 const SIZE: u32 = 64;
 const CLEAR: Color = Color::rgba(0.0, 0.0, 1.0, 1.0);
@@ -70,4 +70,31 @@ fn unlit_cube_goes_through_the_whole_stack() {
         [0, 0, 255, 255],
         "centre shows the cube"
     );
+}
+
+#[test]
+fn vendor_external_command_inside_a_pass_submits_on_wgpu() {
+    let vendor = VendorDummy::default();
+    let called = std::sync::Arc::clone(&vendor.called);
+    let mut renderer = Renderer::builder()
+        .with_feature(GeometryPack::new("geometry", Color::BLACK, 0))
+        .with_feature(vendor)
+        .with_feature(UpscalerPack::new(1.0))
+        .build()
+        .expect("GPU renderer");
+    let target = renderer
+        .add_offscreen_target(PhysicalSize::new(SIZE, SIZE), Format::Rgba16Float)
+        .expect("target");
+    let input = FrameInput {
+        views: vec![ViewInput {
+            target,
+            camera: Camera::default(),
+        }],
+        ..FrameInput::default()
+    };
+
+    renderer
+        .render_frame(&input)
+        .expect("the frame with an external command submits");
+    assert!(called.load(std::sync::atomic::Ordering::SeqCst));
 }

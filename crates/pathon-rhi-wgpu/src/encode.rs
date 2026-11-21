@@ -16,7 +16,8 @@ fn new_encoder(device: &wgpu::Device) -> wgpu::CommandEncoder {
 }
 
 // External callbacks get their own encoder, so the list is split into several command buffers that keep the
-// recorded order when submitted together.
+// recorded order when submitted together. wgpu rejects an encoder finished with an open debug group, so open groups
+// are closed before the split and reopened on the next encoder.
 pub(crate) fn encode_list(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -25,16 +26,32 @@ pub(crate) fn encode_list(
 ) -> Result<Vec<wgpu::CommandBuffer>, RhiError> {
     let mut buffers = Vec::new();
     let mut encoder = new_encoder(device);
+    let mut open_groups: Vec<&'static str> = Vec::new();
     let mut commands = list.into_commands().into_iter();
     while let Some(command) = commands.next() {
-        if let Command::External(external) = command {
-            buffers.push(encoder.finish());
-            let mut context = ExternalContext::new(device, queue, objects, &external.accesses);
-            external.callback.call(&mut context);
-            buffers.push(context.finish());
-            encoder = new_encoder(device);
-        } else {
-            encode_command(objects, &mut encoder, command, &mut commands)?;
+        match command {
+            Command::External(external) => {
+                for _ in &open_groups {
+                    encoder.pop_debug_group();
+                }
+                buffers.push(encoder.finish());
+                let mut context = ExternalContext::new(device, queue, objects, &external.accesses);
+                external.callback.call(&mut context);
+                buffers.push(context.finish());
+                encoder = new_encoder(device);
+                for label in &open_groups {
+                    encoder.push_debug_group(label);
+                }
+            }
+            Command::PushDebugGroup(label) => {
+                encoder.push_debug_group(label);
+                open_groups.push(label);
+            }
+            Command::PopDebugGroup => {
+                encoder.pop_debug_group();
+                open_groups.pop();
+            }
+            command => encode_command(objects, &mut encoder, command, &mut commands)?,
         }
     }
     buffers.push(encoder.finish());

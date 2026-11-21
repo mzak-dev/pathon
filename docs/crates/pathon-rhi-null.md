@@ -6,7 +6,9 @@ Backend RHI bez GPU (M1-04). Wydaje handle'y i nic nie rysuje, ale przy `submit`
 - **struktura listy**: komenda w złym rodzaju passa, draw bez pipeline'u, niezamknięty pass albo grupa debug → `R0104`;
 - **flagi użycia** zasobów (`TextureUsage`, `BufferUsage`) → `R0105`;
 - **prezentacja** klatki surface'a, która nie przeszła do `PRESENT` → `R0106`;
-- **układ texeli** kopii: `bytes_per_row` niemieszczący wiersza albo niepodzielny przez 256 w kopii bufor↔tekstura, `rows_per_image` mniejsze niż wysokość przy kilku obrazach → `R0113`.
+- **układ texeli** kopii: `bytes_per_row` niemieszczący wiersza albo niepodzielny przez 256 w kopii bufor↔tekstura, `rows_per_image` mniejsze niż wysokość kopii (zawsze) → `R0113`.
+
+`submit` jest atomowy: odrzucona lista nie zmienia ani stanów tekstur, ani bajtów emulowanych buforów (jak GPU, który nie wykonuje błędnego bufora komend).
 
 Bufory nie mają maszyny stanów (graf zarządza na razie tylko teksturami), ale `write_buffer` i kopie bufor → bufor są emulowane, więc `read_buffer` zwraca prawdziwe bajty. `simulate_device_loss()` symuluje utratę urządzenia (M1-03).
 

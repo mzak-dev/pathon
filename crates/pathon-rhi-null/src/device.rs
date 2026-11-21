@@ -116,6 +116,21 @@ pub(crate) struct State {
 }
 
 impl State {
+    fn texture_states(&self) -> Vec<(TextureId, Vec<SubresourceState>)> {
+        self.textures
+            .iter()
+            .map(|(id, texture)| (id, texture.subresources.clone()))
+            .collect()
+    }
+
+    fn restore_texture_states(&mut self, saved: Vec<(TextureId, Vec<SubresourceState>)>) {
+        for (id, subresources) in saved {
+            if let Some(texture) = self.textures.get_mut(id) {
+                texture.subresources = subresources;
+            }
+        }
+    }
+
     fn remove_views_of(&mut self, texture: TextureId) {
         let views: Vec<TextureViewId> = self
             .views
@@ -657,7 +672,13 @@ impl DeviceApi for NullDevice {
     fn submit(&self, commands: CommandList) -> Result<(), RhiError> {
         self.ensure_alive()?;
         let mut state = self.lock();
-        Validator::new(&mut state).run(commands)
+        // A GPU does not run an invalid command buffer, so a rejected list must not move any texture state.
+        let saved = state.texture_states();
+        let result = Validator::new(&mut state).run(commands);
+        if result.is_err() {
+            state.restore_texture_states(saved);
+        }
+        result
     }
 
     fn read_buffer(&self, buffer: BufferId) -> Result<Vec<u8>, RhiError> {

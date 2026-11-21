@@ -72,6 +72,7 @@ fn view_snapshot(index: usize, capture: &GraphCapture) -> ViewSnapshot {
     let mut groups: HashMap<CapturedTarget, usize> = HashMap::new();
     let barrier = |barrier: &BarrierCapture| BarrierSnapshot {
         resources: aliases.get(&barrier.target).cloned().unwrap_or_default(),
+        from: barrier.from.map(access_names),
         access: access_names(barrier.access),
         range: range_text(barrier.range),
     };

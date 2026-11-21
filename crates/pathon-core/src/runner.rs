@@ -74,11 +74,13 @@ impl GraphRunner {
 
     // The frame reached the GPU (or the host): what its views wrote to history is real.
     pub(crate) fn commit_frame(&mut self) {
+        self.pool.commit_states();
         self.written_this_frame.clear();
     }
 
     // The frame was dropped after recording, so its history was never written and its states are wrong.
     pub(crate) fn abandon_frame(&mut self, release: &mut DeferredRelease, frame: u64) {
+        self.pool.abandon_states();
         for target in std::mem::take(&mut self.written_this_frame) {
             if let Some(history) = self.histories.get_mut(&target) {
                 history.release_all(&mut self.pool, release, frame);

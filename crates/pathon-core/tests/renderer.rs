@@ -5,8 +5,8 @@ use pathon_api::graph::{GraphTextureDesc, PassDesc, Stage};
 use pathon_api::{Camera, PrepareCtx, RecordCtx, RenderFeature, Role, SetupCtx, ViewId};
 use pathon_core::{FeatureStatus, FrameInput, RenderError, Renderer, RendererBuilder, ViewInput};
 use pathon_rhi::{
-    Access, Backend, Color, ColorAttachment, Device, DeviceApi, DeviceRequest, Extent3d, Format, PhysicalSize,
-    RenderPassDesc, RhiError, SurfaceTarget, TextureId,
+    Access, Backend, Color, ColorAttachment, CommandList, Device, DeviceApi, DeviceRequest, Extent3d, Format,
+    PhysicalSize, RenderPassDesc, RhiError, SubresourceRange, SurfaceTarget, TextureDesc, TextureId, TextureUsage,
 };
 use pathon_test::{GeometryPack, OnDemandConsumer, UnlitMeshPack, UpscalerPack, VendorDummy};
 
@@ -1156,4 +1156,147 @@ fn a_restored_pack_whose_setup_fails_on_the_new_device_is_disabled_with_f0104() 
         status_of(&renderer, "restored"),
         FeatureStatus::Disabled { code: "F0104", .. }
     ));
+}
+
+// Writes a pooled transient every frame; `draw_without_pipeline` makes the submit fail halfway through the list.
+struct ScratchFeature {
+    draw_without_pipeline: Arc<AtomicBool>,
+}
+
+impl RenderFeature for ScratchFeature {
+    fn name(&self) -> &'static str {
+        "scratch"
+    }
+
+    fn stage(&self) -> Stage {
+        Stage::PostProcess
+    }
+
+    fn record(&mut self, ctx: &mut RecordCtx<'_>) -> Result<(), RhiError> {
+        let graph = ctx.graph();
+        let scratch = graph.create_texture("scratch", GraphTextureDesc::render(Format::Rgba8Unorm));
+        let mut pass = graph.add_pass(PassDesc::new("fill scratch", Stage::PostProcess));
+        let written = pass.write(scratch, Access::COLOR_ATTACHMENT);
+        let broken = self.draw_without_pipeline.load(Ordering::SeqCst);
+        pass.record(move |pass| {
+            let view = pass.view(written)?;
+            let mut encoder = pass.commands().render_pass(RenderPassDesc {
+                label: "fill scratch",
+                color: vec![ColorAttachment::clear(view, Color::BLACK)],
+                depth: None,
+                timestamps: None,
+            });
+            if broken {
+                encoder.draw(0..3, 0..1);
+            }
+            Ok(())
+        });
+        let mut pass = graph.add_pass(PassDesc::new("use scratch", Stage::PostProcess).side_effect());
+        pass.read(written, Access::SAMPLED);
+        pass.record(|_| Ok(()));
+        Ok(())
+    }
+}
+
+fn scratch_renderer() -> (Renderer, Arc<AtomicBool>) {
+    let broken = Arc::new(AtomicBool::new(false));
+    let renderer = null_builder()
+        .with_feature(ScratchFeature {
+            draw_without_pipeline: Arc::clone(&broken),
+        })
+        .build()
+        .expect("renderer");
+    (renderer, broken)
+}
+
+#[test]
+fn an_offscreen_target_recovers_after_its_first_frame_was_abandoned() {
+    let mut renderer = null_builder().build().expect("renderer");
+    let healthy = one_view(&mut renderer, Format::Rgba8Unorm);
+    let failing = failing_second_view(&mut renderer, &healthy);
+
+    assert!(renderer.render_frame(&failing).is_err());
+    renderer
+        .render_frame(&healthy)
+        .expect("the abandoned frame left no state behind");
+}
+
+#[test]
+fn a_pooled_transient_recovers_after_its_first_frame_was_abandoned() {
+    let device = Arc::new(Device::null());
+    let host_texture = device
+        .create_texture(&TextureDesc::new_2d(
+            "host color",
+            SIZE.width,
+            SIZE.height,
+            Format::Rgba8Unorm,
+            TextureUsage::RENDER_TARGET | TextureUsage::COPY_SRC,
+        ))
+        .expect("host texture");
+    let mut renderer = Renderer::builder()
+        .with_device(Arc::clone(&device))
+        .with_feature(ScratchFeature {
+            draw_without_pipeline: Arc::new(AtomicBool::new(false)),
+        })
+        .build()
+        .expect("renderer");
+    let target = renderer
+        .import_texture(host_texture, Access::empty(), Access::empty())
+        .expect("import");
+    let healthy = FrameInput {
+        views: vec![ViewInput {
+            target,
+            camera: Camera::default(),
+        }],
+        ..FrameInput::default()
+    };
+    let failing = failing_second_view(&mut renderer, &healthy);
+
+    assert!(renderer.render_frame(&failing).is_err());
+    renderer
+        .render_frame(&healthy)
+        .expect("only the pool remembered states");
+}
+
+#[test]
+fn frames_recover_after_one_submit_was_rejected_midway() {
+    let (mut renderer, broken) = scratch_renderer();
+    let input = one_view(&mut renderer, Format::Rgba8Unorm);
+    renderer.render_frame(&input).expect("first frame");
+
+    broken.store(true, Ordering::SeqCst);
+    assert!(renderer.render_frame(&input).is_err());
+    broken.store(false, Ordering::SeqCst);
+    for _ in 0..3 {
+        renderer.render_frame(&input).expect("a rejected list changed nothing");
+    }
+}
+
+#[test]
+fn a_record_frame_that_failed_later_leaves_no_state_behind() {
+    let (mut renderer, _) = scratch_renderer();
+    let healthy = one_view(&mut renderer, Format::Rgba8Unorm);
+    let failing = failing_second_view(&mut renderer, &healthy);
+
+    assert!(renderer.record_frame(&failing).is_err());
+    let list = renderer.record_frame(&healthy).expect("recording after the failure");
+    renderer
+        .device()
+        .submit(list)
+        .expect("the list starts from the state the GPU is really in");
+}
+
+#[test]
+fn the_host_returns_an_offscreen_target_to_sampled_after_reading_it_back() {
+    let mut renderer = null_builder().build().expect("renderer");
+    let input = one_view(&mut renderer, Format::Rgba8Unorm);
+    renderer.render_frame(&input).expect("first frame");
+
+    let texture = renderer.target_texture(input.views[0].target).expect("texture");
+    let mut readback = CommandList::new();
+    readback.texture_access(texture, SubresourceRange::ALL, Access::SAMPLED, Access::COPY_SRC);
+    readback.texture_access(texture, SubresourceRange::ALL, Access::COPY_SRC, Access::SAMPLED);
+    renderer.device().submit(readback).expect("host barriers");
+
+    renderer.render_frame(&input).expect("frame after the readback");
 }

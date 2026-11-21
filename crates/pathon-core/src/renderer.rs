@@ -41,6 +41,8 @@ pub struct Renderer {
     on_reupload: Option<ReuploadFn>,
     shared: Shared,
     frame_captures: Vec<GraphCapture>,
+    // Offscreen targets recorded this frame: they only reach `OFFSCREEN_FINAL` once the frame is committed.
+    pending_offscreen: Vec<TargetId>,
     frame_diagnostics: Vec<Diagnostic>,
 }
 
@@ -80,6 +82,7 @@ impl Renderer {
             on_reupload: None,
             shared,
             frame_captures: Vec::new(),
+            pending_offscreen: Vec::new(),
             frame_diagnostics: Vec::new(),
         }
     }
@@ -333,6 +336,7 @@ impl Renderer {
 
     // What the dropped frame's views wrote to history never reached the GPU.
     fn abandon_frame(&mut self) {
+        self.pending_offscreen.clear();
         self.runner.abandon_frame(&mut self.release, self.frame);
         self.drop_frame_results();
     }
@@ -352,6 +356,11 @@ impl Renderer {
     }
 
     fn end_frame(&mut self) {
+        for id in self.pending_offscreen.drain(..) {
+            if let Some(TargetKind::Offscreen { state, .. }) = self.targets.get_mut(id).map(|target| &mut target.kind) {
+                *state = OFFSCREEN_FINAL;
+            }
+        }
         self.runner.commit_frame();
         self.release.collect(self.frame, self.device.as_ref());
         self.frame += 1;
@@ -385,15 +394,14 @@ impl Renderer {
                 }
             }
             TargetKind::Offscreen { texture, desc, state } => {
-                let output = OutputTarget {
+                self.pending_offscreen.push(id);
+                OutputTarget {
                     texture: *texture,
                     desc: *desc,
                     initial: *state,
                     final_access: OFFSCREEN_FINAL,
                     keeps_contents: false,
-                };
-                *state = OFFSCREEN_FINAL;
-                output
+                }
             }
             TargetKind::Imported {
                 texture,

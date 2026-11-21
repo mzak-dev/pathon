@@ -206,6 +206,12 @@ fn render_mode_c() -> Vec<u8> {
         },
         Extent3d::new_2d(SIZE, SIZE),
     );
+    list.texture_access(
+        renderer.target_texture(target).expect("texture"),
+        SubresourceRange::ALL,
+        Access::COPY_SRC,
+        Access::SAMPLED,
+    );
     device.submit(list).expect("copy");
     device.read_buffer(readback).expect("read")
 }

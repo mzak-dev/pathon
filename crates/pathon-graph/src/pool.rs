@@ -12,8 +12,12 @@ const KEEP_UNUSED_FRAMES: u64 = 3;
 struct PooledTexture {
     texture: TextureId,
     desc: TextureDesc,
-    // Per-subresource state the last submitted frame left the texture in; the next barrier starts from it.
-    states: Option<Vec<Access>>,
+    // Per-subresource state the last committed frame left the texture in; the next barrier starts from it.
+    committed: Vec<Access>,
+    has_committed: bool,
+    // The same for frames recorded since the last commit; dropped when they are abandoned.
+    pending: Vec<Access>,
+    has_pending: bool,
     last_used: u64,
     in_use: bool,
 }
@@ -77,7 +81,10 @@ impl ResourcePool {
         self.textures.push(PooledTexture {
             texture,
             desc: *desc,
-            states: None,
+            committed: Vec::new(),
+            has_committed: false,
+            pending: Vec::new(),
+            has_pending: false,
             last_used: frame,
             in_use: true,
         });
@@ -85,15 +92,37 @@ impl ResourcePool {
     }
 
     pub(crate) fn remembered_states(&self, texture: TextureId) -> Option<&[Access]> {
-        self.textures
-            .iter()
-            .find(|pooled| pooled.texture == texture)
-            .and_then(|pooled| pooled.states.as_deref())
+        let pooled = self.textures.iter().find(|pooled| pooled.texture == texture)?;
+        if pooled.has_pending {
+            Some(&pooled.pending)
+        } else {
+            pooled.has_committed.then_some(pooled.committed.as_slice())
+        }
     }
 
     pub(crate) fn remember_states(&mut self, texture: TextureId, states: &[Access]) {
         if let Some(pooled) = self.textures.iter_mut().find(|pooled| pooled.texture == texture) {
-            pooled.states = Some(states.to_vec());
+            pooled.pending.clear();
+            pooled.pending.extend_from_slice(states);
+            pooled.has_pending = true;
+        }
+    }
+
+    // The recorded frames reached the GPU: the states they left become what the next barrier starts from.
+    pub fn commit_states(&mut self) {
+        for pooled in &mut self.textures {
+            if pooled.has_pending {
+                std::mem::swap(&mut pooled.committed, &mut pooled.pending);
+                pooled.has_committed = true;
+                pooled.has_pending = false;
+            }
+        }
+    }
+
+    // The recorded frames were dropped before they ran, so the textures are still in their committed states.
+    pub fn abandon_states(&mut self) {
+        for pooled in &mut self.textures {
+            pooled.has_pending = false;
         }
     }
 

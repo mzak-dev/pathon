@@ -415,14 +415,21 @@ fn barriers_since(commands: &CommandList, start: usize) -> Vec<BarrierCapture> {
     commands.commands()[start..]
         .iter()
         .filter_map(|command| match command {
-            Command::TextureAccess { texture, range, to, .. } => Some(BarrierCapture {
+            Command::TextureAccess {
+                texture,
+                range,
+                from,
+                to,
+            } => Some(BarrierCapture {
                 target: CapturedTarget::Texture(*texture),
                 range: *range,
+                from: Some(*from),
                 access: *to,
             }),
             Command::BufferAccess { buffer, access } => Some(BarrierCapture {
                 target: CapturedTarget::Buffer(*buffer),
                 range: SubresourceRange::ALL,
+                from: None,
                 access: *access,
             }),
             _ => None,

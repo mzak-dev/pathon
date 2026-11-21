@@ -44,6 +44,8 @@ pub struct AccessCapture {
 pub struct BarrierCapture {
     pub target: CapturedTarget,
     pub range: SubresourceRange,
+    // The state the barrier assumed; buffer barriers do not carry one.
+    pub from: Option<Access>,
     pub access: Access,
 }
 

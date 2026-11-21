@@ -1389,7 +1389,7 @@ fn write_texture_only_needs_bytes_per_row_that_fits_a_row() {
 }
 
 #[test]
-fn rows_per_image_must_cover_the_height_when_copying_several_layers() {
+fn rows_per_image_must_cover_the_height_of_every_copy() {
     let device = NullDevice::new();
     let texture = upload_target(&device, 4, 4, 2);
     let copy = pathon_rhi_types::TextureCopy::whole(texture);
@@ -1404,14 +1404,12 @@ fn rows_per_image_must_cover_the_height_when_copying_several_layers() {
     device
         .write_texture(&copy, &[0; 128], texel_layout(16, 4), layers)
         .expect("images do not overlap");
-    device
-        .write_texture(
-            &copy,
-            &[0; 64],
-            texel_layout(16, 0),
-            pathon_rhi_types::Extent3d::new_2d(4, 4),
-        )
-        .expect("rows_per_image is unused for one image");
+    let one_image = pathon_rhi_types::Extent3d::new_2d(4, 4);
+    let too_few_rows = device.write_texture(&copy, &[0; 64], texel_layout(16, 0), one_image);
+    assert_eq!(
+        too_few_rows.expect_err("rows_per_image below the height").code(),
+        "R0113"
+    );
 }
 
 #[test]
@@ -1447,4 +1445,30 @@ fn creating_a_pipeline_from_another_thread_during_submit_succeeds() {
         }
         background.join().expect("the background thread finishes");
     });
+}
+
+#[test]
+fn a_rejected_list_changes_no_texture_state() {
+    let device = NullDevice::new();
+    let texture = render_target(&device);
+    let mut rejected = CommandList::new();
+    rejected.texture_access(
+        texture,
+        SubresourceRange::ALL,
+        Access::empty(),
+        Access::COLOR_ATTACHMENT,
+    );
+    rejected.texture_access(texture, SubresourceRange::ALL, Access::SAMPLED, Access::COPY_SRC);
+    assert_eq!(code(device.submit(rejected)), "R0103");
+
+    let mut retry = CommandList::new();
+    retry.texture_access(
+        texture,
+        SubresourceRange::ALL,
+        Access::empty(),
+        Access::COLOR_ATTACHMENT,
+    );
+    device
+        .submit(retry)
+        .expect("the first barrier of the rejected list was not applied");
 }

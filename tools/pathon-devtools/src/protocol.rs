@@ -47,6 +47,9 @@ pub struct AccessSnapshot {
 pub struct BarrierSnapshot {
     // Resources living in the transitioned physical texture or buffer (aliases share one).
     pub resources: Vec<usize>,
+    // The state the barrier started from; absent for buffers and in snapshots from before barriers carried it.
+    #[serde(default)]
+    pub from: Option<Vec<String>>,
     pub access: Vec<String>,
     pub range: String,
 }

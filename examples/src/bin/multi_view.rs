@@ -70,6 +70,7 @@ fn read_pixel_at_centre(renderer: &Renderer, target: TargetId, readback: BufferI
         },
         Extent3d::new_2d(OFFSCREEN_SIZE, OFFSCREEN_SIZE),
     );
+    list.texture_access(texture, SubresourceRange::ALL, Access::COPY_SRC, Access::SAMPLED);
     device.submit(list).expect("copy");
     let pixels = device.read_buffer(readback).expect("read");
     let start = ((OFFSCREEN_SIZE / 2 * OFFSCREEN_SIZE + OFFSCREEN_SIZE / 2) * 4) as usize;

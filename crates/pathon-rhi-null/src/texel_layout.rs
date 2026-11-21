@@ -39,9 +39,9 @@ pub(crate) fn check_texel_layout(
             layout.bytes_per_row
         )));
     }
-    if size.depth_or_layers > 1 && layout.rows_per_image < rows {
+    if layout.rows_per_image < rows {
         return Err(invalid_layout(format!(
-            "rows_per_image {} is smaller than the {rows} rows of an image",
+            "rows_per_image {} is smaller than the {rows} rows of the copy",
             layout.rows_per_image
         )));
     }

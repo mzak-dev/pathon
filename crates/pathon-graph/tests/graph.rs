@@ -1245,38 +1245,78 @@ fn mixed_state_frame(device: &NullDevice, pool: &mut ResourcePool, frame: u64) -
     run(graph, device, pool, frame)
 }
 
+fn per_mip_barriers(commands: &pathon_rhi_types::CommandList) -> Vec<(u32, Access, Access)> {
+    commands
+        .commands()
+        .iter()
+        .filter_map(|command| match command {
+            Command::TextureAccess { range, from, to, .. } if range.mip_count == 1 => {
+                Some((range.base_mip, *from, *to))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
 #[test]
 fn barriers_over_a_texture_with_mixed_states_start_from_each_subresources_state() {
     let device = NullDevice::new();
     let mut pool = ResourcePool::new();
 
-    for frame in 0..2 {
-        let execution = mixed_state_frame(&device, &mut pool, frame);
-        let from_states: Vec<Access> = execution
-            .commands
-            .commands()
-            .iter()
-            .filter_map(|command| match command {
-                Command::TextureAccess {
-                    range,
-                    from,
-                    to: Access::SAMPLED,
-                    ..
-                } if *range != SubresourceRange::ALL => Some(*from),
-                _ => None,
-            })
-            .collect();
-        assert!(
-            from_states.contains(&Access::COPY_DST),
-            "mip 0 leaves COPY_DST, frame {frame}"
-        );
-        // On the first frame the other mips start empty; later the pool remembers they are still SAMPLED.
-        assert!(
-            frame > 0 || from_states.contains(&Access::empty()),
-            "the other mips are split into their own barriers, frame {frame}"
-        );
-        device
-            .submit(execution.commands)
-            .expect("barriers pass null validation");
-    }
+    let first = mixed_state_frame(&device, &mut pool, 0);
+    assert_eq!(
+        per_mip_barriers(&first.commands),
+        [
+            (0, Access::empty(), Access::COPY_DST),
+            (0, Access::COPY_DST, Access::SAMPLED),
+            (1, Access::empty(), Access::SAMPLED),
+            (2, Access::empty(), Access::SAMPLED),
+        ]
+    );
+    device.submit(first.commands).expect("barriers pass null validation");
+    pool.commit_states();
+
+    let second = mixed_state_frame(&device, &mut pool, 1);
+    assert_eq!(
+        per_mip_barriers(&second.commands),
+        [
+            (0, Access::SAMPLED, Access::COPY_DST),
+            (0, Access::COPY_DST, Access::SAMPLED),
+        ]
+    );
+    device
+        .submit(second.commands)
+        .expect("the pool remembered the first frame");
+}
+
+#[test]
+fn a_dropped_frame_leaves_the_pool_remembering_the_last_committed_states() {
+    let device = NullDevice::new();
+    let mut pool = ResourcePool::new();
+    let committed = mixed_state_frame(&device, &mut pool, 0);
+    device.submit(committed.commands).expect("first frame");
+    pool.commit_states();
+
+    let dropped = mixed_state_frame(&device, &mut pool, 1);
+    drop(dropped);
+    pool.abandon_states();
+
+    let next = mixed_state_frame(&device, &mut pool, 2);
+    device
+        .submit(next.commands)
+        .expect("barriers start from the committed states");
+}
+
+#[test]
+fn views_of_one_frame_chain_through_the_uncommitted_pool_states() {
+    let device = NullDevice::new();
+    let mut pool = ResourcePool::new();
+    let first = mixed_state_frame(&device, &mut pool, 0);
+    let second = mixed_state_frame(&device, &mut pool, 0);
+    let mut frame = first.commands;
+    frame.append(second.commands);
+
+    device
+        .submit(frame)
+        .expect("the second list starts where the first one ends");
 }

@@ -47,7 +47,8 @@ Przed każdym passem graf porównuje potrzebny `Access` każdego subresource'u z
 - **G0003** — odczyt zasobu tymczasowego (tekstury lub bufora), którego nic nie zapisało;
 - **G0004** — render pass miesza załączniki w rozmiarze renderu i wyjścia;
 - **G0006** — kolejność rozstrzygnięta rejestracją (ostrzeżenie);
-- **G0007** — ta sama nazwa historii zadeklarowana z różnymi opisami.
+- **G0007** — ta sama nazwa historii zadeklarowana z różnymi opisami;
+- **G0008** — pass (albo import: `initial` / `final`) deklaruje stan tekstury, który nie przechodzi `is_valid_texture_state`, np. `SAMPLED` z `COPY_SRC`.
 
 ## Nagrywanie
 

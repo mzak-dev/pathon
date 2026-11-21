@@ -1,7 +1,7 @@
 use pathon_diag::Diagnostic;
-use pathon_rhi_types::{Access, BufferUsage, PhysicalSize, TextureUsage};
+use pathon_rhi_types::{Access, BufferUsage, PhysicalSize, SubresourceRange, TextureUsage};
 
-use crate::graph::{FrameGraph, FrameSizes, GraphSize, PassAccess, ResourceKind};
+use crate::graph::{FrameGraph, FrameSizes, GraphSize, PassAccess, PassNode, ResourceKind};
 use crate::order::{OrderNode, sort_nodes};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
@@ -103,6 +103,14 @@ fn read_dependency(access: &PassAccess) -> Option<u32> {
     }
 }
 
+fn ranges_overlap(a: SubresourceRange, b: SubresourceRange) -> bool {
+    let overlap = |a_start: u32, a_count: u32, b_start: u32, b_count: u32| {
+        a_start < b_start.saturating_add(b_count) && b_start < a_start.saturating_add(a_count)
+    };
+    overlap(a.base_mip, a.mip_count, b.base_mip, b.mip_count)
+        && overlap(a.base_layer, a.layer_count, b.base_layer, b.layer_count)
+}
+
 fn is_attachment(access: Access) -> bool {
     access.intersects(Access::COLOR_ATTACHMENT | Access::DEPTH_READ | Access::DEPTH_WRITE)
 }
@@ -176,7 +184,9 @@ impl FrameGraph {
                 .with_hint("declare it once, or give the second one another name"),
             );
         }
+        errors.extend(self.invalid_import_states());
         for pass in &self.passes {
+            errors.extend(self.invalid_texture_states(pass));
             let mut render_sized = false;
             let mut output_sized = false;
             for access in &pass.accesses {
@@ -231,6 +241,60 @@ impl FrameGraph {
                         ),
                     )
                     .with_hint("move the pass before or after the upscaler, or use one size class"),
+                );
+            }
+        }
+        errors
+    }
+
+    fn invalid_import_states(&self) -> Vec<Diagnostic> {
+        self.resources
+            .iter()
+            .filter_map(|resource| match resource.kind {
+                ResourceKind::Imported {
+                    initial, final_access, ..
+                } => [initial, final_access]
+                    .into_iter()
+                    .find(|state| !state.is_valid_texture_state())
+                    .map(|state| {
+                        Diagnostic::error(
+                            "G0008",
+                            format!(
+                                "import '{}' is declared in invalid texture state {state:?}",
+                                resource.name
+                            ),
+                        )
+                        .with_hint("a texture state keeps its reads in one layout class; see R0103")
+                    }),
+                _ => None,
+            })
+            .collect()
+    }
+
+    // Overlapping accesses of one pass end up in one state, so each pair is checked together; a lone access too.
+    fn invalid_texture_states(&self, pass: &PassNode) -> Vec<Diagnostic> {
+        let mut errors = Vec::new();
+        for (index, access) in pass.accesses.iter().enumerate() {
+            let resource = &self.resources[access.resource as usize];
+            if resource.kind.is_buffer() {
+                continue;
+            }
+            let conflicting = std::iter::once(access.access).chain(
+                pass.accesses[..index]
+                    .iter()
+                    .filter(|other| other.resource == access.resource && ranges_overlap(other.range, access.range))
+                    .map(|other| other.access | access.access),
+            );
+            if let Some(state) = conflicting.into_iter().find(|state| !state.is_valid_texture_state()) {
+                errors.push(
+                    Diagnostic::error(
+                        "G0008",
+                        format!(
+                            "pass '{}' declares invalid texture state {state:?} on '{}'",
+                            pass.desc.name, resource.name
+                        ),
+                    )
+                    .with_hint("split the accesses into separate passes; see R0103"),
                 );
             }
         }

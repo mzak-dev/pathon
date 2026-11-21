@@ -246,6 +246,43 @@ fn a_pass_reading_a_storage_texture_nobody_writes_gets_storage_usage() {
 }
 
 #[test]
+fn one_pass_declaring_layout_mixing_accesses_on_a_texture_is_g0008() {
+    let device = NullDevice::new();
+    let mut graph = FrameGraph::new();
+    let output = import_output(&mut graph, &device);
+    let scratch = graph.create_texture("scratch", GraphTextureDesc::render(Format::Rgba8Unorm));
+    let mut pass = graph.add_pass(PassDesc::new("fill", Stage::Prepass));
+    let scratch = pass.write(scratch, Access::COLOR_ATTACHMENT);
+    pass.record(clear(scratch));
+    let mut pass = graph.add_pass(PassDesc::new("consumer", Stage::Opaque));
+    pass.read(scratch, Access::SAMPLED);
+    pass.read(scratch, Access::COPY_SRC);
+    pass.write(output, Access::COLOR_ATTACHMENT);
+
+    let errors = graph.compile(FrameSizes::same(SIZE)).expect_err("must fail");
+    assert_eq!(errors[0].code, "G0008");
+    assert!(errors[0].message.contains("consumer") && errors[0].message.contains("scratch"));
+}
+
+#[test]
+fn an_import_ending_in_a_layout_mixing_state_is_g0008() {
+    let device = NullDevice::new();
+    let mut graph = FrameGraph::new();
+    let (texture, desc) = output_texture(&device);
+    graph.import_texture(
+        "output",
+        texture,
+        desc,
+        Access::empty(),
+        Access::SAMPLED | Access::COPY_SRC,
+    );
+
+    let errors = graph.compile(FrameSizes::same(SIZE)).expect_err("must fail");
+    assert_eq!(errors[0].code, "G0008");
+    assert!(errors[0].message.contains("output"));
+}
+
+#[test]
 fn contradicting_constraints_are_g0001() {
     let device = NullDevice::new();
     let mut graph = FrameGraph::new();

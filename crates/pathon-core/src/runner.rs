@@ -29,13 +29,11 @@ pub(crate) struct FrameEnv<'frame> {
     pub(crate) frame: u64,
 }
 
-// Diagnostics are not emitted here: the renderer reports each of them once.
 pub(crate) struct ViewRun {
     pub(crate) commands: CommandList,
     pub(crate) stats: GraphStats,
     pub(crate) compiled: bool,
     pub(crate) capture: Option<GraphCapture>,
-    pub(crate) diagnostics: Vec<Diagnostic>,
 }
 
 // Compiles and executes one view's frame graph; compiled graphs are cached per target, so view order does not matter.
@@ -69,6 +67,7 @@ impl GraphRunner {
         self.caches.clear();
     }
 
+    // Diagnostics are collected into `diagnostics` whatever the result, for the renderer to report once.
     pub(crate) fn run_view(
         &mut self,
         target: TargetId,
@@ -76,10 +75,11 @@ impl GraphRunner {
         sizes: FrameSizes,
         fill: impl FnOnce(&mut FrameGraph, TextureHandle) -> Vec<Diagnostic>,
         mut env: FrameEnv<'_>,
+        diagnostics: &mut Vec<Diagnostic>,
     ) -> Result<ViewRun, RenderError> {
         let mut graph = FrameGraph::new();
         let output_handle = self.import_output(&mut graph, output);
-        let mut diagnostics = fill(&mut graph, output_handle);
+        diagnostics.extend(fill(&mut graph, output_handle));
         graph.set_capture(self.capture);
 
         let cache = self.caches.entry(target).or_default();
@@ -87,7 +87,7 @@ impl GraphRunner {
             Ok(result) => result,
             Err(errors) => {
                 diagnostics.extend(errors);
-                return self.fallback_run(output, &mut env, diagnostics);
+                return self.fallback_run(output, &mut env);
             }
         };
         let fresh_warnings = if fresh {
@@ -103,12 +103,11 @@ impl GraphRunner {
                 stats: execution.stats,
                 compiled: fresh,
                 capture: execution.capture,
-                diagnostics,
             }),
             Err(RhiError::DeviceLost) => Err(RenderError::DeviceLost),
             Err(error) => {
                 diagnostics.push(Diagnostic::error("F0105", format!("a pass failed to record: {error}")));
-                self.fallback_run(output, &mut env, diagnostics)
+                self.fallback_run(output, &mut env)
             }
         }
     }
@@ -153,12 +152,7 @@ impl GraphRunner {
     }
 
     // A broken graph still hands the target back in its final state: cleared, or untouched for a host image.
-    fn fallback_run(
-        &mut self,
-        output: OutputTarget,
-        env: &mut FrameEnv<'_>,
-        diagnostics: Vec<Diagnostic>,
-    ) -> Result<ViewRun, RenderError> {
+    fn fallback_run(&mut self, output: OutputTarget, env: &mut FrameEnv<'_>) -> Result<ViewRun, RenderError> {
         let mut graph = FrameGraph::new();
         self.import_output(&mut graph, output);
         let compiled = graph
@@ -173,14 +167,13 @@ impl GraphRunner {
             stats: execution.stats,
             compiled: true,
             capture: None,
-            diagnostics,
         })
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use pathon_api::graph::{GraphTextureDesc, PassDesc, Stage};
+    use pathon_api::graph::GraphTextureDesc;
     use pathon_rhi::{Command, Device, Format, Pool};
 
     use super::*;
@@ -201,6 +194,7 @@ mod tests {
         let target = Pool::<TargetId, ()>::new().insert(());
         let mut release = DeferredRelease::new(2);
         let mut runner = GraphRunner::new(Color::BLACK);
+        let mut diagnostics = Vec::new();
 
         let run = runner
             .run_view(
@@ -218,10 +212,11 @@ mod tests {
                     release: &mut release,
                     frame: 0,
                 },
+                &mut diagnostics,
             )
             .expect("fallback run");
 
-        assert_eq!(run.diagnostics[0].code, "G0003");
+        assert_eq!(diagnostics[0].code, "G0003");
         assert!(
             run.commands
                 .commands()

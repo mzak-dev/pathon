@@ -85,7 +85,8 @@ fn device_loss_rebuilds_the_device_and_asks_for_data_again() {
 
     renderer.recover().expect("recover");
     assert_eq!(reuploads.load(Ordering::SeqCst), 1);
-    renderer.render_frame(&input).expect("frame after recovery");
+    let report = renderer.render_frame(&input).expect("frame after recovery");
+    assert_eq!(report.compiled_views, 1);
     assert_eq!(renderer.active_features(), ["unlit mesh"]);
 }
 
@@ -376,6 +377,27 @@ fn a_failed_frame_gives_back_the_window_frames_it_acquired() {
     renderer.render_frame(&next).expect("the window can be acquired again");
 }
 
+// Fails to record, and leaves a pass that reports the device lost, so the same frame fails.
+struct FailsThenLosesDevice;
+
+impl RenderFeature for FailsThenLosesDevice {
+    fn name(&self) -> &'static str {
+        "fails then loses device"
+    }
+
+    fn stage(&self) -> Stage {
+        Stage::PostProcess
+    }
+
+    fn record(&mut self, ctx: &mut RecordCtx<'_>) -> Result<(), RhiError> {
+        let pass = ctx
+            .graph()
+            .add_pass(PassDesc::new("loses device", Stage::PostProcess).side_effect());
+        pass.record(|_| Err(RhiError::DeviceLost));
+        Err(RhiError::InvalidHandle("broken pack"))
+    }
+}
+
 struct FailsToRecord {
     calls: Arc<AtomicUsize>,
 }
@@ -434,6 +456,75 @@ fn a_failing_pack_is_reported_once_per_frame() {
 
     let failures = report.diagnostics.iter().filter(|d| d.code == "F0105").count();
     assert_eq!(failures, 1);
+}
+
+// Fails to record and also leaves a pass that fails to record, so one frame carries both kinds of F0105.
+struct FailsAndBreaksPass;
+
+impl RenderFeature for FailsAndBreaksPass {
+    fn name(&self) -> &'static str {
+        "fails and breaks a pass"
+    }
+
+    fn stage(&self) -> Stage {
+        Stage::PostProcess
+    }
+
+    fn record(&mut self, ctx: &mut RecordCtx<'_>) -> Result<(), RhiError> {
+        let pass = ctx
+            .graph()
+            .add_pass(PassDesc::new("broken pass", Stage::PostProcess).side_effect());
+        pass.record(|_| Err(RhiError::InvalidHandle("broken pass")));
+        Err(RhiError::InvalidHandle("broken pack"))
+    }
+}
+
+#[test]
+fn a_failed_pack_and_a_failed_pass_are_each_reported_once() {
+    let mut renderer = null_builder()
+        .with_feature(FailsAndBreaksPass)
+        .build()
+        .expect("renderer");
+    let input = one_view(&mut renderer, Format::Rgba8Unorm);
+
+    let report = renderer.render_frame(&input).expect("the frame still renders");
+
+    let messages: Vec<&str> = report
+        .diagnostics
+        .iter()
+        .filter(|d| d.code == "F0105")
+        .map(|d| d.message.as_str())
+        .collect();
+    assert_eq!(messages.len(), 2, "{messages:?}");
+    assert_eq!(
+        messages
+            .iter()
+            .filter(|m| m.contains("'fails and breaks a pass'"))
+            .count(),
+        1
+    );
+    assert_eq!(
+        messages
+            .iter()
+            .filter(|m| m.contains("a pass failed to record"))
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn a_failed_frame_does_not_leak_its_diagnostics_into_the_next_report() {
+    let mut renderer = null_builder()
+        .with_feature(FailsThenLosesDevice)
+        .build()
+        .expect("renderer");
+    let input = one_view(&mut renderer, Format::Rgba8Unorm);
+    assert!(matches!(renderer.render_frame(&input), Err(RenderError::DeviceLost)));
+
+    renderer.recover().expect("recover");
+    let report = renderer.render_frame(&input).expect("frame after recovery");
+
+    assert!(report.diagnostics.is_empty(), "{:?}", report.diagnostics);
 }
 
 #[test]

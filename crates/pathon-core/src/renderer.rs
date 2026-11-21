@@ -249,13 +249,17 @@ impl Renderer {
             for surface in presents {
                 self.device.discard_surface(surface);
             }
+            self.drop_frame_results();
             return Err(error);
         }
         let mut presented = Ok(());
         for surface in presents {
             presented = presented.and(self.device.present_surface(surface));
         }
-        presented?;
+        if let Err(error) = presented {
+            self.drop_frame_results();
+            return Err(error.into());
+        }
         self.end_frame();
         report.captures = std::mem::take(&mut self.frame_captures);
         report.diagnostics = std::mem::take(&mut self.frame_diagnostics);
@@ -293,12 +297,20 @@ impl Renderer {
             let Some(output) = self.acquire_output(view.target, &mut Vec::new())? else {
                 continue;
             };
-            self.record_view(view, input, output, &mut commands)?;
+            if let Err(error) = self.record_view(view, input, output, &mut commands) {
+                self.drop_frame_results();
+                return Err(error);
+            }
         }
         self.end_frame();
+        self.drop_frame_results();
+        Ok(commands)
+    }
+
+    // A failed frame must not leak its captures and diagnostics (already logged) into the next report.
+    fn drop_frame_results(&mut self) {
         self.frame_captures.clear();
         self.frame_diagnostics.clear();
-        Ok(commands)
     }
 
     fn ensure_device(&self) -> Result<(), RenderError> {
@@ -403,11 +415,14 @@ impl Renderer {
             release: &mut self.release,
             frame: self.frame,
         };
-        let run = self.runner.run_view(view.target, output, sizes, fill, env)?;
-
-        for diagnostic in &run.diagnostics {
+        let mut diagnostics = Vec::new();
+        let run = self
+            .runner
+            .run_view(view.target, output, sizes, fill, env, &mut diagnostics);
+        for diagnostic in &diagnostics {
             self.report(diagnostic);
         }
+        let run = run?;
         commands.append(run.commands);
         self.frame_captures.extend(run.capture);
         Ok((run.stats, run.compiled))
@@ -473,4 +488,63 @@ impl Renderer {
 fn view_id(target: TargetId) -> ViewId {
     let raw = target.raw();
     ViewId((u64::from(raw.generation()) << 32) | u64::from(raw.index()))
+}
+
+#[cfg(test)]
+mod tests {
+    use pathon_api::graph::{PassDesc, Stage};
+    use pathon_api::{Camera, RenderFeature};
+    use pathon_rhi::Backend;
+
+    use super::*;
+
+    // Fails to record and leaves behind a pass that reports the device lost, so the same frame ends in an error.
+    struct FailsThenLosesDevice;
+
+    impl RenderFeature for FailsThenLosesDevice {
+        fn name(&self) -> &'static str {
+            "fails then loses device"
+        }
+
+        fn stage(&self) -> Stage {
+            Stage::PostProcess
+        }
+
+        fn record(&mut self, ctx: &mut RecordCtx<'_>) -> Result<(), RhiError> {
+            let pass = ctx
+                .graph()
+                .add_pass(PassDesc::new("loses device", Stage::PostProcess).side_effect());
+            pass.record(|_| Err(RhiError::DeviceLost));
+            Err(RhiError::InvalidHandle("broken pack"))
+        }
+    }
+
+    #[test]
+    fn view_diagnostics_are_reported_when_the_frame_then_fails() {
+        let mut renderer = Renderer::builder()
+            .with_device_request(DeviceRequest {
+                backend: Some(Backend::Null),
+                ..DeviceRequest::default()
+            })
+            .with_feature(FailsThenLosesDevice)
+            .build()
+            .expect("renderer");
+        let target = renderer
+            .add_offscreen_target(PhysicalSize::new(64, 32), Format::Rgba8Unorm)
+            .expect("offscreen target");
+        let input = FrameInput {
+            views: vec![ViewInput {
+                target,
+                camera: Camera::default(),
+            }],
+            ..FrameInput::default()
+        };
+        let mut commands = CommandList::new();
+
+        let result = renderer.record_views(&input, &mut commands, &mut Vec::new(), &mut FrameReport::default());
+
+        assert!(matches!(result, Err(RenderError::DeviceLost)));
+        let reported: Vec<&str> = renderer.frame_diagnostics.iter().map(|d| d.code).collect();
+        assert_eq!(reported, ["F0105"]);
+    }
 }

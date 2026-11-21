@@ -59,7 +59,7 @@ impl Registry {
     }
 
     // Takes the feature out of the frame for good, wherever it failed.
-    pub(crate) fn disable(&mut self, index: usize, diagnostic: &Diagnostic) {
+    fn disable(&mut self, index: usize, diagnostic: &Diagnostic) {
         pathon_diag::emit(diagnostic);
         self.mark_disabled(index, diagnostic);
     }

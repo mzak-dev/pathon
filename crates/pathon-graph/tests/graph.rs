@@ -609,3 +609,60 @@ fn buffers_with_disjoint_lifetimes_share_memory() {
     }
     assert_eq!(pool.created_total(), 2);
 }
+
+fn buffer_graph(device: &NullDevice) -> FrameGraph {
+    let buffer = device
+        .create_buffer(&pathon_rhi_types::BufferDesc {
+            label: "imported",
+            size: 64,
+            usage: BufferUsage::COPY_DST | BufferUsage::VERTEX | BufferUsage::STORAGE,
+        })
+        .expect("buffer");
+    let mut graph = FrameGraph::new();
+    let imported = graph.import_buffer("imported", buffer, 64, Access::COPY_DST, Access::VERTEX);
+    let scratch = graph.create_buffer("scratch", GraphBufferDesc::new(64, BufferUsage::empty()));
+    let mut pass = graph.add_pass(PassDesc::new("fill", Stage::Opaque));
+    let scratch = pass.write_buffer(scratch, Access::SHADER_WRITE);
+    pass.modify_buffer(imported, Access::SHADER_WRITE | Access::SHADER_READ);
+    pass.record(|_| Ok(()));
+    let mut pass = graph.add_pass(PassDesc::new("use", Stage::Tonemap));
+    pass.read_buffer(scratch, Access::SHADER_READ);
+    pass.record(|_| Ok(()));
+    graph
+}
+
+#[test]
+fn a_stable_graph_with_buffers_compiles_once() {
+    let device = NullDevice::new();
+    let mut cache = pathon_graph::GraphCache::new();
+    for _ in 0..5 {
+        cache
+            .compile(&buffer_graph(&device), FrameSizes::same(SIZE))
+            .expect("compiles");
+    }
+    assert_eq!(
+        cache.compilations(),
+        1,
+        "a new buffer id every frame must not invalidate"
+    );
+}
+
+#[test]
+fn an_untouched_imported_buffer_still_ends_in_its_final_state() {
+    let device = NullDevice::new();
+    let buffer = device
+        .create_buffer(&pathon_rhi_types::BufferDesc {
+            label: "idle",
+            size: 64,
+            usage: BufferUsage::COPY_DST | BufferUsage::VERTEX,
+        })
+        .expect("buffer");
+    let mut graph = FrameGraph::new();
+    graph.import_buffer("idle", buffer, 64, Access::COPY_DST, Access::VERTEX);
+
+    let execution = run(graph, &device, &mut ResourcePool::new(), 0);
+    assert_eq!(buffer_accesses(&execution.commands), [Access::VERTEX]);
+    device
+        .submit(execution.commands)
+        .expect("buffer barriers pass null validation");
+}

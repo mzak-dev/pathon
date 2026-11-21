@@ -103,7 +103,10 @@ fn view_snapshot(index: usize, capture: &GraphCapture) -> ViewSnapshot {
         .resources
         .iter()
         .map(|resource| {
-            let alias_group = match (resource.imported, physical_target(resource)) {
+            let alias_group = match (
+                resource.imported || resource.kind == CapturedKind::History,
+                physical_target(resource),
+            ) {
                 (false, Some(target)) => {
                     let next = groups.len();
                     Some(*groups.entry(target).or_insert(next))

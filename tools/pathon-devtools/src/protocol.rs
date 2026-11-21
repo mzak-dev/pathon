@@ -51,15 +51,21 @@ pub struct BarrierSnapshot {
     pub range: String,
 }
 
+fn texture_kind() -> String {
+    "tekstura".to_owned()
+}
+
 #[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
 pub struct ResourceSnapshot {
     pub name: String,
     // "tekstura", "bufor" or "historia".
+    #[serde(default = "texture_kind")]
     pub kind: String,
     pub imported: bool,
     pub format: Option<String>,
     pub size: Option<(u32, u32)>,
     // Buffers only.
+    #[serde(default)]
     pub bytes: Option<u64>,
     pub mips: u32,
     pub layers: u32,
@@ -76,7 +82,9 @@ pub struct StatsSnapshot {
     pub passes_live: usize,
     pub logical_textures: usize,
     pub physical_textures: usize,
+    #[serde(default)]
     pub logical_buffers: usize,
+    #[serde(default)]
     pub physical_buffers: usize,
 }
 
@@ -128,5 +136,17 @@ mod tests {
             ..Snapshot::default()
         };
         assert_eq!(Snapshot::from_line(&snapshot.to_line()).expect("parses"), snapshot);
+    }
+
+    #[test]
+    fn a_snapshot_from_before_buffers_and_history_still_loads() {
+        let older = r#"{"frame":1,"frame_ms":1.0,"views":[{"index":0,"passes":[],"resources":[{"name":"a","imported":false,"format":null,"size":null,"mips":1,"layers":1,"usage":[],"alias_group":null,"lifetime":null,"versions":1}],"edges":[],"final_barriers":[],"stats":{"passes_total":1,"passes_live":1,"logical_textures":1,"physical_textures":1}}],"features":[],"diagnostics":[]}"#;
+
+        let snapshot = Snapshot::from_line(older).expect("an older snapshot parses");
+
+        let resource = &snapshot.views[0].resources[0];
+        assert_eq!(resource.kind, "tekstura");
+        assert_eq!(resource.bytes, None);
+        assert_eq!(snapshot.views[0].stats.logical_buffers, 0);
     }
 }

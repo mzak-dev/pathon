@@ -81,19 +81,27 @@ impl RenderFeature for Pack {
 
 ## Co widzi paczka
 
-ADR-0012: `pathon_api::graph` re-eksportuje tylko to, co służy do deklarowania passów: `GraphBuilder`, `PassBuilder`, `PassContext`, `PassDesc`, `Stage`, `GraphTextureDesc`, `GraphSize`, `GraphBufferDesc`, `TextureHandle`, `BufferHandle`, `HistoryTexture`. `RecordCtx::graph()` zwraca `GraphBuilder`, który pozwala deklarować zasoby i passy oraz czytać ich opis; kompilacja, wykonanie, cache i pule należą do rdzenia, a rdzeń, devtools i testy grafu korzystają z `pathon-graph` bezpośrednio. Konstruktory kontekstów (`SetupCtx::new`, `PrepareCtx::new`, `RecordCtx::new`) są `#[doc(hidden)]` — woła je tylko rdzeń.
+ADR-0012: `pathon_api::graph` re-eksportuje tylko to, co służy do deklarowania passów: `GraphBuilder`, `PassBuilder`, `PassContext`, `PassDesc`, `Stage`, `GraphTextureDesc`, `GraphSize`, `GraphBufferDesc`, `TextureHandle`, `BufferHandle`, `HistoryTexture`. `RecordCtx::graph()` zwraca `GraphBuilder`, który pozwala deklarować zasoby i passy oraz czytać ich opis; kompilacja, wykonanie, cache i pule należą do rdzenia, a rdzeń, devtools i testy grafu korzystają z `pathon-graph` bezpośrednio. `add_pass` zużywa builder — kolejny pass przez `ctx.graph()` albo `reborrow()`. Konstruktory kontekstów (`SetupCtx::new`, `PrepareCtx::new`, `RecordCtx::new`) mają `#[doc(hidden)]`, co tylko chowa je w dokumentacji; granicą jest to, że paczka nie nazwie `FrameGraph` przez `pathon-api`.
 
 Wnętrze grafu nie jest widoczne dla paczki:
 
-```rust,compile_fail
+```rust,compile_fail,E0432
 use pathon_api::graph::GraphCache;
 ```
 
-```rust,compile_fail
+```rust,compile_fail,E0432
 use pathon_api::graph::ResourcePool;
 ```
 
-```rust,compile_fail
+```rust,compile_fail,E0432
+use pathon_api::graph::HistoryStore;
+```
+
+```rust,compile_fail,E0432
+use pathon_api::graph::FrameGraph;
+```
+
+```rust,compile_fail,E0599
 use pathon_api::graph::Stage;
 use pathon_api::rhi::RhiError;
 use pathon_api::{RecordCtx, RenderFeature};
@@ -111,6 +119,33 @@ impl RenderFeature for Pack {
 
     fn record(&mut self, ctx: &mut RecordCtx<'_>) -> Result<(), RhiError> {
         let _ = ctx.graph().compile(todo!());
+        Ok(())
+    }
+}
+```
+
+Kilka passów z jednego `let mut g = ctx.graph();` — przez `reborrow()`:
+
+```rust
+use pathon_api::graph::{PassDesc, Stage};
+use pathon_api::rhi::RhiError;
+use pathon_api::{RecordCtx, RenderFeature};
+
+struct Pack;
+
+impl RenderFeature for Pack {
+    fn name(&self) -> &'static str {
+        "two-passes"
+    }
+
+    fn stage(&self) -> Stage {
+        Stage::Opaque
+    }
+
+    fn record(&mut self, ctx: &mut RecordCtx<'_>) -> Result<(), RhiError> {
+        let mut g = ctx.graph();
+        g.reborrow().add_pass(PassDesc::new("first", Stage::Opaque));
+        g.add_pass(PassDesc::new("second", Stage::Opaque));
         Ok(())
     }
 }

@@ -47,6 +47,12 @@ impl<'graph> GraphBuilder<'graph> {
         self.graph.history_texture(name, desc)
     }
 
+    pub fn reborrow(&mut self) -> GraphBuilder<'_> {
+        GraphBuilder {
+            graph: &mut *self.graph,
+        }
+    }
+
     // Takes `self` so the pass can outlive the temporary `ctx.graph()`, as it did with `&mut FrameGraph`.
     pub fn add_pass(self, desc: PassDesc) -> PassBuilder<'graph> {
         self.graph.add_pass(desc)

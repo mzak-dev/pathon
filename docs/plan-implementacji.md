@@ -68,7 +68,7 @@ Paczka deklaruje konkretne bity (np. `SHADER_INT64_ATOMIC_MIN_MAX`), nie profil.
 
 ## Ścieżka minimalna i linia cięcia
 
-**Ścieżka minimalna do pierwszej pełnej klatki (★):** M0-00…M0-10, M1-01…M1-06, M2-01…M2-06, M2-09…M2-11, M2-18, M2-19, M3-01…M3-04, M4-00…M4-06, M4-09, M4-11, M4-20.
+**Ścieżka minimalna do pierwszej pełnej klatki (★):** M0-00…M0-10, M1-01…M1-06, M2-01…M2-06, M2-09…M2-11, M2-18, M2-19, M2-20…M2-24, M3-01…M3-04, M4-00…M4-06, M4-09, M4-11, M4-20.
 
 **Można przesunąć bez szkody dla architektury:** M2-12 profil, M2-13 graph-viz, M3-05 cache na dysku, M3-06 hot-reload, M4-08 niebo, M4-12 skinning, M5-06 SSR, M5-09 picking, M5-11 FSR 3, M6-05 tryb A w Bevy, M7-06 integracja z edytorem Godota, M7-08 RT w Godocie, cały M8 i M9.
 
@@ -219,11 +219,11 @@ Hosty (M6, M7) nie są na ścieżce minimalnej, ale ich szew jest: M2-19 i M4-20
   - **Stan 20.11.2026:** zamiast paczki z hookiem materiału jest OnDemandConsumer (sloty na żądanie) — prawdziwe hooki WGSL przyjdą z M4-03.
   - Paczki testowe: podmiana roli Geometry, upscaler zmieniający `render_size`, paczka z hookiem materiału, atrapa paczki vendorowej z `Cmd::External`.
   - **Gotowe gdy:** wszystkie 4 działają bez zmian w `pathon-core` i `pathon-api`.
-- [x] **M2-15 · Spike backendu ash (wyrzucany)**
+- [ ] **M2-15 · Spike backendu ash (wyrzucany)**
   - Clear, trójkąt, compute **oraz** tekstura z samplerem, tablica bindless, resize / present, zasób z barierami per mip.
   - Papierowe mapowanie RHI v1 na `RenderingDevice` Godota (bez kodu), żeby backend z M7 nie wymusił przebudowy API na końcu projektu.
   - **Gotowe gdy:** lista poprawek `rhi-types` wniesiona przed M3.
-  - **Stan 21.11.2026:** spike zrobiony, lista 16 zmian (6 przed M3) w [spike-ash.md](spike-ash.md); same zmiany to osobne taski, nie zostały wykonane.
+  - **Stan 21.11.2026:** lista zmian wniesiona ([spike-ash.md](spike-ash.md), po przeglądzie), zadania M2-20…M2-24; w prototypie **nie uruchomiono** trójkąta, tekstury z samplerem ani resize / present. Odhaczyć po ich uruchomieniu.
 - [x] **M2-16 · Benchmark narzutu nagrywania** — ta sama scena przez API enkodera i bezpośrednio przez wgpu. **Gotowe gdy:** wynik w `docs/bench/`; jeśli narzut przekracza próg ustalony w ADR, backend wgpu przechodzi na nagrywanie bezpośrednie (bez zmian w API paczek).
   - **Stan 20.11.2026:** narzut listy komend +4–6% (próg 15%, ADR-0009) — backend wgpu zostaje przy liście komend ([docs/bench](bench/README.md)).
 - [x] **M2-17 · Przykład `multi-view`** — 2 okna + cel offscreen. **Gotowe gdy:** działa natywnie na 3 systemach. *(Uruchomiony na Windows; na Linux/macOS buduje się w CI.)*
@@ -237,6 +237,11 @@ Hosty (M6, M7) nie są na ścieżce minimalnej, ale ich szew jest: M2-19 i M4-20
   - Tryb B: wycinek z M2-18 renderuje się do tekstury hosta (`import_texture`), host ją wyświetla.
   - Tryb A: paczka testowa z M2-14 działa jako post-process na teksturze hosta przez `record_frame` + `interop::encode_into`.
   - **Gotowe gdy:** obraz w trybie B jest identyczny z trybem C na tym samym backendzie, a w `pathon-core` nie przybyła żadna zależność.
+- [ ] **M2-20 · Kontrakty `rhi-types` + ADR** ★ — dokument i ADR z decyzjami ze [spike-ash.md](spike-ash.md) #6: poprzedni stan w `TextureAccess`, wątki (które metody `DeviceApi` poza wątkiem renderu), konwencja współrzędnych, polityka rozrostu struktur, poprawione `bytes_per_row`. **Gotowe gdy:** ADR i `docs/crates/pathon-rhi-types.md` istnieją, a test konformancji `rhi-null` i `rhi-wgpu` sprawdza stan zachowany po `write_*` i `SetBindGroup` przed `Set*Pipeline`.
+- [ ] **M2-21 · Podział `Access::SHADER_READ`** ★ — `SAMPLED`, `STORAGE_READ`, `STORAGE_WRITE`; poprawka `usage_for` w `pathon-graph` (`STORAGE_READ` → `TextureUsage::STORAGE`), ostrzejszy `is_valid_state`, walidacja w `rhi-null`. **Gotowe gdy:** test grafu, w którym pass czyta teksturę storage bez zapisującego passa, dostaje `STORAGE`, a `SAMPLED\|COPY_SRC` i `SAMPLED\|STORAGE_READ` są odrzucone.
+- [ ] **M2-22 · Tablice bindingów w RHI** ★ — `count` w `BindGroupLayoutEntry`, `TextureViewArray` / `SamplerArray`, limit samplerów, reguła „bez uniform buffera w grupie z tablicą”, decyzja o modelu aktualizacji. **Gotowe gdy:** test `rhi-wgpu` na GPU czyta element tablicy 1024 tekstur, a `rhi-null` odrzuca grupę z tablicą i uniform bufferem.
+- [ ] **M2-23 · Immediates i overrides** ★ — `Features::IMMEDIATES`, `immediate_size` w opisach potoków, `Command::SetImmediates` mieszczący się w 32 B, nazwane overrides `f64` rozwiązywane w naga. **Gotowe gdy:** test GPU przekazuje wartość przez immediate i przez override, a rozmiar `Command` pozostaje ≤ 32 B (test).
+- [ ] **M2-24 · Pipeline cache i źródło shaderów** ★ — blob cache w `DeviceRequest` + getter; ADR: WGSL czy SPIR-V w `create_shader_module`; lista pól klucza potoku (bias, stencil, polygon mode, alpha-to-coverage). **Gotowe gdy:** test round-trip blobu na wgpu/Vulkanie i ADR z decyzją przed M3-01.
 
 ## M3 — Shadery
 
@@ -268,12 +273,12 @@ Hosty (M6, M7) nie są na ścieżce minimalnej, ale ich szew jest: M2-19 i M4-20
   - **Gotowe gdy:** ten sam materiał renderuje się w forward i w testowym compute ewaluującym punkt.
 - [ ] **M4-04 · Bindless** ★ — profil Desktop: `binding_array`; profil Web: bind group per materiał, ten sam indeks logiczny. **Gotowe gdy:** ta sama scena na obu profilach.
 - [ ] **M4-05 · `pathon-pbr`** ★ — prepass (`depth`, `normals`, `motion`, `material_id`, na żądanie `roughness`, `albedo`, `depth_pyramid`), clustered forward+ (przypisanie świateł w compute, także na Web). **Gotowe gdy:** golden image sceny testowej.
-- [ ] **M4-06 · `pathon-ibl`** ★ — environment map, prefiltrowanie, LUT BRDF; bez tego metale są czarne. **Gotowe gdy:** golden image z metalami.
+- [ ] **M4-06 · `pathon-ibl`** ★ — environment map, prefiltrowanie, LUT BRDF; bez tego metale są czarne. Przed startem: `view_formats` i zgodność z cube w `TextureDesc` ([spike-ash.md](spike-ash.md) #4; termin twardy M5-07). **Gotowe gdy:** golden image z metalami.
 - [ ] **M4-07 · `pathon-shadow`** — CSM + PCF, rola Shadows. **Gotowe gdy:** golden image z cieniami.
 - [ ] **M4-08 · `pathon-sky`** — atmosfera; jako źródło dla IBL. **Gotowe gdy:** golden image.
 - [ ] **M4-09 · `pathon-post`** ★ — ekspozycja (slot `exposure`), bloom, tonemapping SDR. **Gotowe gdy:** golden image.
 - [ ] **M4-10 · Scena testowa** — loader glTF tylko w `examples/`. **Gotowe gdy:** scena ładuje się na 3 systemach i w Chrome.
-- [ ] **M4-11 · Culling** ★ — frustum na CPU; na Desktop culling na GPU + indirect (`MULTI_DRAW_INDIRECT_COUNT` na DX12 i Vulkanie; na Metalu wariant bez count). **Gotowe gdy:** liczba draw calli spada w pomiarze, golden images bez zmian.
+- [ ] **M4-11 · Culling** ★ — frustum na CPU; na Desktop culling na GPU + indirect (`MULTI_DRAW_INDIRECT_COUNT` na DX12 i Vulkanie; na Metalu wariant bez count). Dołożyć komendy indirect (`DrawIndirect`, `DispatchIndirect`, `MultiDraw…`, `…Count`; limit 32 B, powtórzyć benchmark ADR-0009), patrz [spike-ash.md](spike-ash.md). **Gotowe gdy:** liczba draw calli spada w pomiarze, golden images bez zmian.
 - [ ] **M4-12 · `pathon-skin`** — skinning w compute, morph targets, pozycje poprzedniej klatki dla wektorów ruchu (layout ustalony w M4-01). **Gotowe gdy:** animowany model z poprawnym TAA (bez smużenia) w M5.
 - [ ] **M4-13 · Tekstury** — kompresja według matrycy `Caps` (iOS bez BCn), mipmapy w compute, opcjonalny `pathon-ktx2`. **Gotowe gdy:** ta sama scena z teksturami BCn na desktopie i fallbackiem tam, gdzie BCn brak.
 - [ ] **M4-14 · `pathon-debug`** — linie, gizmo, AABB, wireframe, podgląd slotów. **Gotowe gdy:** podgląd każdego slotu bazowego w przykładzie.

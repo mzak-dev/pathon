@@ -20,8 +20,10 @@ fn container() -> Result<HtmlElement, PlatformError> {
     }
 }
 
-// Attached here, not by winit, so the container size can be read at once; an unsized container falls back to `desc`.
-// winit ignores these attributes for `inner_size` until its first ResizeObserver tick (see `canvas_size`).
+// Attached here, not by winit, so the canvas can be measured at once. A container without a height makes `height: 100%`
+// compute to auto, so the canvas then measures the container width times its intrinsic ratio; `desc.size` is used
+// only when nothing is laid out yet (zero width or height). winit ignores the backing size for `inner_size` until its
+// first ResizeObserver tick (see `canvas_size`).
 pub(crate) fn create_canvas(desc: &WindowDesc) -> Result<HtmlCanvasElement, PlatformError> {
     let container = container()?;
     let canvas = container

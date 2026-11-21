@@ -1600,8 +1600,10 @@ name = "pathon-example-web"
 version = "0.0.1"
 dependencies = [
  "console_error_panic_hook",
+ "log",
  "pathon",
  "wasm-bindgen",
+ "web-sys",
 ]
 
 [[package]]

@@ -14,8 +14,9 @@ use web_sys::Element;
 use super::{FrameContext, RunError, rhi_size, surface_target};
 
 const CONTAINER_ID: &str = "pathon";
-const NO_WEBGPU_ID: &str = "pathon-no-webgpu";
+const MESSAGE_ID: &str = "pathon-no-webgpu";
 const NO_WEBGPU_MESSAGE: &str = "Ta strona wymaga przeglądarki z WebGPU (Chrome, Edge, Safari 26, Firefox).\nThis page needs a browser with WebGPU (Chrome, Edge, Safari 26, Firefox).";
+const DEVICE_CREATION_MESSAGE: &str = "Nie udało się utworzyć urządzenia WebGPU (szczegóły w konsoli).\nCould not create a WebGPU device (see the console).";
 
 type Slot<T> = Rc<RefCell<Option<T>>>;
 type FrameHook = Box<dyn FnMut(&mut Renderer, &FrameReport)>;
@@ -60,11 +61,11 @@ fn browser_has_webgpu() -> bool {
         .is_some_and(|gpu| !gpu.is_undefined() && !gpu.is_null())
 }
 
-fn show_no_webgpu_message() {
+fn show_message(text: &str) {
     let Some(document) = web_sys::window().and_then(|window| window.document()) else {
         return;
     };
-    if document.get_element_by_id(NO_WEBGPU_ID).is_some() {
+    if document.get_element_by_id(MESSAGE_ID).is_some() {
         return;
     }
     let Some(container) = document
@@ -78,18 +79,19 @@ fn show_no_webgpu_message() {
         canvas.remove();
     }
     if let Ok(message) = document.create_element("p") {
-        message.set_id(NO_WEBGPU_ID);
-        message.set_text_content(Some(NO_WEBGPU_MESSAGE));
+        message.set_id(MESSAGE_ID);
+        message.set_text_content(Some(text));
         let _ = message.set_attribute("style", "white-space: pre-line");
         let _ = container.append_child(&message);
     }
 }
 
-fn is_missing_gpu(error: &RenderError) -> bool {
-    matches!(
-        error,
-        RenderError::Rhi(RhiError::NoAdapter(_) | RhiError::DeviceCreation(_))
-    )
+fn message_for(error: &RenderError) -> Option<&'static str> {
+    match error {
+        RenderError::Rhi(RhiError::NoAdapter(_)) => Some(NO_WEBGPU_MESSAGE),
+        RenderError::Rhi(RhiError::DeviceCreation(_)) => Some(DEVICE_CREATION_MESSAGE),
+        _ => None,
+    }
 }
 
 impl<Scene: FnMut(&FrameContext<'_>) -> Vec<ViewInput>> RunnerApp<Scene> {
@@ -139,9 +141,9 @@ impl<Scene: FnMut(&FrameContext<'_>) -> Vec<ViewInput>> RunnerApp<Scene> {
     fn fail(&mut self, ctx: &mut dyn PlatformCtx, error: &RunError) {
         log::error!("{error}");
         if let RunError::Render(render_error) = error
-            && is_missing_gpu(render_error)
+            && let Some(text) = message_for(render_error)
         {
-            show_no_webgpu_message();
+            show_message(text);
         }
         self.stop(ctx);
     }
@@ -302,7 +304,7 @@ pub fn run_with_hook(
 ) -> Result<(), RunError> {
     if !browser_has_webgpu() {
         log::error!("navigator.gpu is missing: this browser has no WebGPU");
-        show_no_webgpu_message();
+        show_message(NO_WEBGPU_MESSAGE);
         return Ok(());
     }
     let now = now_ms();

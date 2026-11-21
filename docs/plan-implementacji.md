@@ -219,10 +219,11 @@ Hosty (M6, M7) nie są na ścieżce minimalnej, ale ich szew jest: M2-19 i M4-20
   - **Stan 20.11.2026:** zamiast paczki z hookiem materiału jest OnDemandConsumer (sloty na żądanie) — prawdziwe hooki WGSL przyjdą z M4-03.
   - Paczki testowe: podmiana roli Geometry, upscaler zmieniający `render_size`, paczka z hookiem materiału, atrapa paczki vendorowej z `Cmd::External`.
   - **Gotowe gdy:** wszystkie 4 działają bez zmian w `pathon-core` i `pathon-api`.
-- [ ] **M2-15 · Spike backendu ash (wyrzucany)**
+- [x] **M2-15 · Spike backendu ash (wyrzucany)**
   - Clear, trójkąt, compute **oraz** tekstura z samplerem, tablica bindless, resize / present, zasób z barierami per mip.
   - Papierowe mapowanie RHI v1 na `RenderingDevice` Godota (bez kodu), żeby backend z M7 nie wymusił przebudowy API na końcu projektu.
   - **Gotowe gdy:** lista poprawek `rhi-types` wniesiona przed M3.
+  - **Stan 21.11.2026:** spike zrobiony, lista 16 zmian (6 przed M3) w [spike-ash.md](spike-ash.md); same zmiany to osobne taski, nie zostały wykonane.
 - [x] **M2-16 · Benchmark narzutu nagrywania** — ta sama scena przez API enkodera i bezpośrednio przez wgpu. **Gotowe gdy:** wynik w `docs/bench/`; jeśli narzut przekracza próg ustalony w ADR, backend wgpu przechodzi na nagrywanie bezpośrednie (bez zmian w API paczek).
   - **Stan 20.11.2026:** narzut listy komend +4–6% (próg 15%, ADR-0009) — backend wgpu zostaje przy liście komend ([docs/bench](bench/README.md)).
 - [x] **M2-17 · Przykład `multi-view`** — 2 okna + cel offscreen. **Gotowe gdy:** działa natywnie na 3 systemach. *(Uruchomiony na Windows; na Linux/macOS buduje się w CI.)*

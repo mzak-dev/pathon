@@ -43,6 +43,7 @@ pub const CODES: &[CodeInfo] = &[
     code("F0103", "feature runs its fallback path"),
     code("F0104", "feature failed during setup"),
     code("F0105", "feature failed while recording a frame"),
+    code("F0106", "second view of the same target in one frame skipped"),
     code("F0201", "features require different backends"),
     code("P0001", "browser without WebGPU"),
 ];

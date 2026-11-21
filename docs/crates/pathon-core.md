@@ -27,7 +27,7 @@ Paczka, której `record` zwróci błąd, jest wyłączana z F0105 i znika z kole
 
 Cache grafu i `ViewId` są per cel, nie per pozycja widoku: zmiana kolejności widoków nie rekompiluje grafów, a odtworzony cel dostaje nowe `ViewId` ([ADR-0010](../adr/0010-tozsamosc-widoku-i-runner-grafu.md)).
 
-Jeden widok na cel w klatce. Drugi widok tego samego celu zachowuje się zależnie od jego rodzaju: offscreen — nadpisuje pierwszy; okno — błąd R0111; zaimportowana tekstura — zły stan wejściowy (zaczyna od `before`, choć pierwszy widok zostawił `after`). Renderer nie wykrywa duplikatów.
+Jeden widok na cel w klatce ([ADR-0013](../adr/0013-dwa-widoki-na-celu-i-paczki-po-resecie.md)). Drugi widok tego samego celu jest pomijany przed pobraniem wyjścia (okno nie jest pobierane dwa razy), liczy się w `FrameReport::skipped_views` i zgłasza [F0106](../diag/F0106.md); w trybie A trafia ona tylko do logu.
 
 `FrameReport::diagnostics` zbiera diagnostyki z tej klatki (F0105, ostrzeżenia grafu). Gdy klatka kończy się błędem, jej diagnostyki trafiają do logu, ale nie do następnego raportu. Po `set_capture(true)` `FrameReport::captures` ma jeden `GraphCapture` na widok, a `feature_details()` opisuje każdą paczkę (status, etap, priorytet, rola, kolejność). Z tego korzystają [devtools](../devtools.md).
 

@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use pathon_api::{RecordCtx, Shared, Slot, Slots, TaskPool, ViewCtx, ViewId};
@@ -95,6 +96,13 @@ impl Renderer {
     fn report(&mut self, diagnostic: &Diagnostic) {
         pathon_diag::emit(diagnostic);
         self.frame_diagnostics.push(diagnostic.clone());
+    }
+
+    fn report_duplicate_target(&mut self, index: usize, target: TargetId) {
+        self.report(&Diagnostic::warning(
+            "F0106",
+            format!("view {index} uses target {target:?}, already used by an earlier view in this frame; skipped"),
+        ));
     }
 
     // Data packs share with each other and with the application (scene, lights, settings), keyed by type.
@@ -273,7 +281,13 @@ impl Renderer {
         presents: &mut Vec<SurfaceId>,
         report: &mut FrameReport,
     ) -> Result<(), RenderError> {
-        for view in &input.views {
+        let mut used_targets = HashSet::new();
+        for (index, view) in input.views.iter().enumerate() {
+            if !used_targets.insert(view.target) {
+                self.report_duplicate_target(index, view.target);
+                report.skipped_views += 1;
+                continue;
+            }
             let Some(output) = self.acquire_output(view.target, presents)? else {
                 report.skipped_views += 1;
                 continue;
@@ -299,10 +313,15 @@ impl Renderer {
     }
 
     fn record_offscreen_views(&mut self, input: &FrameInput, commands: &mut CommandList) -> Result<(), RenderError> {
-        for view in &input.views {
+        let mut used_targets = HashSet::new();
+        for (index, view) in input.views.iter().enumerate() {
             let target = self.targets.get(view.target).ok_or(RenderError::UnknownTarget)?;
             if let TargetKind::Surface { .. } = target.kind {
                 return Err(RenderError::SurfaceInRecordFrame);
+            }
+            if !used_targets.insert(view.target) {
+                self.report_duplicate_target(index, view.target);
+                continue;
             }
             let Some(output) = self.acquire_output(view.target, &mut Vec::new())? else {
                 continue;

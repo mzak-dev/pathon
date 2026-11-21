@@ -659,7 +659,62 @@ fn two_views_on_one_target_still_render() {
             ..FrameInput::default()
         })
         .expect("frame");
-    assert_eq!(report.views.len(), 2);
+    assert_eq!(report.views.len(), 1);
+    assert_eq!(report.skipped_views, 1);
+    assert!(report.diagnostics.iter().any(|d| d.code == "F0106"));
+}
+
+#[test]
+fn a_second_view_of_the_same_window_is_skipped_with_f0106() {
+    let mut renderer = null_builder().build().expect("renderer");
+    let window = renderer
+        .add_window(SurfaceTarget::new(Arc::new(NoWindow), SIZE, 1.0))
+        .expect("surface");
+    let view = ViewInput {
+        target: window,
+        camera: Camera::default(),
+    };
+    let input = FrameInput {
+        views: vec![view, view],
+        ..FrameInput::default()
+    };
+
+    let report = renderer.render_frame(&input).expect("frame");
+    assert_eq!(report.skipped_views, 1);
+    assert_eq!(report.views.len(), 1);
+    assert_eq!(report.diagnostics.iter().filter(|d| d.code == "F0106").count(), 1);
+
+    renderer.render_frame(&input).expect("the next frame is fine too");
+}
+
+// Mode A has no `FrameReport`, so the observable effect is that the target is written once.
+#[test]
+fn a_second_view_of_the_same_imported_texture_is_skipped_in_mode_a() {
+    let device = Arc::new(Device::null());
+    let texture = host_texture(&device);
+    let mut renderer = Renderer::builder()
+        .with_device(Arc::clone(&device))
+        .with_feature(UnlitMeshPack::new())
+        .build()
+        .expect("renderer");
+    let target = renderer
+        .import_texture(texture, Access::COLOR_ATTACHMENT, Access::COPY_SRC)
+        .expect("import");
+    let view = ViewInput {
+        target,
+        camera: Camera::default(),
+    };
+    let mut command_count = |views: Vec<ViewInput>| {
+        let input = FrameInput {
+            views,
+            ..FrameInput::default()
+        };
+        renderer.record_frame(&input).expect("record").commands().len()
+    };
+
+    let single = command_count(vec![view]);
+    assert!(single > 0);
+    assert_eq!(command_count(vec![view, view]), single);
 }
 
 struct RecordsViewIds {

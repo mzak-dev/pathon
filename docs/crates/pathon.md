@@ -27,8 +27,8 @@ Ograniczenie: po utracie urządzenia surface'y okien są odtwarzane na wątku re
 
 Na `wasm32` `runtime::run` i `run_with_hook` mają te same sygnatury, ale bez wątków (`MaybeSend` w boundzie hooka nie wymaga tam `Send`).
 
-- Okna powstają od razu, renderer budowany jest asynchronicznie (`RendererBuilder::build_async` w zadaniu `wasm-bindgen-futures`). Do tego czasu klatki są pomijane.
+- Okna powstają od razu, renderer budowany jest asynchronicznie (`RendererBuilder::build_async` w zadaniu `wasm-bindgen-futures`); rozmiar okien jest odczytywany ponownie przy dodawaniu ich do renderera, więc zmiany rozmiaru w trakcie startu nie przepadają. Do tego czasu klatki są pomijane.
 - Potem każda klatka (`requestAnimationFrame`, przez platformę) wywołuje scenę, `render_frame` i hook na jedynym wątku. Utrata urządzenia: asynchroniczne `recover_async`, w tym czasie klatki są pomijane.
-- Brak WebGPU (brak `navigator.gpu` albo adaptera): runner loguje błąd i dodaje do `#pathon` (albo `<body>`) akapit `<p id="pathon-no-webgpu">` z komunikatem po polsku i angielsku, usuwając canvas. `run` zwraca `Ok`.
+- Brak WebGPU (brak `navigator.gpu`, adaptera albo nieudane tworzenie urządzenia): runner loguje błąd i dodaje do `#pathon` (albo `<body>`) akapit `<p id="pathon-no-webgpu">` z komunikatem po polsku i angielsku, usuwając canvas. `run` zwraca `Ok`.
 - Błędy po starcie (np. nieudane tworzenie renderera) trafiają do `log::error!`, bo `run` wraca, zanim przeglądarka skończy start.
 - `StdTaskPool` jest tylko natywny.

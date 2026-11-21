@@ -1,4 +1,4 @@
-use pathon_platform::{PlatformError, WindowDesc};
+use pathon_platform::{PhysicalSize, PlatformError, WindowDesc};
 use wasm_bindgen::JsCast;
 use web_sys::{HtmlCanvasElement, HtmlElement};
 
@@ -20,8 +20,8 @@ fn container() -> Result<HtmlElement, PlatformError> {
     }
 }
 
-// The canvas is attached here, not by winit, so its backing store already has the container's size when the runner
-// reads `inner_size` (the ResizeObserver of winit only reports later). An unsized container falls back to `desc`.
+// Attached here, not by winit, so the container size can be read at once; an unsized container falls back to `desc`.
+// winit ignores these attributes for `inner_size` until its first ResizeObserver tick (see `canvas_size`).
 pub(crate) fn create_canvas(desc: &WindowDesc) -> Result<HtmlCanvasElement, PlatformError> {
     let container = container()?;
     let canvas = container
@@ -60,4 +60,18 @@ pub(crate) fn create_canvas(desc: &WindowDesc) -> Result<HtmlCanvasElement, Plat
 )]
 fn physical(logical: f64, scale: f64) -> u32 {
     (logical * scale).round().max(1.0) as u32
+}
+
+// winit reports 0x0 until its first ResizeObserver tick, so the size comes from the canvas element itself.
+pub(crate) fn canvas_size(window: &winit::window::Window) -> PhysicalSize {
+    use winit::platform::web::WindowExtWebSys;
+
+    let scale = web_sys::window().map_or(1.0, |window| window.device_pixel_ratio());
+    let (width, height) = window
+        .canvas()
+        .map_or((0, 0), |canvas| (canvas.client_width(), canvas.client_height()));
+    PhysicalSize {
+        width: physical(f64::from(width), scale),
+        height: physical(f64::from(height), scale),
+    }
 }

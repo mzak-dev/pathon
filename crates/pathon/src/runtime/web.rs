@@ -3,9 +3,10 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use pathon_core::{FrameInput, FrameReport, RenderError, Renderer, RendererBuilder, TargetId, ViewInput};
-use pathon_platform::{App, Platform, PlatformCtx, PlatformEvent, WindowDesc, WindowId};
+use pathon_platform::{App, Platform, PlatformCtx, PlatformEvent, PlatformWindow, WindowDesc, WindowId};
 use pathon_rhi::{MaybeSend, PhysicalSize, RhiError, SurfaceTarget};
 use wasm_bindgen_futures::spawn_local;
 use web_sys::Element;
@@ -24,7 +25,7 @@ enum State {
     Waiting(Option<RendererBuilder>),
     Starting {
         built: Slot<Result<Renderer, RenderError>>,
-        surfaces: Vec<(WindowId, SurfaceTarget)>,
+        surfaces: Vec<(Arc<dyn PlatformWindow>, SurfaceTarget)>,
     },
     Running(Box<Running>),
     Done,
@@ -85,7 +86,10 @@ fn show_no_webgpu_message() {
 }
 
 fn is_missing_gpu(error: &RenderError) -> bool {
-    matches!(error, RenderError::Rhi(RhiError::NoAdapter(_)))
+    matches!(
+        error,
+        RenderError::Rhi(RhiError::NoAdapter(_) | RhiError::DeviceCreation(_))
+    )
 }
 
 impl<Scene: FnMut(&FrameContext<'_>) -> Vec<ViewInput>> RunnerApp<Scene> {
@@ -93,7 +97,8 @@ impl<Scene: FnMut(&FrameContext<'_>) -> Vec<ViewInput>> RunnerApp<Scene> {
         let mut surfaces = Vec::with_capacity(self.windows.len());
         for desc in &self.windows {
             let window = ctx.create_window(desc).map_err(RunError::Platform)?;
-            surfaces.push((window.id(), surface_target(&window)));
+            let surface = surface_target(&window);
+            surfaces.push((window, surface));
         }
         let builder = match surfaces.first() {
             Some((_, first)) => builder.with_compatible_surface(first.clone()),
@@ -107,12 +112,17 @@ impl<Scene: FnMut(&FrameContext<'_>) -> Vec<ViewInput>> RunnerApp<Scene> {
         Ok(State::Starting { built, surfaces })
     }
 
-    fn finish_start(mut renderer: Renderer, surfaces: Vec<(WindowId, SurfaceTarget)>) -> Result<Running, RunError> {
+    fn finish_start(
+        mut renderer: Renderer,
+        surfaces: Vec<(Arc<dyn PlatformWindow>, SurfaceTarget)>,
+    ) -> Result<Running, RunError> {
         let mut windows = Vec::with_capacity(surfaces.len());
-        for (id, surface) in surfaces {
+        for (window, mut surface) in surfaces {
+            // The window may have been sized while the device was being requested.
+            surface.size = rhi_size(window.inner_size());
             let size = surface.size;
             let target = renderer.add_window(surface).map_err(RunError::Render)?;
-            windows.push((id, target, size));
+            windows.push((window.id(), target, size));
         }
         Ok(Running {
             renderer: Some(renderer),

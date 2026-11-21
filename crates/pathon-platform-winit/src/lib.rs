@@ -38,6 +38,10 @@ impl PlatformWindow for WinitWindow {
 
     fn inner_size(&self) -> PhysicalSize {
         let size = self.0.inner_size();
+        #[cfg(target_arch = "wasm32")]
+        if size.width == 0 || size.height == 0 {
+            return web::canvas_size(&self.0);
+        }
         PhysicalSize {
             width: size.width,
             height: size.height,

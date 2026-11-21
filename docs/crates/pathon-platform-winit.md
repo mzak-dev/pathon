@@ -13,6 +13,6 @@ Ręczny test M0-05: przykład `clear` reaguje na resize i zmianę skali na Windo
 Na `wasm32` ten sam crate obsługuje przeglądarkę; nie ma osobnego crate'u platformy.
 
 - `Platform::run` używa `EventLoopExtWebSys::spawn_app` i wraca od razu — pętlą rządzi przeglądarka.
-- `create_window` tworzy `<canvas>` w elemencie o id `pathon` (albo w `<body>`), z CSS `100% × 100%`. Rozmiar bufora to rozmiar kontenera razy `devicePixelRatio` (gdy kontener ma zerowy rozmiar — rozmiar z `WindowDesc`), więc `inner_size()` jest poprawny od razu. Dalsze zmiany rozmiaru zgłasza `ResizeObserver` winita jako `Resized` w pikselach fizycznych.
+- `create_window` tworzy `<canvas>` w elemencie o id `pathon` (albo w `<body>`), z CSS `100% × 100%`. winit zgłasza `inner_size()` = 0×0 do pierwszego tyknięcia `ResizeObserver`, więc dopóki tak jest, `inner_size()` okna liczy rozmiar z elementu canvas (CSS × `devicePixelRatio`). Dalsze zmiany rozmiaru zgłasza `ResizeObserver` winita jako `Resized` w pikselach fizycznych.
 - Klatka (`App::on_frame`) idzie z `RedrawRequested`, czyli z `requestAnimationFrame`; po każdej klatce platforma prosi o następną. `about_to_wait` jest tu pomijane.
 - Ograniczenie: wiele okien na jednej stronie wywołałoby `on_frame` raz na okno; web ma jedno okno.

@@ -32,8 +32,11 @@ impl ExternalContext {
             .iter()
             .filter_map(|declared| match declared.resource {
                 ResourceRef::Texture(id, _) => objects.textures.get(id).map(|entry| (id, entry.texture.clone())),
-                // Buffers and any future non-texture reference carry no texture to track.
-                _ => None,
+                ResourceRef::Buffer(_) => None,
+                other => {
+                    log::error!("external command declares {other:?}, which the wgpu backend cannot track");
+                    None
+                }
             })
             .collect();
         let encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {

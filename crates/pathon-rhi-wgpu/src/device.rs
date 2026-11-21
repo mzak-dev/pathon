@@ -260,10 +260,11 @@ fn build_caps(adapter: &wgpu::Adapter, device: &wgpu::Device, queue: &wgpu::Queu
     let formats = Format::ALL
         .iter()
         .map(|format| {
-            let caps = if format_enabled(*format, features) {
-                convert::format_caps_from_wgpu(adapter.get_texture_format_features(convert::format_to_wgpu(*format)))
-            } else {
-                FormatCaps::empty()
+            let caps = match convert::format_to_wgpu(*format) {
+                Ok(wgpu_format) if format_enabled(*format, features) => {
+                    convert::format_caps_from_wgpu(adapter.get_texture_format_features(wgpu_format))
+                }
+                _ => FormatCaps::empty(),
             };
             (*format, caps)
         })
@@ -319,6 +320,7 @@ impl DeviceApi for WgpuDevice {
     }
 
     fn create_texture(&self, desc: &TextureDesc) -> Result<TextureId, RhiError> {
+        let format = convert::format_to_wgpu(desc.format)?;
         let texture = self.scoped(|| {
             self.device.create_texture(&wgpu::TextureDescriptor {
                 label: Some(desc.label),
@@ -326,7 +328,7 @@ impl DeviceApi for WgpuDevice {
                 mip_level_count: desc.mip_level_count,
                 sample_count: desc.sample_count,
                 dimension: convert::texture_dimension_to_wgpu(desc.dimension),
-                format: convert::format_to_wgpu(desc.format),
+                format,
                 usage: convert::texture_usage_to_wgpu(desc.usage),
                 view_formats: &[],
             })
@@ -373,11 +375,12 @@ impl DeviceApi for WgpuDevice {
     }
 
     fn create_texture_view(&self, texture: TextureId, desc: &TextureViewDesc) -> Result<TextureViewId, RhiError> {
+        let view_format = desc.format.map(convert::format_to_wgpu).transpose()?;
         let view = self.texture_entry(texture, |entry| {
             self.scoped(|| {
                 entry.texture.create_view(&wgpu::TextureViewDescriptor {
                     label: Some(entry.desc.label),
-                    format: desc.format.map(convert::format_to_wgpu),
+                    format: view_format,
                     dimension: desc.dimension.map(convert::view_dimension_to_wgpu),
                     aspect: convert::aspect_to_wgpu(desc.aspect),
                     base_mip_level: desc.base_mip,
@@ -426,13 +429,15 @@ impl DeviceApi for WgpuDevice {
         let entries: Vec<wgpu::BindGroupLayoutEntry> = desc
             .entries
             .iter()
-            .map(|entry| wgpu::BindGroupLayoutEntry {
-                binding: entry.binding,
-                visibility: convert::shader_stages_to_wgpu(entry.visibility),
-                ty: convert::binding_type_to_wgpu(entry.ty),
-                count: None,
+            .map(|entry| {
+                Ok(wgpu::BindGroupLayoutEntry {
+                    binding: entry.binding,
+                    visibility: convert::shader_stages_to_wgpu(entry.visibility),
+                    ty: convert::binding_type_to_wgpu(entry.ty)?,
+                    count: None,
+                })
             })
-            .collect();
+            .collect::<Result<_, RhiError>>()?;
         let layout = self.scoped(|| {
             self.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some(desc.label),
@@ -492,21 +497,23 @@ impl DeviceApi for WgpuDevice {
             .modules
             .get(desc.vertex.module)
             .ok_or(RhiError::InvalidHandle("shader module"))?;
-        let attributes: Vec<Vec<wgpu::VertexAttribute>> = desc
+        let attributes = desc
             .vertex_buffers
             .iter()
             .map(|buffer| {
                 buffer
                     .attributes
                     .iter()
-                    .map(|attribute| wgpu::VertexAttribute {
-                        format: convert::vertex_format_to_wgpu(attribute.format),
-                        offset: attribute.offset,
-                        shader_location: attribute.location,
+                    .map(|attribute| {
+                        Ok(wgpu::VertexAttribute {
+                            format: convert::vertex_format_to_wgpu(attribute.format)?,
+                            offset: attribute.offset,
+                            shader_location: attribute.location,
+                        })
                     })
-                    .collect()
+                    .collect::<Result<Vec<_>, RhiError>>()
             })
-            .collect();
+            .collect::<Result<Vec<_>, RhiError>>()?;
         let buffers: Vec<Option<wgpu::VertexBufferLayout<'_>>> = desc
             .vertex_buffers
             .iter()
@@ -523,13 +530,13 @@ impl DeviceApi for WgpuDevice {
             .color_targets
             .iter()
             .map(|target| {
-                Some(wgpu::ColorTargetState {
-                    format: convert::format_to_wgpu(target.format),
+                Ok(Some(wgpu::ColorTargetState {
+                    format: convert::format_to_wgpu(target.format)?,
                     blend: target.blend.map(convert::blend_to_wgpu),
                     write_mask: convert::color_writes_to_wgpu(target.write_mask),
-                })
+                }))
             })
-            .collect();
+            .collect::<Result<_, RhiError>>()?;
         let fragment = match desc.fragment {
             Some(stage) => Some(wgpu::FragmentState {
                 module: objects
@@ -542,13 +549,18 @@ impl DeviceApi for WgpuDevice {
             }),
             None => None,
         };
-        let depth_stencil = desc.depth.map(|depth| wgpu::DepthStencilState {
-            format: convert::format_to_wgpu(depth.format),
-            depth_write_enabled: Some(depth.write_enabled),
-            depth_compare: Some(convert::compare_to_wgpu(depth.compare)),
-            stencil: wgpu::StencilState::default(),
-            bias: wgpu::DepthBiasState::default(),
-        });
+        let depth_stencil = desc
+            .depth
+            .map(|depth| {
+                Ok(wgpu::DepthStencilState {
+                    format: convert::format_to_wgpu(depth.format)?,
+                    depth_write_enabled: Some(depth.write_enabled),
+                    depth_compare: Some(convert::compare_to_wgpu(depth.compare)),
+                    stencil: wgpu::StencilState::default(),
+                    bias: wgpu::DepthBiasState::default(),
+                })
+            })
+            .transpose()?;
         let pipeline = self.scoped(|| {
             self.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some(desc.label),
@@ -626,7 +638,7 @@ impl DeviceApi for WgpuDevice {
             Resource::RenderPipeline(id) => drop(objects.render_pipelines.remove(id)),
             Resource::ComputePipeline(id) => drop(objects.compute_pipelines.remove(id)),
             Resource::QuerySet(id) => drop(objects.query_sets.remove(id)),
-            other => unreachable!("wgpu device cannot destroy {other:?}"),
+            other => log::error!("wgpu device cannot destroy {other:?}; the resource is leaked"),
         }
     }
 
@@ -669,7 +681,11 @@ impl DeviceApi for WgpuDevice {
             .iter()
             .filter_map(|format| convert::format_from_wgpu(*format));
         let format = match config.format {
-            Some(wanted) if capabilities.formats.contains(&convert::format_to_wgpu(wanted)) => wanted,
+            Some(wanted)
+                if convert::format_to_wgpu(wanted).is_ok_and(|format| capabilities.formats.contains(&format)) =>
+            {
+                wanted
+            }
             _ => {
                 let candidates: Vec<Format> = supported.by_ref().collect();
                 let srgb = candidates.iter().copied().find(|format| format.is_srgb());
@@ -681,7 +697,7 @@ impl DeviceApi for WgpuDevice {
             .surface
             .get_default_config(&self.adapter, config.size.width, config.size.height)
             .ok_or(RhiError::Unsupported("surface is not supported by this adapter"))?;
-        wgpu_config.format = convert::format_to_wgpu(format);
+        wgpu_config.format = convert::format_to_wgpu(format)?;
         wgpu_config.present_mode = convert::present_mode_to_wgpu(config.present_mode, &capabilities.present_modes);
         wgpu_config.usage = wgpu::TextureUsages::RENDER_ATTACHMENT
             | (capabilities.usages & (wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::COPY_SRC));

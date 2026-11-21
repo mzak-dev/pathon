@@ -1,7 +1,7 @@
 use pathon_rhi_types::{
     AddressMode, Backend, BindingType, BlendComponent, BlendFactor, BlendOperation, BlendState, BufferUsage,
     ColorWrites, CompareFunction, CullMode, DeviceType, Features, FilterMode, Format, FormatCaps, FrontFace,
-    IndexFormat, Limits, PresentMode, PrimitiveTopology, SamplerBindingType, ShaderStages, StorageAccess,
+    IndexFormat, Limits, PresentMode, PrimitiveTopology, RhiError, SamplerBindingType, ShaderStages, StorageAccess,
     TextureAspect, TextureDimension, TextureSampleType, TextureUsage, TextureViewDimension, VertexFormat,
     VertexStepMode,
 };
@@ -10,11 +10,11 @@ use wgpu::{AstcBlock, AstcChannel};
 // One table per enum: the same row drives both directions, so the mappings cannot drift apart.
 macro_rules! two_way {
     ($to:ident, $from:ident, $ours:ty => $theirs:ty { $($variant:ident => { $($pattern:tt)* }),* $(,)? }) => {
-        pub(crate) fn $to(value: $ours) -> $theirs {
-            match value {
+        pub(crate) fn $to(value: $ours) -> Result<$theirs, RhiError> {
+            Ok(match value {
                 $(<$ours>::$variant => $($pattern)*,)*
-                other => unreachable!("no wgpu mapping for {other:?}"),
-            }
+                _ => return Err(RhiError::Unsupported(concat!("no wgpu mapping for this ", stringify!($ours), " variant"))),
+            })
         }
 
         pub(crate) fn $from(value: $theirs) -> Option<$ours> {
@@ -384,8 +384,8 @@ fn storage_access_to_wgpu(access: StorageAccess) -> wgpu::StorageTextureAccess {
     }
 }
 
-pub(crate) fn binding_type_to_wgpu(ty: BindingType) -> wgpu::BindingType {
-    match ty {
+pub(crate) fn binding_type_to_wgpu(ty: BindingType) -> Result<wgpu::BindingType, RhiError> {
+    Ok(match ty {
         BindingType::UniformBuffer => wgpu::BindingType::Buffer {
             ty: wgpu::BufferBindingType::Uniform,
             has_dynamic_offset: false,
@@ -419,7 +419,7 @@ pub(crate) fn binding_type_to_wgpu(ty: BindingType) -> wgpu::BindingType {
             dimension,
         } => wgpu::BindingType::StorageTexture {
             access: storage_access_to_wgpu(access),
-            format: format_to_wgpu(format),
+            format: format_to_wgpu(format)?,
             view_dimension: view_dimension_to_wgpu(dimension),
         },
         BindingType::Sampler(kind) => wgpu::BindingType::Sampler(match kind {
@@ -427,12 +427,12 @@ pub(crate) fn binding_type_to_wgpu(ty: BindingType) -> wgpu::BindingType {
             SamplerBindingType::NonFiltering => wgpu::SamplerBindingType::NonFiltering,
             SamplerBindingType::Comparison => wgpu::SamplerBindingType::Comparison,
         }),
-        other => unreachable!("no wgpu mapping for {other:?}"),
-    }
+        _ => return Err(RhiError::Unsupported("no wgpu mapping for this binding type")),
+    })
 }
 
-pub(crate) fn vertex_format_to_wgpu(format: VertexFormat) -> wgpu::VertexFormat {
-    match format {
+pub(crate) fn vertex_format_to_wgpu(format: VertexFormat) -> Result<wgpu::VertexFormat, RhiError> {
+    Ok(match format {
         VertexFormat::Float32 => wgpu::VertexFormat::Float32,
         VertexFormat::Float32x2 => wgpu::VertexFormat::Float32x2,
         VertexFormat::Float32x3 => wgpu::VertexFormat::Float32x3,
@@ -446,8 +446,8 @@ pub(crate) fn vertex_format_to_wgpu(format: VertexFormat) -> wgpu::VertexFormat 
         VertexFormat::Snorm8x4 => wgpu::VertexFormat::Snorm8x4,
         VertexFormat::Float16x2 => wgpu::VertexFormat::Float16x2,
         VertexFormat::Float16x4 => wgpu::VertexFormat::Float16x4,
-        other => unreachable!("no wgpu mapping for {other:?}"),
-    }
+        _ => return Err(RhiError::Unsupported("no wgpu mapping for this vertex format")),
+    })
 }
 
 pub(crate) fn step_mode_to_wgpu(mode: VertexStepMode) -> wgpu::VertexStepMode {
@@ -549,7 +549,11 @@ mod tests {
     #[test]
     fn every_format_round_trips_through_wgpu() {
         for format in Format::ALL {
-            assert_eq!(format_from_wgpu(format_to_wgpu(*format)), Some(*format), "{format:?}");
+            assert_eq!(
+                format_from_wgpu(format_to_wgpu(*format).unwrap()),
+                Some(*format),
+                "{format:?}"
+            );
         }
     }
 

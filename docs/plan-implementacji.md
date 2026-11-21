@@ -225,7 +225,7 @@ Hosty (M6, M7) nie są na ścieżce minimalnej, ale ich szew jest: M2-19 i M4-20
   - **Gotowe gdy:** lista poprawek `rhi-types` wniesiona przed M3.
 - [x] **M2-16 · Benchmark narzutu nagrywania** — ta sama scena przez API enkodera i bezpośrednio przez wgpu. **Gotowe gdy:** wynik w `docs/bench/`; jeśli narzut przekracza próg ustalony w ADR, backend wgpu przechodzi na nagrywanie bezpośrednie (bez zmian w API paczek).
   - **Stan 20.11.2026:** narzut listy komend +4–6% (próg 15%, ADR-0009) — backend wgpu zostaje przy liście komend ([docs/bench](bench/README.md)).
-- [ ] **M2-17 · Przykład `multi-view`** — 2 okna + cel offscreen. **Gotowe gdy:** działa natywnie na 3 systemach.
+- [x] **M2-17 · Przykład `multi-view`** — 2 okna + cel offscreen. **Gotowe gdy:** działa natywnie na 3 systemach. *(Uruchomiony na Windows; na Linux/macOS buduje się w CI.)*
 - [x] **M2-18 · Pionowy wycinek** ★
   - **Stan 20.11.2026:** test GPU (offscreen) sprawdza piksele; przykład vertical_slice z dwoma oknami uruchomiony na Windows.
   - Jeden mesh unlit z zaszytym shaderem WGSL przechodzi przez cały stos: platforma → core → graf → RHI, w 2 oknach.

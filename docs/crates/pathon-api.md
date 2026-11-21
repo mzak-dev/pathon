@@ -52,7 +52,7 @@ ADR-0008: `parallel_for(len, &task)` blokuje do końca, więc zadanie może poż
 
 ADR-0012: domknięcie przekazane do `PassBuilder::record` jest `MaybeSend` (`Send` natywnie, bez wymagań na wasm), żeby passy dało się kiedyś nagrywać równolegle. Paczka nie może więc przechwycić `Rc` ani innego typu bez `Send`:
 
-```rust,compile_fail
+```rust,compile_fail,E0277
 use pathon_api::graph::{PassDesc, Stage};
 use pathon_api::{RecordCtx, RenderFeature};
 use pathon_api::rhi::RhiError;
@@ -79,9 +79,11 @@ impl RenderFeature for Pack {
 }
 ```
 
+Kody błędów w `compile_fail` są sprawdzane tylko na nightly; na stable dokumentują zamiar.
+
 ## Co widzi paczka
 
-ADR-0012: `pathon_api::graph` re-eksportuje tylko to, co służy do deklarowania passów: `GraphBuilder`, `PassBuilder`, `PassContext`, `PassDesc`, `Stage`, `GraphTextureDesc`, `GraphSize`, `GraphBufferDesc`, `TextureHandle`, `BufferHandle`, `HistoryTexture`. `RecordCtx::graph()` zwraca `GraphBuilder`, który pozwala deklarować zasoby i passy oraz czytać ich opis; kompilacja, wykonanie, cache i pule należą do rdzenia, a rdzeń, devtools i testy grafu korzystają z `pathon-graph` bezpośrednio. `add_pass` zużywa builder — kolejny pass przez `ctx.graph()` albo `reborrow()`. Konstruktory kontekstów (`SetupCtx::new`, `PrepareCtx::new`, `RecordCtx::new`) mają `#[doc(hidden)]`, co tylko chowa je w dokumentacji; granicą jest to, że paczka nie nazwie `FrameGraph` przez `pathon-api`.
+ADR-0012: `pathon_api::graph` re-eksportuje tylko to, co służy do deklarowania passów: `GraphBuilder`, `PassBuilder`, `PassContext`, `PassDesc`, `Stage`, `GraphTextureDesc`, `GraphSize`, `GraphBufferDesc`, `TextureHandle`, `BufferHandle`, `HistoryTexture`. `RecordCtx::graph()` zwraca `GraphBuilder`, który pozwala deklarować zasoby i passy oraz czytać ich opis; kompilacja, wykonanie, cache i pule należą do rdzenia, a rdzeń, devtools i testy grafu korzystają z `pathon-graph` bezpośrednio. `ctx.graph()` zwraca `&mut GraphBuilder`, więc z jednego `let graph = ctx.graph();` da się dodać kilka passów, a `GraphBuilder` można przekazać do funkcji pomocniczej. Konstruktory kontekstów (`SetupCtx::new`, `PrepareCtx::new`, `RecordCtx::new`) mają `#[doc(hidden)]`, co tylko chowa je w dokumentacji; granicą jest to, że paczka nie nazwie `FrameGraph` przez `pathon-api`.
 
 Wnętrze grafu nie jest widoczne dla paczki:
 
@@ -124,7 +126,7 @@ impl RenderFeature for Pack {
 }
 ```
 
-Kilka passów z jednego `let mut g = ctx.graph();` — przez `reborrow()`:
+Kilka passów z jednego `let graph = ctx.graph();`:
 
 ```rust
 use pathon_api::graph::{PassDesc, Stage};
@@ -143,9 +145,9 @@ impl RenderFeature for Pack {
     }
 
     fn record(&mut self, ctx: &mut RecordCtx<'_>) -> Result<(), RhiError> {
-        let mut g = ctx.graph();
-        g.reborrow().add_pass(PassDesc::new("first", Stage::Opaque));
-        g.add_pass(PassDesc::new("second", Stage::Opaque));
+        let graph = ctx.graph();
+        graph.add_pass(PassDesc::new("first", Stage::Opaque));
+        graph.add_pass(PassDesc::new("second", Stage::Opaque));
         Ok(())
     }
 }

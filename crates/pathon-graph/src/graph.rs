@@ -38,6 +38,7 @@ impl FrameSizes {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[non_exhaustive]
 pub enum GraphSize {
     Render,
     Output,
@@ -283,7 +284,6 @@ pub(crate) struct PassNode {
     pub(crate) record: Option<RecordFn>,
 }
 
-#[derive(Default)]
 pub struct FrameGraph {
     pub(crate) resources: Vec<ResourceNode>,
     pub(crate) passes: Vec<PassNode>,
@@ -311,8 +311,20 @@ impl std::fmt::Debug for FrameGraph {
 }
 
 impl FrameGraph {
+    #[expect(
+        clippy::new_without_default,
+        reason = "a pack could infer a Default FrameGraph and reach compile"
+    )]
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            resources: Vec::new(),
+            passes: Vec::new(),
+            capture: false,
+            histories: Vec::new(),
+            history_conflicts: Vec::new(),
+            known_history: Vec::new(),
+            sizes: None,
+        }
     }
 
     // A graph that knows which history the view kept from earlier frames.
@@ -320,7 +332,7 @@ impl FrameGraph {
         Self {
             known_history: history.signatures(),
             sizes: Some(sizes),
-            ..Self::default()
+            ..Self::new()
         }
     }
 

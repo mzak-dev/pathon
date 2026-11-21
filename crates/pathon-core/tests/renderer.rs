@@ -253,7 +253,7 @@ impl RenderFeature for ReadsUnwrittenTexture {
     }
 
     fn record(&mut self, ctx: &mut RecordCtx<'_>) -> Result<(), RhiError> {
-        let mut graph = ctx.graph();
+        let graph = ctx.graph();
         let texture = graph.create_texture("never written", GraphTextureDesc::render(Format::Rgba8Unorm));
         let mut pass = graph.add_pass(PassDesc::new("reads unwritten", Stage::PostProcess).side_effect());
         pass.read(texture, Access::SHADER_READ);

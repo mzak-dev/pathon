@@ -101,7 +101,7 @@ impl<'frame> PrepareCtx<'frame> {
 }
 
 pub struct RecordCtx<'frame> {
-    graph: &'frame mut FrameGraph,
+    graph: GraphBuilder<'frame>,
     slots: &'frame mut Slots,
     view: &'frame ViewCtx,
     device: &'frame dyn DeviceApi,
@@ -129,7 +129,7 @@ impl<'frame> RecordCtx<'frame> {
         shared: &'frame mut Shared,
     ) -> Self {
         Self {
-            graph,
+            graph: GraphBuilder::new(graph),
             slots,
             view,
             device,
@@ -146,8 +146,8 @@ impl<'frame> RecordCtx<'frame> {
         self.shared
     }
 
-    pub fn graph(&mut self) -> GraphBuilder<'_> {
-        GraphBuilder::new(self.graph)
+    pub fn graph(&mut self) -> &mut GraphBuilder<'frame> {
+        &mut self.graph
     }
 
     pub fn view(&self) -> &ViewCtx {

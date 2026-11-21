@@ -5,8 +5,8 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use pathon::rhi::{
-    BufferCopy, BufferDesc, BufferUsage, CommandList, DeviceApi, DeviceRequest, Extent3d, Format, PhysicalSize,
-    SurfaceTarget, TexelLayout, TextureCopy, WindowSource,
+    BufferCopy, BufferDesc, BufferId, BufferUsage, CommandList, DeviceApi, DeviceRequest, Extent3d, Format,
+    PhysicalSize, SurfaceTarget, TexelLayout, TextureCopy, WindowSource,
 };
 use pathon::{FrameInput, Renderer, TargetId, ViewInput};
 use pathon_test::UnlitMeshPack;
@@ -28,6 +28,7 @@ struct Running {
     windows: Vec<HostWindow>,
     renderer: Renderer,
     offscreen: TargetId,
+    readback: BufferId,
 }
 
 struct MultiView {
@@ -52,16 +53,9 @@ fn create_window(event_loop: &ActiveEventLoop, title: &str) -> Arc<Window> {
 }
 
 // Blocks until the GPU finishes; acceptable in an example.
-fn read_pixel_at_centre(renderer: &Renderer, target: TargetId) -> [u8; 4] {
+fn read_pixel_at_centre(renderer: &Renderer, target: TargetId, readback: BufferId) -> [u8; 4] {
     let device = renderer.device();
     let texture = renderer.target_texture(target).expect("offscreen texture");
-    let readback = device
-        .create_buffer(&BufferDesc {
-            label: "offscreen readback",
-            size: u64::from(OFFSCREEN_SIZE * OFFSCREEN_SIZE * 4),
-            usage: BufferUsage::MAP_READ | BufferUsage::COPY_DST,
-        })
-        .expect("readback buffer");
     let mut list = CommandList::new();
     list.copy_texture_to_buffer(
         TextureCopy::whole(texture),
@@ -100,6 +94,14 @@ impl MultiView {
         let offscreen = renderer
             .add_offscreen_target(PhysicalSize::new(OFFSCREEN_SIZE, OFFSCREEN_SIZE), Format::Rgba8Unorm)
             .expect("offscreen target");
+        let readback = renderer
+            .device()
+            .create_buffer(&BufferDesc {
+                label: "offscreen readback",
+                size: u64::from(OFFSCREEN_SIZE * OFFSCREEN_SIZE * 4),
+                usage: BufferUsage::MAP_READ | BufferUsage::COPY_DST,
+            })
+            .expect("readback buffer");
         Running {
             windows: vec![
                 HostWindow {
@@ -115,6 +117,7 @@ impl MultiView {
             ],
             renderer,
             offscreen,
+            readback,
         }
     }
 
@@ -149,7 +152,7 @@ impl MultiView {
             log::error!("frame failed: {error}");
         }
         if self.frame_index.is_multiple_of(READBACK_EVERY_FRAMES) {
-            let rgba = read_pixel_at_centre(&running.renderer, running.offscreen);
+            let rgba = read_pixel_at_centre(&running.renderer, running.offscreen, running.readback);
             log::info!("offscreen pixel at frame {}: {rgba:?}", self.frame_index);
         }
         self.frame_index += 1;
@@ -185,6 +188,7 @@ impl ApplicationHandler for MultiView {
                     .running
                     .as_ref()
                     .is_some_and(|running| running.windows.first().is_some_and(|host| host.window.id() == id));
+                // One render_frame records every view, so a redraw of the first window is enough.
                 if is_first {
                     self.render();
                 }

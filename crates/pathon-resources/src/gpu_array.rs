@@ -97,9 +97,10 @@ impl<T: Pod> GpuArray<T> {
             self.dirty = (!self.items.is_empty()).then_some(0..self.items.len());
         }
         let buffer = self.buffer.expect("buffer was created above when missing");
-        if let Some(dirty) = self.dirty.take() {
+        if let Some(dirty) = &self.dirty {
             let offset = (dirty.start * mem::size_of::<T>()) as u64;
-            device.write_buffer(buffer, offset, bytemuck::cast_slice(&self.items[dirty]))?;
+            device.write_buffer(buffer, offset, bytemuck::cast_slice(&self.items[dirty.clone()]))?;
+            self.dirty = None;
         }
         Ok(buffer)
     }
@@ -114,7 +115,7 @@ impl<T: Pod> GpuArray<T> {
 #[cfg(test)]
 mod tests {
     use pathon_rhi_null::NullDevice;
-    use pathon_rhi_types::CommandList;
+    use pathon_rhi_types::{CommandList, Resource};
 
     use super::*;
 
@@ -147,6 +148,23 @@ mod tests {
         assert_ne!(first, second);
         assert_eq!(release.len(), 1);
         assert_eq!(read_back(&device, second, 3), vec![7, 8, 9]);
+    }
+
+    #[test]
+    fn a_failed_write_keeps_the_dirty_range_for_the_next_sync() {
+        let device = NullDevice::new();
+        let mut release = DeferredRelease::new(2);
+        let mut array: GpuArray<u32> = GpuArray::new("values");
+        for value in [1, 2, 3, 4] {
+            array.push(value);
+        }
+        let buffer = array.sync(&device, &mut release, 0).expect("sync");
+        array.set(2, 30);
+        device.destroy(Resource::Buffer(buffer));
+
+        assert!(array.sync(&device, &mut release, 1).is_err());
+
+        assert_eq!(array.dirty, Some(2..3));
     }
 
     #[test]

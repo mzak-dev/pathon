@@ -4,8 +4,8 @@ use pathon_graph::{
 use pathon_resources::DeferredRelease;
 use pathon_rhi_null::NullDevice;
 use pathon_rhi_types::{
-    Access, Color, ColorAttachment, DeviceApi, Format, PhysicalSize, RenderPassDesc, RhiError, SubresourceRange,
-    TextureCopy, TextureDesc, TextureId, TextureUsage,
+    Access, BindGroupDesc, BindGroupLayoutDesc, Color, ColorAttachment, DeviceApi, Format, PhysicalSize,
+    RenderPassDesc, RhiError, SubresourceRange, TextureCopy, TextureDesc, TextureId, TextureUsage,
 };
 
 const SIZE: PhysicalSize = PhysicalSize::new(8, 8);
@@ -394,4 +394,65 @@ fn capture_is_off_by_default() {
     let written = pass.write(output, Access::COLOR_ATTACHMENT);
     pass.record(clear(written));
     assert_eq!(run(graph, &device, &mut TexturePool::new(), 0).capture, None);
+}
+
+#[test]
+fn writes_stay_ordered_when_an_intermediate_writer_is_culled() {
+    let device = NullDevice::new();
+    let mut graph = FrameGraph::new();
+    let output = import_output(&mut graph, &device);
+    let shared = graph.create_texture("shared", GraphTextureDesc::render(Format::Rgba8Unorm));
+
+    let mut pass = graph.add_pass(PassDesc::new("a", Stage::Opaque).priority(1));
+    let first = pass.write(shared, Access::COLOR_ATTACHMENT);
+    pass.record(clear(first));
+
+    let mut pass = graph.add_pass(PassDesc::new("b reads a", Stage::Opaque).priority(2).side_effect());
+    pass.read(first, Access::COPY_SRC);
+
+    let mut pass = graph.add_pass(PassDesc::new("c overwritten", Stage::Opaque).priority(3));
+    let second = pass.write(first, Access::COLOR_ATTACHMENT);
+    pass.record(clear(second));
+
+    let mut pass = graph.add_pass(PassDesc::new("d", Stage::Opaque));
+    let third = pass.write(second, Access::COLOR_ATTACHMENT);
+    pass.record(clear(third));
+
+    let mut pass = graph.add_pass(PassDesc::new("e reads d", Stage::Tonemap));
+    let source = pass.read(third, Access::COPY_SRC);
+    let written = pass.write(output, Access::COPY_DST);
+    pass.record(copy(source, written));
+
+    let compiled = graph.compile(FrameSizes::same(SIZE)).expect("compiles");
+    assert_eq!(compiled.order(), ["a", "b reads a", "d", "e reads d"]);
+}
+
+#[test]
+fn a_failing_pass_still_hands_its_frame_resources_to_deferred_release() {
+    let device = NullDevice::new();
+    let mut pool = TexturePool::new();
+    let mut release = DeferredRelease::new(2);
+    let mut graph = FrameGraph::new();
+    let output = import_output(&mut graph, &device);
+    let mut pass = graph.add_pass(PassDesc::new("fails after allocating", Stage::Opaque));
+    let written = pass.write(output, Access::COLOR_ATTACHMENT);
+    pass.record(move |context| {
+        context.view(written)?;
+        let layout = context.device().create_bind_group_layout(&BindGroupLayoutDesc {
+            label: "empty",
+            entries: Vec::new(),
+        })?;
+        context.create_bind_group(&BindGroupDesc {
+            label: "per frame",
+            layout,
+            entries: Vec::new(),
+        })?;
+        Err(RhiError::InvalidHandle("pass gave up"))
+    });
+
+    let compiled = graph.compile(FrameSizes::same(SIZE)).expect("compiles");
+    let result = graph.execute(&compiled, &device, &mut pool, &mut release, 0);
+
+    assert!(matches!(result, Err(RhiError::InvalidHandle("pass gave up"))));
+    assert_eq!(release.len(), 2, "the output's view and the frame's bind group");
 }

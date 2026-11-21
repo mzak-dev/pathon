@@ -10,7 +10,7 @@ Graf klatki (M2-01…M2-06): paczki deklarują passy i ich dostępy do tekstur, 
 
 ## Kolejność (M2-02)
 
-Twarde krawędzie: zależności danych (RAW, WAW, WAR między wersjami) oraz `before` / `after`. Wśród gotowych passów pierwszy jest najniższy `(Stage, priority)`; remis rozstrzyga kolejność rejestracji z ostrzeżeniem **G0006**. Ten sam algorytm (`sort_nodes`) porządkuje paczki w rdzeniu, więc łańcuch paczek na jednym slocie nie zależy od kolejności rejestracji.
+Twarde krawędzie: zależności danych (RAW, WAW, WAR) oraz `before` / `after`. Zależności danych liczy się po cullingu, z łańcucha żywych dostępów do każdego zasobu, więc wycięty pośredni zapis nie rozrywa kolejności między passami przed nim i po nim. Wśród gotowych passów pierwszy jest najniższy `(Stage, priority)`; remis rozstrzyga kolejność rejestracji z ostrzeżeniem **G0006**. Ten sam algorytm (`sort_nodes`) porządkuje paczki w rdzeniu, więc łańcuch paczek na jednym slocie nie zależy od kolejności rejestracji.
 
 ## Culling (M2-03)
 

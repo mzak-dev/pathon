@@ -168,6 +168,7 @@ impl FrameGraph {
         let mut commands = CommandList::new();
         let mut frame_resources = Vec::new();
         let mut passes: Vec<Option<PassNode>> = self.passes.into_iter().map(Some).collect();
+        let mut failure = None;
         for index in &compiled.order {
             let pass = passes[*index].take().expect("each pass appears once in the order");
             commands.push_debug_group(pass.desc.name);
@@ -186,7 +187,10 @@ impl FrameGraph {
                     physical: &physical,
                     frame_resources: &mut frame_resources,
                 };
-                record(&mut context)?;
+                if let Err(error) = record(&mut context) {
+                    failure = Some(error);
+                    break;
+                }
             }
             commands.pop_debug_group();
         }
@@ -207,6 +211,9 @@ impl FrameGraph {
             release.release(frame, resource);
         }
         pool.end_frame(frame, release);
+        if let Some(error) = failure {
+            return Err(error);
+        }
 
         let stats = GraphStats {
             physical_textures: physical_count,

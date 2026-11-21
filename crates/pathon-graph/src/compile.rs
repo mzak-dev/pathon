@@ -63,6 +63,22 @@ pub(crate) fn usage_for(access: Access) -> TextureUsage {
     usage
 }
 
+// A version is written before it is read, so `Write` sorts first.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+enum Hazard {
+    Write,
+    Read,
+}
+
+// A read, a modify or a partial write depends on the previous version.
+fn read_dependency(access: &PassAccess) -> Option<u32> {
+    match (access.read_version, access.write_version) {
+        (Some(read), _) => Some(read),
+        (None, Some(write)) if access.range != pathon_rhi_types::SubresourceRange::ALL => write.checked_sub(1),
+        _ => None,
+    }
+}
+
 fn is_attachment(access: Access) -> bool {
     access.intersects(Access::COLOR_ATTACHMENT | Access::DEPTH_READ | Access::DEPTH_WRITE)
 }
@@ -191,15 +207,50 @@ impl FrameGraph {
         live
     }
 
-    // A read, a modify or a partial write depends on the previous version.
     fn dependency_producer(&self, access: &PassAccess) -> Option<usize> {
         let resource = &self.resources[access.resource as usize];
-        let version = match (access.read_version, access.write_version) {
-            (Some(read), _) => read,
-            (None, Some(write)) if access.range != pathon_rhi_types::SubresourceRange::ALL => write.checked_sub(1)?,
-            _ => return None,
-        };
+        let version = read_dependency(access)?;
         resource.producers.get(version as usize).copied().flatten()
+    }
+
+    // Per resource, the live accesses in version order: a write follows the previous live write and every live read
+    // since it, a read follows the last live write. Culled passes drop out of the chain without breaking it.
+    fn hazard_edges(&self, live: &[bool]) -> Vec<(usize, usize)> {
+        let mut chains: Vec<Vec<(u32, Hazard, usize)>> = vec![Vec::new(); self.resources.len()];
+        for (index, pass) in self.passes.iter().enumerate() {
+            if !live[index] {
+                continue;
+            }
+            for access in &pass.accesses {
+                let chain = &mut chains[access.resource as usize];
+                if let Some(read) = read_dependency(access) {
+                    chain.push((read, Hazard::Read, index));
+                }
+                if let Some(write) = access.write_version {
+                    chain.push((write, Hazard::Write, index));
+                }
+            }
+        }
+        let mut edges = Vec::new();
+        for mut chain in chains {
+            chain.sort_unstable();
+            let mut last_write = None;
+            let mut reads_since_write = Vec::new();
+            for (_, hazard, pass) in chain {
+                match hazard {
+                    Hazard::Write => {
+                        let earlier = last_write.into_iter().chain(reads_since_write.drain(..));
+                        edges.extend(earlier.map(|from| (from, pass)));
+                        last_write = Some(pass);
+                    }
+                    Hazard::Read => {
+                        edges.extend(last_write.map(|from| (from, pass)));
+                        reads_since_write.push(pass);
+                    }
+                }
+            }
+        }
+        edges
     }
 
     #[expect(clippy::type_complexity, reason = "order plus the edges it was derived from")]
@@ -208,25 +259,7 @@ impl FrameGraph {
         live: &[bool],
         warnings: &mut Vec<Diagnostic>,
     ) -> Result<(Vec<usize>, Vec<(usize, usize)>), Vec<Diagnostic>> {
-        let mut data_edges = Vec::new();
-        for (index, pass) in self.passes.iter().enumerate() {
-            for access in &pass.accesses {
-                let resource = &self.resources[access.resource as usize];
-                if let Some(producer) = self.dependency_producer(access) {
-                    data_edges.push((producer, index));
-                }
-                if let Some(write) = access.write_version
-                    && let Some(Some(previous)) = resource.producers.get((write - 1) as usize)
-                {
-                    data_edges.push((*previous, index));
-                }
-                if let Some(read) = access.read_version
-                    && let Some(Some(next_writer)) = resource.producers.get(read as usize + 1)
-                {
-                    data_edges.push((index, *next_writer));
-                }
-            }
-        }
+        let data_edges = self.hazard_edges(live);
         let nodes: Vec<OrderNode<'_>> = self
             .passes
             .iter()

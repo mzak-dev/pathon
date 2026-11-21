@@ -993,15 +993,30 @@ fn create_pipeline_cache(device: &wgpu::Device, seed: Option<&PipelineCacheData>
     if !device.features().contains(wgpu::Features::PIPELINE_CACHE) {
         return None;
     }
-    // SAFETY: `PipelineCacheData` can only hold bytes its constructor's caller vouched for as coming from
-    // `pipeline_cache_data`, and `fallback: true` makes wgpu start empty when they do not fit this device.
-    Some(unsafe {
+    seed.and_then(|seed| create_scoped_pipeline_cache(device, Some(seed.as_bytes())))
+        .or_else(|| create_scoped_pipeline_cache(device, None))
+}
+
+// `fallback: true` only covers damaged or outdated blobs; a blob from another adapter or backend is a validation
+// error and leaves an invalid cache behind, so any error here means "no usable cache" and the caller retries empty.
+fn create_scoped_pipeline_cache(device: &wgpu::Device, data: Option<&[u8]>) -> Option<wgpu::PipelineCache> {
+    let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
+    // SAFETY: `data` is either `None` or the bytes of a `PipelineCacheData`, whose constructor makes the caller vouch
+    // that they come from `pipeline_cache_data`; wgpu checks their header before the driver sees them.
+    let cache = unsafe {
         device.create_pipeline_cache(&wgpu::PipelineCacheDescriptor {
             label: Some("pathon pipeline cache"),
-            data: seed.map(PipelineCacheData::as_bytes),
+            data,
             fallback: true,
         })
-    })
+    };
+    match poll::ready(scope.pop()) {
+        Some(Some(error)) => {
+            log::warn!("wgpu rejected the pipeline cache data: {error}");
+            None
+        }
+        _ => Some(cache),
+    }
 }
 
 fn override_constants(stage: &ShaderStage) -> Vec<(&'static str, f64)> {

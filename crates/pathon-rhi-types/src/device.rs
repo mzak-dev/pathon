@@ -36,7 +36,8 @@ impl PipelineCacheData {
 
     /// # Safety
     ///
-    /// `bytes` must come from `DeviceApi::pipeline_cache_data` (for example read back from disk unchanged): the
+    /// `bytes` must come from `DeviceApi::pipeline_cache_data` of the same backend (for example read back from disk
+    /// unchanged): the
     /// driver is not required to survive arbitrary data, the same contract as wgpu's `create_pipeline_cache`.
     pub unsafe fn from_bytes(bytes: Vec<u8>) -> Self {
         Self(bytes)

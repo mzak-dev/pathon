@@ -1548,7 +1548,6 @@ fn unlit_ring_capacity(renderer: &Renderer) -> usize {
 }
 
 #[test]
-#[ignore = "red until the frame clock lands"]
 fn a_pack_with_a_per_frame_ring_survives_a_host_that_never_numbers_its_frames() {
     let mut renderer = null_builder()
         .with_feature(UnlitMeshPack::new())
@@ -1564,7 +1563,6 @@ fn a_pack_with_a_per_frame_ring_survives_a_host_that_never_numbers_its_frames() 
 }
 
 #[test]
-#[ignore = "red until the frame clock lands"]
 fn a_pack_with_a_per_frame_ring_survives_unnumbered_frames_in_mode_a() {
     let mut renderer = null_builder()
         .with_feature(UnlitMeshPack::new())
@@ -1581,7 +1579,6 @@ fn a_pack_with_a_per_frame_ring_survives_unnumbered_frames_in_mode_a() {
 }
 
 #[test]
-#[ignore = "red until the frame clock lands"]
 fn retrying_an_abandoned_frame_does_not_exhaust_a_per_frame_ring() {
     let mut renderer = null_builder()
         .with_feature(UnlitMeshPack::new())

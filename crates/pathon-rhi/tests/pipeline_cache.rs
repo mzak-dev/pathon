@@ -245,7 +245,12 @@ fn fs_main() -> @location(0) vec4<f32> {
 
     fn run_render(device: &Device, case: &RenderCase) -> [u8; 4] {
         let mut list = CommandList::new();
-        list.texture_access(case.target, SubresourceRange::ALL, Access::COLOR_ATTACHMENT);
+        list.texture_access(
+            case.target,
+            SubresourceRange::ALL,
+            Access::empty(),
+            Access::COLOR_ATTACHMENT,
+        );
         {
             let mut pass = list.render_pass(RenderPassDesc {
                 label: "cache",
@@ -256,7 +261,12 @@ fn fs_main() -> @location(0) vec4<f32> {
             pass.set_pipeline(case.pipeline);
             pass.draw(0..3, 0..1);
         }
-        list.texture_access(case.target, SubresourceRange::ALL, Access::COPY_SRC);
+        list.texture_access(
+            case.target,
+            SubresourceRange::ALL,
+            Access::COLOR_ATTACHMENT,
+            Access::COPY_SRC,
+        );
         list.copy_texture_to_buffer(
             TextureCopy::whole(case.target),
             BufferCopy {

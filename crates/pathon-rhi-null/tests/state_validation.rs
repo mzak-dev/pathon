@@ -51,9 +51,19 @@ fn attachment_after_barrier_is_accepted() {
     let device = NullDevice::new();
     let texture = render_target(&device);
     let mut list = CommandList::new();
-    list.texture_access(texture, SubresourceRange::ALL, Access::COLOR_ATTACHMENT);
+    list.texture_access(
+        texture,
+        SubresourceRange::ALL,
+        Access::empty(),
+        Access::COLOR_ATTACHMENT,
+    );
     clear_pass(&device, texture, &mut list);
-    list.texture_access(texture, SubresourceRange::ALL, Access::SAMPLED);
+    list.texture_access(
+        texture,
+        SubresourceRange::ALL,
+        Access::COLOR_ATTACHMENT,
+        Access::SAMPLED,
+    );
 
     device.submit(list).expect("valid list");
 }
@@ -66,7 +76,12 @@ fn loading_a_never_written_attachment_is_rejected() {
         .create_texture_view(texture, &TextureViewDesc::default())
         .expect("view");
     let mut list = CommandList::new();
-    list.texture_access(texture, SubresourceRange::ALL, Access::COLOR_ATTACHMENT);
+    list.texture_access(
+        texture,
+        SubresourceRange::ALL,
+        Access::empty(),
+        Access::COLOR_ATTACHMENT,
+    );
     drop(list.render_pass(RenderPassDesc {
         label: "load",
         color: vec![ColorAttachment::load(view)],
@@ -157,8 +172,8 @@ fn reading_hi_z_mip_before_it_is_written_is_rejected() {
         .expect("pipeline");
 
     let mut list = CommandList::new();
-    list.texture_access(hi_z, SubresourceRange::mip(1), Access::SAMPLED);
-    list.texture_access(hi_z, SubresourceRange::mip(2), Access::STORAGE_WRITE);
+    list.texture_access(hi_z, SubresourceRange::mip(1), Access::empty(), Access::SAMPLED);
+    list.texture_access(hi_z, SubresourceRange::mip(2), Access::empty(), Access::STORAGE_WRITE);
     {
         let mut pass = list.compute_pass(ComputePassDesc {
             label: "downsample",
@@ -177,7 +192,12 @@ fn a_texture_state_mixing_layouts_is_rejected() {
     let device = NullDevice::new();
     let texture = render_target(&device);
     let mut list = CommandList::new();
-    list.texture_access(texture, SubresourceRange::ALL, Access::SAMPLED | Access::COPY_SRC);
+    list.texture_access(
+        texture,
+        SubresourceRange::ALL,
+        Access::empty(),
+        Access::SAMPLED | Access::COPY_SRC,
+    );
 
     assert_eq!(code(device.submit(list)), "R0103");
 }
@@ -238,7 +258,7 @@ fn sampling_a_texture_in_a_storage_state_is_rejected() {
         .expect("pipeline");
 
     let mut list = CommandList::new();
-    list.texture_access(texture, SubresourceRange::ALL, Access::STORAGE_READ);
+    list.texture_access(texture, SubresourceRange::ALL, Access::empty(), Access::STORAGE_READ);
     {
         let mut pass = list.compute_pass(ComputePassDesc {
             label: "sample",
@@ -317,7 +337,7 @@ fn cleared_depth_texture(device: &NullDevice, list: &mut CommandList) -> Texture
     let view = device
         .create_texture_view(depth, &TextureViewDesc::default())
         .expect("view");
-    list.texture_access(depth, SubresourceRange::ALL, Access::DEPTH_WRITE);
+    list.texture_access(depth, SubresourceRange::ALL, Access::empty(), Access::DEPTH_WRITE);
     drop(list.render_pass(RenderPassDesc {
         label: "depth",
         color: vec![],
@@ -332,7 +352,12 @@ fn a_depth_texture_sampled_in_a_sampled_and_depth_read_state_is_accepted() {
     let device = NullDevice::new();
     let mut list = CommandList::new();
     let depth = cleared_depth_texture(&device, &mut list);
-    list.texture_access(depth, SubresourceRange::ALL, Access::SAMPLED | Access::DEPTH_READ);
+    list.texture_access(
+        depth,
+        SubresourceRange::ALL,
+        Access::DEPTH_WRITE,
+        Access::SAMPLED | Access::DEPTH_READ,
+    );
     sampled_compute_pass(&device, depth, &mut list);
 
     device.submit(list).expect("valid list");
@@ -343,7 +368,7 @@ fn a_depth_texture_sampled_without_depth_read_is_rejected() {
     let device = NullDevice::new();
     let mut list = CommandList::new();
     let depth = cleared_depth_texture(&device, &mut list);
-    list.texture_access(depth, SubresourceRange::ALL, Access::SAMPLED);
+    list.texture_access(depth, SubresourceRange::ALL, Access::DEPTH_WRITE, Access::SAMPLED);
     sampled_compute_pass(&device, depth, &mut list);
 
     assert_eq!(code(device.submit(list)), "R0101");
@@ -407,6 +432,7 @@ fn two_writes_in_one_state_are_rejected() {
     list.texture_access(
         texture,
         SubresourceRange::ALL,
+        Access::empty(),
         Access::COLOR_ATTACHMENT | Access::COPY_DST,
     );
 
@@ -443,9 +469,19 @@ fn surface_frame_must_reach_present_state() {
     let frame_again = device.acquire_surface(surface).expect("frame");
     assert_ne!(frame.texture, frame_again.texture);
     let mut list = CommandList::new();
-    list.texture_access(frame_again.texture, SubresourceRange::ALL, Access::COLOR_ATTACHMENT);
+    list.texture_access(
+        frame_again.texture,
+        SubresourceRange::ALL,
+        Access::empty(),
+        Access::COLOR_ATTACHMENT,
+    );
     clear_pass_on_view(frame_again.view, &mut list);
-    list.texture_access(frame_again.texture, SubresourceRange::ALL, Access::PRESENT);
+    list.texture_access(
+        frame_again.texture,
+        SubresourceRange::ALL,
+        Access::COLOR_ATTACHMENT,
+        Access::PRESENT,
+    );
     device.submit(list).expect("valid list");
     device.present_surface(surface).expect("presentable");
 }
@@ -515,10 +551,10 @@ fn writing_a_deeper_slice_of_a_3d_texture_initializes_it() {
         .expect("write");
 
     let mut list = CommandList::new();
-    list.texture_access(volume, SubresourceRange::ALL, Access::COPY_SRC);
+    list.texture_access(volume, SubresourceRange::ALL, Access::COPY_DST, Access::COPY_SRC);
     let copy = TextureDesc::new_2d("copy", 4, 4, Format::Rgba8Unorm, TextureUsage::COPY_DST);
     let destination = device.create_texture(&copy).expect("copy target");
-    list.texture_access(destination, SubresourceRange::ALL, Access::COPY_DST);
+    list.texture_access(destination, SubresourceRange::ALL, Access::empty(), Access::COPY_DST);
     list.copy_texture_to_texture(
         pathon_rhi_types::TextureCopy::whole(volume),
         pathon_rhi_types::TextureCopy::whole(destination),
@@ -540,7 +576,7 @@ fn a_barrier_outside_the_texture_mips_is_r0112() {
         base_layer: 0,
         layer_count: 1,
     };
-    list.texture_access(texture, mip_three, Access::COPY_DST);
+    list.texture_access(texture, mip_three, Access::empty(), Access::COPY_DST);
 
     assert_eq!(code(device.submit(list)), "R0112");
 }
@@ -907,10 +943,15 @@ fn an_array_element_in_the_wrong_state_at_dispatch_is_rejected() {
     let ready = render_target(&device);
     let stale = render_target(&device);
     for texture in [ready, stale] {
-        list.texture_access(texture, SubresourceRange::ALL, Access::COLOR_ATTACHMENT);
+        list.texture_access(
+            texture,
+            SubresourceRange::ALL,
+            Access::empty(),
+            Access::COLOR_ATTACHMENT,
+        );
         clear_pass(&device, texture, &mut list);
     }
-    list.texture_access(ready, SubresourceRange::ALL, Access::SAMPLED);
+    list.texture_access(ready, SubresourceRange::ALL, Access::COLOR_ATTACHMENT, Access::SAMPLED);
     let views: Vec<_> = [ready, stale]
         .map(|texture| {
             device
@@ -1152,9 +1193,9 @@ fn render_passes_validate_immediates_too() {
     let view = device
         .create_texture_view(texture, &TextureViewDesc::default())
         .expect("view");
-    let record = |writes: &[(u32, usize)]| {
+    let record = |from: Access, writes: &[(u32, usize)]| {
         let mut list = CommandList::new();
-        list.texture_access(texture, SubresourceRange::ALL, Access::COLOR_ATTACHMENT);
+        list.texture_access(texture, SubresourceRange::ALL, from, Access::COLOR_ATTACHMENT);
         {
             let mut pass = list.render_pass(RenderPassDesc {
                 label: "render",
@@ -1171,9 +1212,15 @@ fn render_passes_validate_immediates_too() {
         list
     };
 
-    device.submit(record(&[(0, 8)])).expect("full block");
-    assert_eq!(code(device.submit(record(&[(0, 4)]))), "R0104");
-    assert_eq!(code(device.submit(record(&[(4, 8)]))), "R0104");
+    device.submit(record(Access::empty(), &[(0, 8)])).expect("full block");
+    assert_eq!(
+        code(device.submit(record(Access::COLOR_ATTACHMENT, &[(0, 4)]))),
+        "R0104"
+    );
+    assert_eq!(
+        code(device.submit(record(Access::COLOR_ATTACHMENT, &[(4, 8)]))),
+        "R0104"
+    );
 }
 
 #[test]
@@ -1216,4 +1263,188 @@ fn immediate_limit_is_zero_without_the_feature() {
             .max_immediate_size
             > 0
     );
+}
+
+fn upload_target(device: &NullDevice, width: u32, height: u32, layers: u32) -> TextureId {
+    let desc = TextureDesc {
+        size: pathon_rhi_types::Extent3d {
+            width,
+            height,
+            depth_or_layers: layers,
+        },
+        ..TextureDesc::new_2d(
+            "upload",
+            width,
+            height,
+            Format::Rgba8Unorm,
+            TextureUsage::COPY_DST | TextureUsage::COPY_SRC | TextureUsage::SAMPLED,
+        )
+    };
+    device.create_texture(&desc).expect("texture")
+}
+
+fn texel_layout(bytes_per_row: u32, rows_per_image: u32) -> pathon_rhi_types::TexelLayout {
+    pathon_rhi_types::TexelLayout {
+        offset: 0,
+        bytes_per_row,
+        rows_per_image,
+    }
+}
+
+#[test]
+fn a_barrier_starting_from_the_wrong_state_is_rejected() {
+    let device = NullDevice::new();
+    let texture = render_target(&device);
+    let mut list = CommandList::new();
+    list.texture_access(
+        texture,
+        SubresourceRange::ALL,
+        Access::SAMPLED,
+        Access::COLOR_ATTACHMENT,
+    );
+
+    assert_eq!(code(device.submit(list)), "R0103");
+}
+
+#[test]
+fn a_barrier_after_a_host_write_must_start_from_copy_dst() {
+    let device = NullDevice::new();
+    let texture = upload_target(&device, 4, 4, 1);
+    device
+        .write_texture(
+            &pathon_rhi_types::TextureCopy::whole(texture),
+            &[0; 64],
+            texel_layout(16, 4),
+            pathon_rhi_types::Extent3d::new_2d(4, 4),
+        )
+        .expect("write");
+
+    let mut discarding = CommandList::new();
+    discarding.texture_access(texture, SubresourceRange::ALL, Access::empty(), Access::SAMPLED);
+    assert_eq!(code(device.submit(discarding)), "R0103");
+
+    let mut list = CommandList::new();
+    list.texture_access(texture, SubresourceRange::ALL, Access::COPY_DST, Access::SAMPLED);
+    device.submit(list).expect("the upload keeps its data and its state");
+}
+
+#[test]
+fn one_from_for_a_range_with_mixed_states_is_rejected() {
+    let device = NullDevice::new();
+    let desc = TextureDesc {
+        mip_level_count: 2,
+        ..TextureDesc::new_2d("mips", 4, 4, Format::Rgba8Unorm, TextureUsage::COPY_DST)
+    };
+    let texture = device.create_texture(&desc).expect("texture");
+    let mut list = CommandList::new();
+    list.texture_access(texture, SubresourceRange::mip(1), Access::empty(), Access::COPY_DST);
+    list.texture_access(texture, SubresourceRange::ALL, Access::empty(), Access::COPY_DST);
+
+    assert_eq!(code(device.submit(list)), "R0103");
+}
+
+fn buffer_copy(device: &NullDevice, bytes_per_row: u32) -> pathon_rhi_types::BufferCopy {
+    let buffer = device
+        .create_buffer(&pathon_rhi_types::BufferDesc {
+            label: "staging",
+            size: 4096,
+            usage: pathon_rhi_types::BufferUsage::COPY_SRC | pathon_rhi_types::BufferUsage::COPY_DST,
+        })
+        .expect("buffer");
+    pathon_rhi_types::BufferCopy {
+        buffer,
+        layout: texel_layout(bytes_per_row, 4),
+    }
+}
+
+#[test]
+fn buffer_texture_copies_need_a_256_aligned_bytes_per_row() {
+    let device = NullDevice::new();
+    let texture = upload_target(&device, 25, 4, 1);
+    let size = pathon_rhi_types::Extent3d::new_2d(25, 4);
+    let whole = pathon_rhi_types::TextureCopy::whole(texture);
+
+    let mut upload = CommandList::new();
+    upload.texture_access(texture, SubresourceRange::ALL, Access::empty(), Access::COPY_DST);
+    upload.copy_buffer_to_texture(buffer_copy(&device, 100), whole, size);
+    assert_eq!(code(device.submit(upload)), "R0113");
+
+    let mut download = CommandList::new();
+    download.copy_texture_to_buffer(whole, buffer_copy(&device, 100), size);
+    assert_eq!(code(device.submit(download)), "R0113");
+}
+
+#[test]
+fn write_texture_only_needs_bytes_per_row_that_fits_a_row() {
+    let device = NullDevice::new();
+    let texture = upload_target(&device, 25, 4, 1);
+    let copy = pathon_rhi_types::TextureCopy::whole(texture);
+    let size = pathon_rhi_types::Extent3d::new_2d(25, 4);
+
+    device
+        .write_texture(&copy, &[0; 400], texel_layout(100, 4), size)
+        .expect("a row of 25 texels fits 100 bytes");
+    let too_short = device.write_texture(&copy, &[0; 400], texel_layout(96, 4), size);
+    assert_eq!(too_short.expect_err("row is cut off").code(), "R0113");
+}
+
+#[test]
+fn rows_per_image_must_cover_the_height_when_copying_several_layers() {
+    let device = NullDevice::new();
+    let texture = upload_target(&device, 4, 4, 2);
+    let copy = pathon_rhi_types::TextureCopy::whole(texture);
+    let layers = pathon_rhi_types::Extent3d {
+        width: 4,
+        height: 4,
+        depth_or_layers: 2,
+    };
+
+    let overlapping = device.write_texture(&copy, &[0; 128], texel_layout(16, 3), layers);
+    assert_eq!(overlapping.expect_err("images overlap").code(), "R0113");
+    device
+        .write_texture(&copy, &[0; 128], texel_layout(16, 4), layers)
+        .expect("images do not overlap");
+    device
+        .write_texture(
+            &copy,
+            &[0; 64],
+            texel_layout(16, 0),
+            pathon_rhi_types::Extent3d::new_2d(4, 4),
+        )
+        .expect("rows_per_image is unused for one image");
+}
+
+#[test]
+fn creating_a_pipeline_from_another_thread_during_submit_succeeds() {
+    let device = NullDevice::new();
+    let module = device
+        .create_shader_module(&ShaderModuleDesc {
+            label: "shader",
+            wgsl: "fn main() {}",
+        })
+        .expect("module");
+    let create = || {
+        device.create_compute_pipeline(&ComputePipelineDesc {
+            label: "background",
+            bind_group_layouts: vec![],
+            shader: ShaderStage {
+                module,
+                entry_point: "main",
+                constants: vec![],
+            },
+            immediate_size: 0,
+        })
+    };
+
+    std::thread::scope(|scope| {
+        let background = scope.spawn(|| {
+            for _ in 0..50 {
+                create().expect("pipeline created while another thread submits");
+            }
+        });
+        for _ in 0..50 {
+            device.submit(CommandList::new()).expect("submit");
+        }
+        background.join().expect("the background thread finishes");
+    });
 }

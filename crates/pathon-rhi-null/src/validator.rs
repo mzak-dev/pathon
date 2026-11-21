@@ -2,11 +2,12 @@ use std::sync::Arc;
 
 use pathon_rhi_types::{
     Access, BindGroupId, BufferId, BufferUsage, Command, CommandList, DepthAccess, Extent3d, FormatKind, LoadOp,
-    ResourceRef, RhiError, StoreOp, SubresourceRange, TextureCopy, TextureDimension, TextureId, TextureUsage,
-    TextureViewId, Transfer,
+    ResourceRef, RhiError, StoreOp, SubresourceRange, TexelLayout, TextureCopy, TextureDimension, TextureId,
+    TextureUsage, TextureViewId, Transfer,
 };
 
 use crate::device::{BindingUse, State};
+use crate::texel_layout::{RowAlignment, check_texel_layout};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum PassKind {
@@ -63,16 +64,34 @@ impl<'state> Validator<'state> {
 
     fn apply(&mut self, command: Command) -> Result<(), RhiError> {
         match command {
-            Command::TextureAccess { texture, range, access } => {
+            Command::TextureAccess {
+                texture,
+                range,
+                from,
+                to,
+            } => {
                 self.require_pass(PassKind::None, "texture access")?;
-                Self::require_valid_texture_state(access)?;
+                Self::require_valid_texture_state(to)?;
                 let target = self
                     .state
                     .textures
                     .get_mut(texture)
                     .ok_or(RhiError::InvalidHandle("texture"))?;
-                for (mip, layer) in target.checked_subresources(range)? {
-                    target.subresource_mut(mip, layer).access = access;
+                let label = target.desc.label;
+                let subresources = target.checked_subresources(range)?;
+                for &(mip, layer) in &subresources {
+                    let tracked = target.subresource_mut(mip, layer).access;
+                    if tracked != from {
+                        return Err(RhiError::validation(
+                            "R0103",
+                            format!(
+                                "barrier on texture '{label}' mip {mip} layer {layer} starts from {from:?} but the subresource is in {tracked:?}"
+                            ),
+                        ));
+                    }
+                }
+                for (mip, layer) in subresources {
+                    target.subresource_mut(mip, layer).access = to;
                 }
             }
             Command::BufferAccess { buffer, access } => {
@@ -206,10 +225,12 @@ impl<'state> Validator<'state> {
                 self.copy_buffer_data(src, src_offset, dst, dst_offset, size)?;
             }
             Transfer::BufferToTexture { src, dst, size } => {
+                self.check_copy_layout(dst.texture, src.layout, size)?;
                 self.buffer_usage(src.buffer, BufferUsage::COPY_SRC)?;
                 self.copy_texture(dst, size, Access::COPY_DST, TextureUsage::COPY_DST)?;
             }
             Transfer::TextureToBuffer { src, dst, size } => {
+                self.check_copy_layout(src.texture, dst.layout, size)?;
                 self.copy_texture(src, size, Access::COPY_SRC, TextureUsage::COPY_SRC)?;
                 self.buffer_usage(dst.buffer, BufferUsage::COPY_DST)?;
             }
@@ -236,6 +257,17 @@ impl<'state> Validator<'state> {
             _ => return Err(RhiError::Unsupported("transfer not handled by the null validator")),
         }
         Ok(())
+    }
+
+    fn check_copy_layout(&self, texture: TextureId, layout: TexelLayout, size: Extent3d) -> Result<(), RhiError> {
+        let format = self
+            .state
+            .textures
+            .get(texture)
+            .ok_or(RhiError::InvalidHandle("texture"))?
+            .desc
+            .format;
+        check_texel_layout(format, layout, size, RowAlignment::Required)
     }
 
     fn require_valid_texture_state(access: Access) -> Result<(), RhiError> {

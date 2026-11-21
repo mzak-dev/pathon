@@ -11,6 +11,7 @@ use pathon_rhi_types::{
     TextureId, TextureUsage, TextureViewDesc, TextureViewId,
 };
 
+use crate::texel_layout::{RowAlignment, check_texel_layout};
 use crate::validator::Validator;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
@@ -382,7 +383,7 @@ impl DeviceApi for NullDevice {
         &self,
         dst: &TextureCopy,
         _data: &[u8],
-        _layout: TexelLayout,
+        layout: TexelLayout,
         size: Extent3d,
     ) -> Result<(), RhiError> {
         let mut state = self.lock();
@@ -390,6 +391,7 @@ impl DeviceApi for NullDevice {
             .textures
             .get_mut(dst.texture)
             .ok_or(RhiError::InvalidHandle("texture"))?;
+        check_texel_layout(texture.desc.format, layout, size, RowAlignment::NotRequired)?;
         let layers = if texture.desc.dimension == TextureDimension::D3 {
             1
         } else {
@@ -408,7 +410,9 @@ impl DeviceApi for NullDevice {
             layer_count: layers,
         };
         for (mip, layer) in texture.subresource_list(range) {
-            texture.subresource_mut(mip, layer).initialized = true;
+            let written = texture.subresource_mut(mip, layer);
+            written.initialized = true;
+            written.access = Access::COPY_DST;
         }
         Ok(())
     }

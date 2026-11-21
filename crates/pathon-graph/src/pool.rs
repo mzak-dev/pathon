@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use pathon_resources::DeferredRelease;
 use pathon_rhi_types::{
-    BufferDesc, BufferId, DeviceApi, RhiError, TextureDesc, TextureId, TextureViewDesc, TextureViewId,
+    Access, BufferDesc, BufferId, DeviceApi, RhiError, TextureDesc, TextureId, TextureViewDesc, TextureViewId,
 };
 
 // Textures unused for this many frames leave the pool.
@@ -12,6 +12,8 @@ const KEEP_UNUSED_FRAMES: u64 = 3;
 struct PooledTexture {
     texture: TextureId,
     desc: TextureDesc,
+    // Per-subresource state the last submitted frame left the texture in; the next barrier starts from it.
+    states: Option<Vec<Access>>,
     last_used: u64,
     in_use: bool,
 }
@@ -75,10 +77,24 @@ impl ResourcePool {
         self.textures.push(PooledTexture {
             texture,
             desc: *desc,
+            states: None,
             last_used: frame,
             in_use: true,
         });
         Ok(texture)
+    }
+
+    pub(crate) fn remembered_states(&self, texture: TextureId) -> Option<&[Access]> {
+        self.textures
+            .iter()
+            .find(|pooled| pooled.texture == texture)
+            .and_then(|pooled| pooled.states.as_deref())
+    }
+
+    pub(crate) fn remember_states(&mut self, texture: TextureId, states: &[Access]) {
+        if let Some(pooled) = self.textures.iter_mut().find(|pooled| pooled.texture == texture) {
+            pooled.states = Some(states.to_vec());
+        }
     }
 
     pub(crate) fn acquire_buffer(

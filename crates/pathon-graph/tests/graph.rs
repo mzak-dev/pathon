@@ -1230,3 +1230,53 @@ fn release_all_releases_the_views_with_the_textures() {
         "two textures and the view the pass created"
     );
 }
+
+fn mixed_state_frame(device: &NullDevice, pool: &mut ResourcePool, frame: u64) -> pathon_graph::Execution {
+    let mut graph = FrameGraph::new();
+    let output = import_output(&mut graph, device);
+    let pyramid = graph.create_texture("pyramid", GraphTextureDesc::render(Format::Rgba8Unorm).with_mips(3));
+    let mut pass = graph.add_pass(PassDesc::new("mip 0", Stage::Prepass));
+    let written = pass.write_range(pyramid, Access::COPY_DST, SubresourceRange::mip(0));
+    pass.record(|_| Ok(()));
+    let mut pass = graph.add_pass(PassDesc::new("consumer", Stage::Opaque));
+    pass.read(written, Access::SAMPLED);
+    pass.write(output, Access::COPY_DST);
+    pass.record(|_| Ok(()));
+    run(graph, device, pool, frame)
+}
+
+#[test]
+fn barriers_over_a_texture_with_mixed_states_start_from_each_subresources_state() {
+    let device = NullDevice::new();
+    let mut pool = ResourcePool::new();
+
+    for frame in 0..2 {
+        let execution = mixed_state_frame(&device, &mut pool, frame);
+        let from_states: Vec<Access> = execution
+            .commands
+            .commands()
+            .iter()
+            .filter_map(|command| match command {
+                Command::TextureAccess {
+                    range,
+                    from,
+                    to: Access::SAMPLED,
+                    ..
+                } if *range != SubresourceRange::ALL => Some(*from),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            from_states.contains(&Access::COPY_DST),
+            "mip 0 leaves COPY_DST, frame {frame}"
+        );
+        // On the first frame the other mips start empty; later the pool remembers they are still SAMPLED.
+        assert!(
+            frame > 0 || from_states.contains(&Access::empty()),
+            "the other mips are split into their own barriers, frame {frame}"
+        );
+        device
+            .submit(execution.commands)
+            .expect("barriers pass null validation");
+    }
+}

@@ -26,7 +26,7 @@ fn read_pixels(renderer: &Renderer, target: pathon_core::TargetId) -> Vec<u8> {
         })
         .expect("buffer");
     let mut list = CommandList::new();
-    list.texture_access(texture, SubresourceRange::ALL, Access::COPY_SRC);
+    list.texture_access(texture, SubresourceRange::ALL, Access::SAMPLED, Access::COPY_SRC);
     list.copy_texture_to_buffer(
         TextureCopy::whole(texture),
         BufferCopy {

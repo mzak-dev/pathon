@@ -147,7 +147,7 @@ fn compute_reads_elements_of_a_texture_binding_array() {
 
     let mut list = CommandList::new();
     for texture in &textures {
-        list.texture_access(*texture, SubresourceRange::ALL, Access::SAMPLED);
+        list.texture_access(*texture, SubresourceRange::ALL, Access::COPY_DST, Access::SAMPLED);
     }
     {
         let mut pass = list.compute_pass(ComputePassDesc {
@@ -295,7 +295,7 @@ fn compute_reads_elements_of_a_sampler_binding_array() {
         .expect("pipeline");
 
     let mut list = CommandList::new();
-    list.texture_access(source, SubresourceRange::ALL, Access::SAMPLED);
+    list.texture_access(source, SubresourceRange::ALL, Access::COPY_DST, Access::SAMPLED);
     {
         let mut pass = list.compute_pass(ComputePassDesc {
             label: "sampler array",

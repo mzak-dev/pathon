@@ -3,7 +3,7 @@ use bitflags::bitflags;
 bitflags! {
     // The state a resource is in after a barrier: every way it may be used until the next barrier.
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
-    pub struct Access: u32 {
+    pub struct Access: u16 {
         const COPY_SRC = 1 << 0;
         const COPY_DST = 1 << 1;
         const SAMPLED = 1 << 2;

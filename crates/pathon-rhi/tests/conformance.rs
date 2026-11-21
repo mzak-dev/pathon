@@ -88,9 +88,9 @@ fn buffer_texture_round_trip(device: &Device) {
     let size = Extent3d::new_2d(width, 4);
 
     let mut list = CommandList::new();
-    list.texture_access(texture, SubresourceRange::ALL, Access::COPY_DST);
+    list.texture_access(texture, SubresourceRange::ALL, Access::empty(), Access::COPY_DST);
     list.copy_buffer_to_texture(BufferCopy { buffer: upload, layout }, TextureCopy::whole(texture), size);
-    list.texture_access(texture, SubresourceRange::ALL, Access::COPY_SRC);
+    list.texture_access(texture, SubresourceRange::ALL, Access::COPY_DST, Access::COPY_SRC);
     list.copy_texture_to_buffer(
         TextureCopy::whole(texture),
         BufferCopy {
@@ -334,8 +334,8 @@ fn indexed_quad_samples_texture(device: &Device) {
     let readback = readback_buffer(device, u64::from(ROW_BYTES * target_size));
 
     let mut list = CommandList::new();
-    list.texture_access(source, SubresourceRange::ALL, Access::SAMPLED);
-    list.texture_access(target, SubresourceRange::ALL, Access::COLOR_ATTACHMENT);
+    list.texture_access(source, SubresourceRange::ALL, Access::COPY_DST, Access::SAMPLED);
+    list.texture_access(target, SubresourceRange::ALL, Access::empty(), Access::COLOR_ATTACHMENT);
     {
         let mut pass = list.render_pass(RenderPassDesc {
             label: "quad",
@@ -343,13 +343,18 @@ fn indexed_quad_samples_texture(device: &Device) {
             depth: None,
             timestamps,
         });
-        pass.set_pipeline(pipeline);
         pass.set_bind_group(0, group);
+        pass.set_pipeline(pipeline);
         pass.set_vertex_buffer(0, vertex_buffer, 0);
         pass.set_index_buffer(index_buffer, IndexFormat::Uint16, 0);
         pass.draw_indexed(0..6, 0, 0..1);
     }
-    list.texture_access(target, SubresourceRange::ALL, Access::COPY_SRC);
+    list.texture_access(
+        target,
+        SubresourceRange::ALL,
+        Access::COLOR_ATTACHMENT,
+        Access::COPY_SRC,
+    );
     list.copy_texture_to_buffer(
         TextureCopy::whole(target),
         BufferCopy {

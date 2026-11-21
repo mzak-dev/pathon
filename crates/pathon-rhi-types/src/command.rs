@@ -198,7 +198,8 @@ pub enum Command {
     TextureAccess {
         texture: TextureId,
         range: SubresourceRange,
-        access: Access,
+        from: Access,
+        to: Access,
     },
     BufferAccess {
         buffer: BufferId,
@@ -318,8 +319,13 @@ impl CommandList {
         self.commands.extend(other.commands);
     }
 
-    pub fn texture_access(&mut self, texture: TextureId, range: SubresourceRange, access: Access) {
-        self.push(Command::TextureAccess { texture, range, access });
+    pub fn texture_access(&mut self, texture: TextureId, range: SubresourceRange, from: Access, to: Access) {
+        self.push(Command::TextureAccess {
+            texture,
+            range,
+            from,
+            to,
+        });
     }
 
     pub fn buffer_access(&mut self, buffer: BufferId, access: Access) {

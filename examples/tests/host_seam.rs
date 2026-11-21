@@ -191,6 +191,7 @@ fn render_mode_c() -> Vec<u8> {
     list.texture_access(
         renderer.target_texture(target).expect("texture"),
         SubresourceRange::ALL,
+        Access::SAMPLED,
         Access::COPY_SRC,
     );
     list.copy_texture_to_buffer(

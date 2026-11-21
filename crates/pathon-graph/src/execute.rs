@@ -126,9 +126,11 @@ impl StateTracker {
         if changed.is_empty() {
             return;
         }
-        let uniform = changed.len() == needed.len() && needed.iter().all(|need| *need == needed[0]);
+        let uniform = changed.len() == needed.len()
+            && needed.iter().all(|need| *need == needed[0])
+            && current.iter().all(|state| *state == current[0]);
         if uniform {
-            commands.texture_access(physical.texture, SubresourceRange::ALL, needed[0]);
+            commands.texture_access(physical.texture, SubresourceRange::ALL, current[0], needed[0]);
         } else {
             for index in &changed {
                 let index = u32::try_from(*index).expect("subresource count fits u32");
@@ -138,7 +140,7 @@ impl StateTracker {
                     base_layer: index % layers,
                     layer_count: 1,
                 };
-                commands.texture_access(physical.texture, range, needed[index as usize]);
+                commands.texture_access(physical.texture, range, current[index as usize], needed[index as usize]);
             }
         }
         for index in changed {
@@ -240,6 +242,13 @@ impl FrameGraph {
             tracker.seed(entry.current, entry.current_states.clone());
         }
 
+        for texture in physical.iter().flatten() {
+            let known = tracker.states.iter().any(|(seeded, _)| *seeded == texture.texture);
+            if let (false, Some(states)) = (known, pool.remembered_states(texture.texture)) {
+                tracker.seed(texture.texture, states.to_vec());
+            }
+        }
+
         let written = self.history_written(compiled);
         let mut capture = self
             .capture
@@ -312,6 +321,10 @@ impl FrameGraph {
         pool.end_frame(frame, release);
         if let Some(error) = failure {
             return Err(error);
+        }
+
+        for (texture, states) in &tracker.states {
+            pool.remember_states(*texture, states);
         }
 
         let stats = GraphStats {
@@ -402,10 +415,10 @@ fn barriers_since(commands: &CommandList, start: usize) -> Vec<BarrierCapture> {
     commands.commands()[start..]
         .iter()
         .filter_map(|command| match command {
-            Command::TextureAccess { texture, range, access } => Some(BarrierCapture {
+            Command::TextureAccess { texture, range, to, .. } => Some(BarrierCapture {
                 target: CapturedTarget::Texture(*texture),
                 range: *range,
-                access: *access,
+                access: *to,
             }),
             Command::BufferAccess { buffer, access } => Some(BarrierCapture {
                 target: CapturedTarget::Buffer(*buffer),

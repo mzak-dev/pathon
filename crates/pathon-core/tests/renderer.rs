@@ -1,10 +1,12 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-use pathon_api::Camera;
+use pathon_api::graph::{GraphTextureDesc, PassDesc, Stage};
+use pathon_api::{Camera, RecordCtx, RenderFeature};
 use pathon_core::{FeatureStatus, FrameInput, RenderError, Renderer, RendererBuilder, ViewInput};
 use pathon_rhi::{
-    Access, Backend, Color, Device, DeviceApi, DeviceRequest, Extent3d, Format, PhysicalSize, SurfaceTarget,
+    Access, Backend, Color, Device, DeviceApi, DeviceRequest, Extent3d, Format, PhysicalSize, RhiError, SurfaceTarget,
+    TextureId,
 };
 use pathon_test::{GeometryPack, OnDemandConsumer, UnlitMeshPack, UpscalerPack, VendorDummy};
 
@@ -190,10 +192,8 @@ fn record_frame_refuses_window_surfaces() {
         .expect("window frames go through render_frame");
 }
 
-#[test]
-fn imported_host_texture_keeps_its_contents_for_mode_a() {
-    let device = Arc::new(Device::null());
-    let texture = device
+fn host_texture(device: &Device) -> TextureId {
+    device
         .create_texture(&pathon_rhi::TextureDesc::new_2d(
             "host color",
             SIZE.width,
@@ -201,10 +201,16 @@ fn imported_host_texture_keeps_its_contents_for_mode_a() {
             Format::Rgba8Unorm,
             pathon_rhi::TextureUsage::RENDER_TARGET | pathon_rhi::TextureUsage::COPY_SRC,
         ))
-        .expect("host texture");
+        .expect("host texture")
+}
+
+// Records mode A into a host texture and counts the passes that clear it.
+fn output_clears_in_mode_a(feature: impl RenderFeature + 'static) -> usize {
+    let device = Arc::new(Device::null());
+    let texture = host_texture(&device);
     let mut renderer = Renderer::builder()
         .with_device(Arc::clone(&device))
-        .with_feature(UnlitMeshPack::new())
+        .with_feature(feature)
         .build()
         .expect("renderer");
     let target = renderer
@@ -217,14 +223,50 @@ fn imported_host_texture_keeps_its_contents_for_mode_a() {
         }],
         ..FrameInput::default()
     };
-
     let commands = renderer.record_frame(&input).expect("record");
-    let clears = commands
+    commands
         .commands()
         .iter()
         .filter(|command| matches!(command, pathon_rhi::Command::PushDebugGroup("clear output")))
-        .count();
-    assert_eq!(clears, 0, "pathon must not clear what the host rendered");
+        .count()
+}
+
+#[test]
+fn imported_host_texture_keeps_its_contents_for_mode_a() {
+    assert_eq!(
+        output_clears_in_mode_a(UnlitMeshPack::new()),
+        0,
+        "pathon must not clear what the host rendered"
+    );
+}
+
+struct ReadsUnwrittenTexture;
+
+impl RenderFeature for ReadsUnwrittenTexture {
+    fn name(&self) -> &'static str {
+        "reads unwritten"
+    }
+
+    fn stage(&self) -> Stage {
+        Stage::PostProcess
+    }
+
+    fn record(&mut self, ctx: &mut RecordCtx<'_>) -> Result<(), RhiError> {
+        let graph = ctx.graph();
+        let texture = graph.create_texture("never written", GraphTextureDesc::render(Format::Rgba8Unorm));
+        let mut pass = graph.add_pass(PassDesc::new("reads unwritten", Stage::PostProcess).side_effect());
+        pass.read(texture, Access::SHADER_READ);
+        Ok(())
+    }
+}
+
+#[test]
+fn a_broken_graph_leaves_the_host_image_untouched_in_mode_a() {
+    assert_eq!(
+        output_clears_in_mode_a(ReadsUnwrittenTexture),
+        0,
+        "the fallback must not clear what the host rendered"
+    );
 }
 
 struct NoWindow;
@@ -301,4 +343,79 @@ fn capture_is_opt_in_and_feature_details_explain_disabled_packs() {
             .iter()
             .any(|info| info.name == "geometry" && info.order.is_some())
     );
+}
+
+#[test]
+fn a_failed_frame_gives_back_the_window_frames_it_acquired() {
+    let mut renderer = null_builder().build().expect("renderer");
+    let window = renderer
+        .add_window(SurfaceTarget::new(Arc::new(NoWindow), SIZE, 1.0))
+        .expect("surface");
+    let removed = renderer
+        .add_offscreen_target(SIZE, Format::Rgba8Unorm)
+        .expect("offscreen");
+    renderer.remove_target(removed).expect("remove");
+    let view = |target| ViewInput {
+        target,
+        camera: Camera::default(),
+    };
+
+    let failing = FrameInput {
+        views: vec![view(window), view(removed)],
+        ..FrameInput::default()
+    };
+    assert!(matches!(
+        renderer.render_frame(&failing),
+        Err(RenderError::UnknownTarget)
+    ));
+
+    let next = FrameInput {
+        views: vec![view(window)],
+        ..FrameInput::default()
+    };
+    renderer.render_frame(&next).expect("the window can be acquired again");
+}
+
+struct FailsToRecord {
+    calls: Arc<AtomicUsize>,
+}
+
+impl RenderFeature for FailsToRecord {
+    fn name(&self) -> &'static str {
+        "fails to record"
+    }
+
+    fn stage(&self) -> Stage {
+        Stage::PostProcess
+    }
+
+    fn record(&mut self, _ctx: &mut RecordCtx<'_>) -> Result<(), RhiError> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        Err(RhiError::InvalidHandle("broken pack"))
+    }
+}
+
+#[test]
+fn a_pack_that_fails_to_record_is_disabled_and_not_called_again() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let mut renderer = null_builder()
+        .with_feature(FailsToRecord {
+            calls: Arc::clone(&calls),
+        })
+        .build()
+        .expect("renderer");
+    let input = one_view(&mut renderer, Format::Rgba8Unorm);
+
+    for _ in 0..3 {
+        renderer
+            .render_frame(&input)
+            .expect("the rest of the frame still renders");
+    }
+
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert!(matches!(
+        status_of(&renderer, "fails to record"),
+        FeatureStatus::Disabled { code: "F0105", .. }
+    ));
+    assert_eq!(renderer.active_features(), [] as [&str; 0]);
 }

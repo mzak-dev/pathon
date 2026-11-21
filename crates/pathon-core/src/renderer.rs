@@ -263,24 +263,42 @@ impl Renderer {
         let mut commands = CommandList::new();
         let mut presents = Vec::new();
         let mut report = FrameReport::default();
-        for (index, view) in input.views.iter().enumerate() {
-            let Some(output) = self.acquire_output(view.target, &mut presents)? else {
-                report.skipped_views += 1;
-                continue;
-            };
-            let (stats, compiled) = self.record_view(index, view, input, output, &mut commands)?;
-            report.views.push(stats);
-            report.compiled_views += usize::from(compiled);
+        let recorded = self.record_views(input, &mut commands, &mut presents, &mut report);
+        let submitted = recorded.and_then(|()| self.device.submit(commands).map_err(RenderError::from));
+        if let Err(error) = submitted {
+            for surface in presents {
+                self.device.discard_surface(surface);
+            }
+            return Err(error);
         }
-        let submitted = self.device.submit(commands);
+        let mut presented = Ok(());
         for surface in presents {
-            self.device.present_surface(surface)?;
+            presented = presented.and(self.device.present_surface(surface));
         }
-        submitted?;
+        presented?;
         self.end_frame();
         report.captures = std::mem::take(&mut self.frame_captures);
         report.diagnostics = std::mem::take(&mut self.frame_diagnostics);
         Ok(report)
+    }
+
+    fn record_views(
+        &mut self,
+        input: &FrameInput,
+        commands: &mut CommandList,
+        presents: &mut Vec<SurfaceId>,
+        report: &mut FrameReport,
+    ) -> Result<(), RenderError> {
+        for (index, view) in input.views.iter().enumerate() {
+            let Some(output) = self.acquire_output(view.target, presents)? else {
+                report.skipped_views += 1;
+                continue;
+            };
+            let (stats, compiled) = self.record_view(index, view, input, output, commands)?;
+            report.views.push(stats);
+            report.compiled_views += usize::from(compiled);
+        }
+        Ok(())
     }
 
     // Mode A: the host submits the returned list itself (e.g. through `interop::encode_into`).
@@ -390,17 +408,7 @@ impl Renderer {
         }
 
         let mut graph = FrameGraph::new();
-        let cleared = if output.keeps_contents {
-            graph.import_texture(
-                "output",
-                output.texture,
-                output.desc,
-                output.initial,
-                output.final_access,
-            )
-        } else {
-            self.add_output_clear(&mut graph, output)
-        };
+        let output_handle = self.import_output(&mut graph, output);
         let mut slots = Slots::new();
         let mut diagnostics = Vec::new();
         let mut failed = Vec::new();
@@ -413,7 +421,7 @@ impl Renderer {
                 &mut diagnostics,
                 &mut self.shared,
             );
-            ctx.set_slot(Slot::OUTPUT, cleared);
+            ctx.set_slot(Slot::OUTPUT, output_handle);
             for feature_index in &self.registry.order {
                 if let Err(error) = self.registry.entries[*feature_index].feature.record(&mut ctx) {
                     failed.push((*feature_index, error));
@@ -444,7 +452,7 @@ impl Renderer {
                 for error in &errors {
                     self.report(error);
                 }
-                return self.record_clear_only(output, commands).map(|stats| (stats, true));
+                return self.record_fallback(output, commands).map(|stats| (stats, true));
             }
         };
         let fresh_warnings = if fresh {
@@ -473,8 +481,23 @@ impl Renderer {
             Err(RhiError::DeviceLost) => Err(RenderError::DeviceLost),
             Err(error) => {
                 self.report(&Diagnostic::error("F0105", format!("a pass failed to record: {error}")));
-                self.record_clear_only(output, commands).map(|stats| (stats, true))
+                self.record_fallback(output, commands).map(|stats| (stats, true))
             }
+        }
+    }
+
+    // A host image (mode A) is kept as the host rendered it; every other target starts cleared.
+    fn import_output(&self, graph: &mut FrameGraph, output: OutputTarget) -> TextureHandle {
+        if output.keeps_contents {
+            graph.import_texture(
+                "output",
+                output.texture,
+                output.desc,
+                output.initial,
+                output.final_access,
+            )
+        } else {
+            self.add_output_clear(graph, output)
         }
     }
 
@@ -502,14 +525,10 @@ impl Renderer {
         cleared
     }
 
-    // A broken graph still leaves the target presentable.
-    fn record_clear_only(
-        &mut self,
-        output: OutputTarget,
-        commands: &mut CommandList,
-    ) -> Result<GraphStats, RenderError> {
+    // A broken graph still hands the target back in its final state: cleared, or untouched for a host image.
+    fn record_fallback(&mut self, output: OutputTarget, commands: &mut CommandList) -> Result<GraphStats, RenderError> {
         let mut graph = FrameGraph::new();
-        self.add_output_clear(&mut graph, output);
+        self.import_output(&mut graph, output);
         let compiled = graph
             .compile(FrameSizes::same(PhysicalSize::new(
                 output.desc.size.width,

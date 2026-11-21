@@ -56,12 +56,17 @@ impl Registry {
         }
     }
 
+    // Takes the feature out of the frame for good, wherever it failed.
     pub(crate) fn disable(&mut self, index: usize, diagnostic: Diagnostic) {
         pathon_diag::emit(&diagnostic);
         self.entries[index].status = FeatureStatus::Disabled {
             code: diagnostic.code,
             reason: diagnostic.message,
         };
+        self.order.retain(|active| *active != index);
+        if self.temporal_owner == Some(index) {
+            self.temporal_owner = None;
+        }
     }
 
     // Phase 1, before the device exists. The first feature to name a backend wins; later conflicting ones are off.
@@ -109,7 +114,6 @@ impl Registry {
                 );
             }
         }
-        self.order.retain(|index| self.entries[*index].status.is_active());
     }
 
     pub(crate) fn reset(&mut self, device: &dyn DeviceApi, task_pool: &dyn TaskPool, shared: &mut Shared) {
@@ -123,7 +127,6 @@ impl Registry {
                 );
             }
         }
-        self.order.retain(|index| self.entries[*index].status.is_active());
     }
 
     fn negotiate(&mut self, caps: &Caps) {
@@ -210,7 +213,6 @@ impl Registry {
             }
             holders.push((role, index));
         }
-        self.order.retain(|index| self.entries[*index].status.is_active());
         self.temporal_owner = holders
             .iter()
             .find(|(role, _)| *role == Role::TEMPORAL_RESOLVE)

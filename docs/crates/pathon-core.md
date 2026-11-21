@@ -21,9 +21,9 @@ Dla każdego widoku z `FrameInput::views`:
 1. `prepare_view` aktywnych paczek w kolejności — rola `TemporalResolve` może zmienić `render_size` i jitter;
 2. graf: import celu jako slot `Output`, `record` każdej paczki;
 3. `compile` + `execute` grafu; błąd grafu → diagnostyka i klatka z samym czyszczeniem (cel nadal da się zaprezentować);
-4. wszystkie widoki w jednym `submit`, potem `present` okien.
+4. wszystkie widoki w jednym `submit`, potem `present` okien. Gdy nagrywanie albo `submit` zawiedzie, pobrane klatki okien wracają przez `discard_surface`, więc następna klatka może je pobrać.
 
-Paczka, której `record` zwróci błąd, jest wyłączana z F0105; reszta klatki idzie dalej.
+Paczka, której `record` zwróci błąd, jest wyłączana z F0105 i znika z kolejności klatki; reszta klatki idzie dalej. Gdy graf się nie skompiluje albo pass zawiedzie, cel wraca w stanie końcowym: wyczyszczony, a obraz hosta (tryb A) nietknięty.
 
 `FrameReport::diagnostics` zbiera diagnostyki z tej klatki (F0105, ostrzeżenia grafu). Po `set_capture(true)` `FrameReport::captures` ma jeden `GraphCapture` na widok, a `feature_details()` opisuje każdą paczkę (status, etap, priorytet, rola, kolejność). Z tego korzystają [devtools](../devtools.md).
 

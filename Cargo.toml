@@ -31,6 +31,8 @@ crossbeam-channel = "0.5"
 divan = "0.1"
 glam = { version = "0.34", features = ["bytemuck"] }
 log = "0.4"
+naga = { version = "30", default-features = false, features = ["wgsl-in", "wgsl-out"] }
+naga_oil = { version = "0.23", default-features = false }
 # Without "underline-color": its weak `ratatui-termwiz?/` feature makes cargo metadata list termwiz (WTFPL) as resolved.
 ratatui = { version = "0.30", default-features = false, features = ["crossterm", "layout-cache"] }
 raw-window-handle = "0.6"

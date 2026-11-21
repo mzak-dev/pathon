@@ -22,6 +22,7 @@ const ALLOWED_LICENSES: &[&str] = &[
 // Third-party crates each allowed in exactly the listed pathon crates.
 const PINNED_DEPENDENCIES: &[(&str, &[&str])] = &[
     ("wgpu", &["pathon-rhi-wgpu"]),
+    ("naga_oil", &["pathon-shader"]),
     ("winit", &["pathon-platform-winit"]),
     ("bevy", &["pathon-bevy"]),
     ("godot", &["pathon-rhi-godot", "pathon-godot"]),

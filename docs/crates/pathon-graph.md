@@ -38,7 +38,7 @@ Widok pominięty w klatce (brak `execute` dla celu) nie rusza historii; po utrac
 
 ## Bariery (M2-05)
 
-Przed każdym passem graf porównuje potrzebny `Access` każdego subresource'u z bieżącym i dopisuje `TextureAccess`, także po każdym zapisie (zależność pamięci dla backendów natywnych). Na końcu zasoby importowane przechodzą do stanu `final` (okna: `PRESENT`). Testy wykonują ten plan na `pathon-rhi-null`, który odrzuca każdy błąd stanu.
+Przed każdym passem graf porównuje potrzebny `Access` każdego subresource'u z bieżącym i dopisuje `TextureAccess { from, to }`, gdzie `from` to bieżący stan (jedna komenda na cały zakres tylko wtedy, gdy wszystkie subresource'y mają ten sam stan poprzedni i docelowy; stan, w którym klatka zostawiła teksturę z puli, pamięta pula), także po każdym zapisie (zależność pamięci dla backendów natywnych). Na końcu zasoby importowane przechodzą do stanu `final` (okna: `PRESENT`). Testy wykonują ten plan na `pathon-rhi-null`, który odrzuca każdy błąd stanu.
 
 ## Walidacja (M2-06)
 

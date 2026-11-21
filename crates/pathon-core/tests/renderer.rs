@@ -796,3 +796,69 @@ fn history_survives_a_skipped_frame_and_resets_with_the_device() {
     renderer.render_frame(&with_view).expect("frame after recovery");
     assert_eq!(*seen.lock().expect("mutex"), [false]);
 }
+
+fn history_renderer() -> (Renderer, Arc<Mutex<Vec<bool>>>) {
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let renderer = null_builder()
+        .with_feature(RecordsHistoryValidity {
+            seen: Arc::clone(&seen),
+        })
+        .build()
+        .expect("renderer");
+    (renderer, seen)
+}
+
+// The second view names a removed target, so the frame fails after the first view has recorded.
+fn failing_second_view(renderer: &mut Renderer, healthy: &FrameInput) -> FrameInput {
+    let removed = renderer
+        .add_offscreen_target(SIZE, Format::Rgba8Unorm)
+        .expect("offscreen");
+    renderer.remove_target(removed).expect("remove");
+    let mut views = healthy.views.clone();
+    views.push(ViewInput {
+        target: removed,
+        camera: Camera::default(),
+    });
+    FrameInput {
+        views,
+        ..FrameInput::default()
+    }
+}
+
+#[test]
+fn history_written_in_a_frame_that_failed_later_is_not_valid_in_the_next() {
+    let (mut renderer, seen) = history_renderer();
+    let healthy = one_view(&mut renderer, Format::Rgba8Unorm);
+    let failing = failing_second_view(&mut renderer, &healthy);
+
+    renderer.render_frame(&healthy).expect("first frame");
+    assert!(renderer.render_frame(&failing).is_err());
+    renderer.render_frame(&healthy).expect("frame after the failure");
+
+    assert_eq!(*seen.lock().expect("mutex"), [false, true, false]);
+}
+
+#[test]
+fn history_written_in_a_record_frame_that_failed_later_is_not_valid_in_the_next() {
+    let (mut renderer, seen) = history_renderer();
+    let healthy = one_view(&mut renderer, Format::Rgba8Unorm);
+    let failing = failing_second_view(&mut renderer, &healthy);
+
+    renderer.record_frame(&healthy).expect("first frame");
+    assert!(renderer.record_frame(&failing).is_err());
+    renderer.record_frame(&healthy).expect("frame after the failure");
+
+    assert_eq!(*seen.lock().expect("mutex"), [false, true, false]);
+}
+
+#[test]
+fn history_stays_valid_across_frames_that_succeed() {
+    let (mut renderer, seen) = history_renderer();
+    let healthy = one_view(&mut renderer, Format::Rgba8Unorm);
+
+    for _ in 0..3 {
+        renderer.render_frame(&healthy).expect("frame");
+    }
+
+    assert_eq!(*seen.lock().expect("mutex"), [false, true, true]);
+}

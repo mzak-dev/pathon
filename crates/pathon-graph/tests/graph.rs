@@ -1,3 +1,5 @@
+use std::sync::{Arc, Mutex};
+
 use pathon_graph::{
     CapturedKind, CapturedTarget, FrameGraph, FrameSizes, GraphBufferDesc, GraphTextureDesc, HistoryStore, PassContext,
     PassDesc, ResourcePool, Stage, TextureHandle,
@@ -744,6 +746,53 @@ fn resizing_invalidates_history() {
 }
 
 #[test]
+fn changing_only_the_render_size_invalidates_history() {
+    let device = NullDevice::new();
+    let mut pool = ResourcePool::new();
+    let mut store = HistoryStore::new();
+    let mut release = DeferredRelease::new(2);
+    let output = PhysicalSize::new(16, 16);
+    let sizes = |render| FrameSizes { render, output };
+
+    history_frame(
+        &device,
+        &mut pool,
+        &mut store,
+        &mut release,
+        sizes(PhysicalSize::new(8, 8)),
+        0,
+    );
+    let same = history_frame(
+        &device,
+        &mut pool,
+        &mut store,
+        &mut release,
+        sizes(PhysicalSize::new(8, 8)),
+        1,
+    );
+    let scaled = history_frame(
+        &device,
+        &mut pool,
+        &mut store,
+        &mut release,
+        sizes(PhysicalSize::new(4, 4)),
+        2,
+    );
+    let after = history_frame(
+        &device,
+        &mut pool,
+        &mut store,
+        &mut release,
+        sizes(PhysicalSize::new(4, 4)),
+        3,
+    );
+
+    assert!(same.previous_valid);
+    assert!(!scaled.previous_valid, "a new render size is a new history");
+    assert!(after.previous_valid);
+}
+
+#[test]
 fn the_pass_writing_history_is_not_culled() {
     let device = NullDevice::new();
     let mut pool = ResourcePool::new();
@@ -798,6 +847,10 @@ fn capture_lists_buffers_and_history() {
     assert_eq!(resource("scratch").kind, CapturedKind::Buffer);
     assert_eq!(resource("scratch").buffer_size, Some(256));
     assert_eq!(resource("taa history").kind, CapturedKind::History);
+    assert!(
+        !resource("taa history").imported,
+        "history belongs to the store, not to the host"
+    );
     assert_eq!(resource("taa history").buffer_size, None);
     assert_eq!(capture.stats.physical_buffers, 1);
     let buffer_barrier = capture
@@ -807,4 +860,276 @@ fn capture_lists_buffers_and_history() {
         .find(|barrier| matches!(barrier.target, CapturedTarget::Buffer(_)))
         .expect("a buffer barrier");
     assert_eq!(buffer_barrier.access, Access::SHADER_WRITE);
+}
+
+type Seen = Arc<Mutex<Vec<TextureId>>>;
+
+fn zero_history_passes(commands: &pathon_rhi_types::CommandList) -> usize {
+    commands
+        .commands()
+        .iter()
+        .filter(|command| matches!(command, Command::BeginRenderPass(pass) if pass.label == "zero history"))
+        .count()
+}
+
+struct Probe {
+    device: NullDevice,
+    pool: ResourcePool,
+    store: HistoryStore,
+    release: DeferredRelease,
+    frame: u64,
+}
+
+struct ProbeFrame {
+    valid: Vec<bool>,
+    previous: Vec<TextureId>,
+    current: Vec<TextureId>,
+    zero_passes: usize,
+}
+
+impl Probe {
+    fn new() -> Self {
+        Self {
+            device: NullDevice::new(),
+            pool: ResourcePool::new(),
+            store: HistoryStore::new(),
+            release: DeferredRelease::new(2),
+            frame: 0,
+        }
+    }
+
+    // Each name gets a pass that writes `current` and reads `previous`; a conforming pass reads it only while valid.
+    fn frame(&mut self, names: &[&'static str], conforming: bool) -> ProbeFrame {
+        let sizes = FrameSizes::same(SIZE);
+        let previous: Seen = Seen::default();
+        let current: Seen = Seen::default();
+        let mut graph = FrameGraph::for_view(&self.store, sizes);
+        let mut valid = Vec::new();
+        for &name in names {
+            let history = graph.history_texture(name, HISTORY_DESC);
+            valid.push(history.previous_valid);
+            let mut pass = graph.add_pass(PassDesc::new(name, Stage::Resolve));
+            let reads = history.previous_valid || !conforming;
+            if reads {
+                pass.read(history.previous, Access::SHADER_READ);
+            }
+            let written = pass.write(history.current, Access::COLOR_ATTACHMENT);
+            let (previous, current) = (Arc::clone(&previous), Arc::clone(&current));
+            pass.record(move |context| {
+                if reads {
+                    previous.lock().expect("mutex").push(context.texture(history.previous));
+                }
+                current.lock().expect("mutex").push(context.texture(written));
+                clear(written)(context)
+            });
+        }
+        let compiled = graph.compile(sizes).expect("graph compiles");
+        let execution = graph
+            .execute(
+                &compiled,
+                &self.device,
+                &mut self.pool,
+                &mut self.store,
+                &mut self.release,
+                self.frame,
+            )
+            .expect("graph executes");
+        let zero_passes = zero_history_passes(&execution.commands);
+        self.device
+            .submit(execution.commands)
+            .expect("history passes null validation");
+        self.frame += 1;
+        let previous = previous.lock().expect("mutex").clone();
+        let current = current.lock().expect("mutex").clone();
+        ProbeFrame {
+            valid,
+            previous,
+            current,
+            zero_passes,
+        }
+    }
+}
+
+#[test]
+fn a_conforming_pass_reads_what_the_last_frame_wrote_without_recreating_textures() {
+    let mut probe = Probe::new();
+
+    let first = probe.frame(&["taa"], true);
+    let second = probe.frame(&["taa"], true);
+    let third = probe.frame(&["taa"], true);
+
+    assert_eq!(first.valid, [false]);
+    assert_eq!(second.valid, [true]);
+    assert_eq!(
+        second.previous, first.current,
+        "frame 1 reads the texture frame 0 wrote"
+    );
+    assert_eq!(
+        third.previous, second.current,
+        "frame 2 reads the texture frame 1 wrote"
+    );
+    assert_eq!(
+        probe.store.created_total(),
+        2,
+        "growing usage must not recreate the pair"
+    );
+    assert_eq!(probe.release.len(), 0);
+}
+
+#[test]
+fn an_invalid_previous_that_is_read_is_zeroed_and_a_valid_one_is_not() {
+    let mut probe = Probe::new();
+
+    let first = probe.frame(&["taa"], false);
+    let second = probe.frame(&["taa"], false);
+
+    assert_eq!(first.zero_passes, 1);
+    assert_eq!(second.zero_passes, 0);
+    assert_eq!(second.previous, first.current);
+}
+
+#[test]
+fn history_nobody_wrote_is_not_valid_even_though_the_pair_exists() {
+    let mut probe = Probe::new();
+    let sizes = FrameSizes::same(SIZE);
+    for _ in 0..2 {
+        let mut graph = FrameGraph::for_view(&probe.store, sizes);
+        let history = graph.history_texture("taa", HISTORY_DESC);
+        let mut pass = graph.add_pass(PassDesc::new("reader", Stage::Resolve).side_effect());
+        pass.read(history.previous, Access::SHADER_READ);
+        pass.record(|_| Ok(()));
+        let compiled = graph.compile(sizes).expect("graph compiles");
+        let valid = history.previous_valid;
+        let execution = graph
+            .execute(
+                &compiled,
+                &probe.device,
+                &mut probe.pool,
+                &mut probe.store,
+                &mut probe.release,
+                probe.frame,
+            )
+            .expect("graph executes");
+        assert!(!valid, "no frame has written this history");
+        assert_eq!(zero_history_passes(&execution.commands), 1);
+        probe.device.submit(execution.commands).expect("valid commands");
+        probe.frame += 1;
+    }
+}
+
+#[test]
+fn a_name_declared_twice_is_one_history_and_still_swaps() {
+    let mut probe = Probe::new();
+    let sizes = FrameSizes::same(SIZE);
+    let mut written = Vec::new();
+    let mut read = Vec::new();
+    for _ in 0..3 {
+        let mut graph = FrameGraph::for_view(&probe.store, sizes);
+        let first = graph.history_texture("taa", HISTORY_DESC);
+        let second = graph.history_texture("taa", HISTORY_DESC);
+        assert_eq!(first, second, "the same declaration returns the same pair");
+        let seen = Seen::default();
+        let mut pass = graph.add_pass(PassDesc::new("resolve", Stage::Resolve));
+        if first.previous_valid {
+            pass.read(second.previous, Access::SHADER_READ);
+        }
+        let current = pass.write(first.current, Access::COLOR_ATTACHMENT);
+        let (seen_in_pass, valid, previous) = (Arc::clone(&seen), first.previous_valid, second.previous);
+        pass.record(move |context| {
+            if valid {
+                seen_in_pass.lock().expect("mutex").push(context.texture(previous));
+            }
+            seen_in_pass.lock().expect("mutex").push(context.texture(current));
+            clear(current)(context)
+        });
+        let compiled = graph.compile(sizes).expect("graph compiles");
+        let execution = graph
+            .execute(
+                &compiled,
+                &probe.device,
+                &mut probe.pool,
+                &mut probe.store,
+                &mut probe.release,
+                probe.frame,
+            )
+            .expect("graph executes");
+        probe.device.submit(execution.commands).expect("valid commands");
+        probe.frame += 1;
+        let seen = seen.lock().expect("mutex").clone();
+        if let [previous, current] = seen[..] {
+            read.push(previous);
+            written.push(current);
+        } else {
+            written.push(seen[0]);
+        }
+    }
+    assert_eq!(read, [written[0], written[1]]);
+}
+
+#[test]
+fn one_name_with_two_descriptions_is_a_graph_error() {
+    let mut graph = FrameGraph::for_view(&HistoryStore::new(), FrameSizes::same(SIZE));
+    graph.history_texture("taa", HISTORY_DESC);
+    graph.history_texture("taa", GraphTextureDesc::render(Format::Rgba16Float));
+
+    let errors = graph
+        .compile(FrameSizes::same(SIZE))
+        .expect_err("conflicting descriptions");
+
+    assert_eq!(errors[0].code, "G0007");
+}
+
+#[test]
+fn history_that_a_successful_frame_did_not_declare_is_released() {
+    let mut probe = Probe::new();
+    probe.frame(&["taa"], true);
+    probe.frame(&["taa"], true);
+
+    probe.frame(&[], true);
+
+    assert_eq!(probe.store.textures().count(), 0);
+    let back = probe.frame(&["taa"], true);
+    assert_eq!(back.valid, [false], "stale contents never come back as valid");
+}
+
+#[test]
+fn a_failing_pass_discards_history() {
+    let mut probe = Probe::new();
+    let sizes = FrameSizes::same(SIZE);
+    probe.frame(&["taa"], true);
+    let mut graph = FrameGraph::for_view(&probe.store, sizes);
+    let history = graph.history_texture("taa", HISTORY_DESC);
+    let mut pass = graph.add_pass(PassDesc::new("resolve", Stage::Resolve));
+    pass.write(history.current, Access::COLOR_ATTACHMENT);
+    pass.record(|_| Err(RhiError::InvalidHandle("boom")));
+    let compiled = graph.compile(sizes).expect("graph compiles");
+
+    let result = graph.execute(
+        &compiled,
+        &probe.device,
+        &mut probe.pool,
+        &mut probe.store,
+        &mut probe.release,
+        1,
+    );
+
+    assert!(result.is_err());
+    assert_eq!(probe.store.textures().count(), 0);
+    assert_eq!(probe.frame(&["taa"], true).valid, [false]);
+}
+
+#[test]
+fn release_all_releases_the_views_with_the_textures() {
+    let mut probe = Probe::new();
+    probe.frame(&["taa"], true);
+    let before = probe.release.len();
+
+    probe.store.release_all(&mut probe.pool, &mut probe.release, 1);
+
+    assert_eq!(probe.store.textures().count(), 0);
+    assert_eq!(
+        probe.release.len(),
+        before + 3,
+        "two textures and the view the pass created"
+    );
 }

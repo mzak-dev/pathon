@@ -249,7 +249,7 @@ impl Renderer {
             for surface in presents {
                 self.device.discard_surface(surface);
             }
-            self.drop_frame_results();
+            self.abandon_frame();
             return Err(error);
         }
         let mut presented = Ok(());
@@ -257,7 +257,7 @@ impl Renderer {
             presented = presented.and(self.device.present_surface(surface));
         }
         if let Err(error) = presented {
-            self.drop_frame_results();
+            self.abandon_frame();
             return Err(error.into());
         }
         self.end_frame();
@@ -289,6 +289,16 @@ impl Renderer {
     pub fn record_frame(&mut self, input: &FrameInput) -> Result<CommandList, RenderError> {
         self.ensure_device()?;
         let mut commands = CommandList::new();
+        if let Err(error) = self.record_offscreen_views(input, &mut commands) {
+            self.abandon_frame();
+            return Err(error);
+        }
+        self.end_frame();
+        self.drop_frame_results();
+        Ok(commands)
+    }
+
+    fn record_offscreen_views(&mut self, input: &FrameInput, commands: &mut CommandList) -> Result<(), RenderError> {
         for view in &input.views {
             let target = self.targets.get(view.target).ok_or(RenderError::UnknownTarget)?;
             if let TargetKind::Surface { .. } = target.kind {
@@ -297,14 +307,15 @@ impl Renderer {
             let Some(output) = self.acquire_output(view.target, &mut Vec::new())? else {
                 continue;
             };
-            if let Err(error) = self.record_view(view, input, output, &mut commands) {
-                self.drop_frame_results();
-                return Err(error);
-            }
+            self.record_view(view, input, output, commands)?;
         }
-        self.end_frame();
+        Ok(())
+    }
+
+    // What the dropped frame's views wrote to history never reached the GPU.
+    fn abandon_frame(&mut self) {
+        self.runner.abandon_frame(&mut self.release, self.frame);
         self.drop_frame_results();
-        Ok(commands)
     }
 
     // A failed frame must not leak its captures and diagnostics (already logged) into the next report.
@@ -322,6 +333,7 @@ impl Renderer {
     }
 
     fn end_frame(&mut self) {
+        self.runner.commit_frame();
         self.release.collect(self.frame, self.device.as_ref());
         self.frame += 1;
     }

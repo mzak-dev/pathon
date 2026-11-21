@@ -1,11 +1,14 @@
 #![cfg(feature = "gpu-tests")]
 
-use pathon_api::Camera;
+use std::sync::{Arc, Mutex};
+
 use pathon_api::glam::Vec3;
+use pathon_api::graph::{GraphTextureDesc, PassDesc, Stage};
+use pathon_api::{Camera, RecordCtx, RenderFeature};
 use pathon_core::{FrameInput, Renderer, ViewInput};
 use pathon_rhi::{
-    BufferCopy, BufferDesc, BufferUsage, Color, CommandList, DeviceApi, Extent3d, Format, PhysicalSize, TexelLayout,
-    TextureCopy,
+    Access, BufferCopy, BufferDesc, BufferUsage, Color, ColorAttachment, CommandList, DepthAttachment, DeviceApi,
+    Extent3d, Format, FormatKind, PhysicalSize, RenderPassDesc, RhiError, TexelLayout, TextureCopy,
 };
 use pathon_test::{GeometryPack, UnlitMeshPack, UpscalerPack, VendorDummy};
 
@@ -124,4 +127,85 @@ fn an_external_callback_may_call_the_pathon_device() {
         .recv_timeout(std::time::Duration::from_secs(10))
         .expect("submit returns instead of deadlocking");
     submitted.expect("submit");
+}
+
+struct HistoryOnGpu {
+    format: Format,
+    validity: Arc<Mutex<Vec<bool>>>,
+}
+
+impl RenderFeature for HistoryOnGpu {
+    fn name(&self) -> &'static str {
+        "history on gpu"
+    }
+
+    fn stage(&self) -> Stage {
+        Stage::PostProcess
+    }
+
+    fn record(&mut self, ctx: &mut RecordCtx<'_>) -> Result<(), RhiError> {
+        let is_color = self.format.kind() == FormatKind::Color;
+        let history = ctx
+            .graph()
+            .history_texture("gpu history", GraphTextureDesc::render(self.format));
+        self.validity.lock().expect("mutex").push(history.previous_valid);
+        let mut pass = ctx
+            .graph()
+            .add_pass(PassDesc::new("history writer", Stage::PostProcess));
+        pass.read(history.previous, Access::SHADER_READ);
+        let written = if is_color {
+            Access::COLOR_ATTACHMENT
+        } else {
+            Access::DEPTH_WRITE
+        };
+        let current = pass.write(history.current, written);
+        pass.record(move |pass| {
+            let view = pass.view(current)?;
+            let (color, depth) = if is_color {
+                (vec![ColorAttachment::clear(view, Color::BLACK)], None)
+            } else {
+                (Vec::new(), Some(DepthAttachment::clear_reverse_z(view)))
+            };
+            drop(pass.commands().render_pass(RenderPassDesc {
+                label: "history writer",
+                color,
+                depth,
+                timestamps: None,
+            }));
+            Ok(())
+        });
+        Ok(())
+    }
+}
+
+#[test]
+fn history_of_every_kind_of_format_runs_on_wgpu() {
+    for format in [Format::Rgba8Unorm, Format::Depth32Float, Format::Depth24PlusStencil8] {
+        let validity = Arc::new(Mutex::new(Vec::new()));
+        let mut renderer = Renderer::builder()
+            .with_feature(HistoryOnGpu {
+                format,
+                validity: Arc::clone(&validity),
+            })
+            .build()
+            .expect("GPU renderer");
+        let target = renderer
+            .add_offscreen_target(PhysicalSize::new(SIZE, SIZE), Format::Rgba8Unorm)
+            .expect("target");
+        let input = FrameInput {
+            views: vec![ViewInput {
+                target,
+                camera: Camera::default(),
+            }],
+            ..FrameInput::default()
+        };
+
+        for _ in 0..3 {
+            renderer
+                .render_frame(&input)
+                .unwrap_or_else(|error| panic!("{format:?}: {error}"));
+        }
+
+        assert_eq!(*validity.lock().expect("mutex"), [false, true, true], "{format:?}");
+    }
 }

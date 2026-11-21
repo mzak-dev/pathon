@@ -166,6 +166,15 @@ impl FrameGraph {
 
     fn validate(&self, sizes: FrameSizes) -> Vec<Diagnostic> {
         let mut errors = Vec::new();
+        for name in &self.history_conflicts {
+            errors.push(
+                Diagnostic::error(
+                    "G0007",
+                    format!("history '{name}' is declared twice with different descriptions"),
+                )
+                .with_hint("declare it once, or give the second one another name"),
+            );
+        }
         for pass in &self.passes {
             let mut render_sized = false;
             let mut output_sized = false;

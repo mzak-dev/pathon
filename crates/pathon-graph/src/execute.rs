@@ -240,6 +240,7 @@ impl FrameGraph {
             tracker.seed(entry.current, entry.current_states.clone());
         }
 
+        let written = self.history_written(compiled);
         let mut capture = self
             .capture
             .then(|| self.begin_capture(compiled, &physical, &physical_buffers));
@@ -286,7 +287,7 @@ impl FrameGraph {
         if failure.is_some() {
             self.discard_history(history, pool, release, frame);
         } else {
-            self.keep_history(history, &tracker);
+            self.keep_history(&written, history, &tracker, pool, release, frame);
         }
         for (resource, texture) in self.resources.iter().zip(&physical) {
             if let (ResourceKind::Imported { final_access, .. }, Some(texture)) = (resource.kind, texture) {
@@ -373,7 +374,7 @@ impl FrameGraph {
                     ResourceKind::TransientBuffer(_) | ResourceKind::ImportedBuffer { .. } => CapturedKind::Buffer,
                     ResourceKind::Transient(_) | ResourceKind::Imported { .. } => CapturedKind::Texture,
                 },
-                imported: resource.kind.is_imported(),
+                imported: resource.kind.is_host_import(),
                 desc: physical.map(|physical| physical.desc),
                 physical: physical.map(|physical| physical.texture),
                 buffer_size: match resource.kind {

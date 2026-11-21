@@ -213,6 +213,23 @@ pub(crate) struct HistoryDecl {
     pub(crate) desc: GraphTextureDesc,
     pub(crate) previous: u32,
     pub(crate) current: u32,
+    pub(crate) previous_valid: bool,
+}
+
+impl HistoryDecl {
+    fn texture(&self) -> HistoryTexture {
+        HistoryTexture {
+            previous: TextureHandle {
+                resource: self.previous,
+                version: 0,
+            },
+            current: TextureHandle {
+                resource: self.current,
+                version: 0,
+            },
+            previous_valid: self.previous_valid,
+        }
+    }
 }
 
 impl ResourceKind {
@@ -221,6 +238,11 @@ impl ResourceKind {
             self,
             Self::Imported { .. } | Self::ImportedBuffer { .. } | Self::History { .. }
         )
+    }
+
+    // What the host handed in; a history texture belongs to the store, so a capture does not list it as an import.
+    pub(crate) fn is_host_import(self) -> bool {
+        matches!(self, Self::Imported { .. } | Self::ImportedBuffer { .. })
     }
 
     pub(crate) fn is_transient(self) -> bool {
@@ -261,6 +283,8 @@ pub struct FrameGraph {
     pub(crate) passes: Vec<PassNode>,
     pub(crate) capture: bool,
     pub(crate) histories: Vec<HistoryDecl>,
+    // Names declared again with a different description.
+    pub(crate) history_conflicts: Vec<&'static str>,
     known_history: Vec<(&'static str, GraphTextureDesc, Extent3d)>,
     sizes: Option<FrameSizes>,
 }
@@ -273,6 +297,7 @@ impl std::fmt::Debug for FrameGraph {
             .field("passes", &passes)
             .field("capture", &self.capture)
             .field("histories", &self.histories)
+            .field("history_conflicts", &self.history_conflicts)
             .field("known_history", &self.known_history)
             .field("sizes", &self.sizes)
             .finish()
@@ -293,14 +318,33 @@ impl FrameGraph {
         }
     }
 
-    // One name per view and frame: the store keeps a single pair per name.
+    // One pair per name and frame: declaring the name again returns the same pair, and a different description is
+    // G0007.
     pub fn history_texture(&mut self, name: &'static str, desc: GraphTextureDesc) -> HistoryTexture {
+        if let Some(declared) = self.histories.iter().find(|declared| declared.name == name) {
+            if declared.desc == desc {
+                return declared.texture();
+            }
+            self.history_conflicts.push(name);
+            return self.history_resources(name, desc, false).0;
+        }
         let previous_valid = self.sizes.is_some_and(|sizes| {
             let extent = desc.extent(sizes);
             self.known_history.iter().any(|(known, known_desc, known_extent)| {
                 *known == name && *known_desc == desc && *known_extent == extent
             })
         });
+        let (texture, decl) = self.history_resources(name, desc, previous_valid);
+        self.histories.push(decl);
+        texture
+    }
+
+    fn history_resources(
+        &mut self,
+        name: &'static str,
+        desc: GraphTextureDesc,
+        previous_valid: bool,
+    ) -> (HistoryTexture, HistoryDecl) {
         let previous = self.add_resource(
             name,
             ResourceKind::History {
@@ -315,23 +359,14 @@ impl FrameGraph {
                 role: HistoryRole::Current,
             },
         );
-        self.histories.push(HistoryDecl {
+        let decl = HistoryDecl {
             name,
             desc,
             previous,
             current,
-        });
-        HistoryTexture {
-            previous: TextureHandle {
-                resource: previous,
-                version: 0,
-            },
-            current: TextureHandle {
-                resource: current,
-                version: 0,
-            },
             previous_valid,
-        }
+        };
+        (decl.texture(), decl)
     }
 
     pub fn create_texture(&mut self, name: &'static str, desc: GraphTextureDesc) -> TextureHandle {

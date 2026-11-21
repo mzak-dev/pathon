@@ -37,6 +37,7 @@ pub const CODES: &[CodeInfo] = &[
     code("G0004", "render pass mixes render size and output size attachments"),
     code("G0005", "slot written with a format that breaks the slot contract"),
     code("G0006", "pass order decided by registration order"),
+    code("G0007", "history declared twice with different descriptions"),
     code("F0101", "feature disabled: missing capabilities"),
     code("F0102", "two features claim the same role"),
     code("F0103", "feature runs its fallback path"),

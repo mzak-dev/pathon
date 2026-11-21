@@ -42,6 +42,8 @@ pub(crate) struct GraphRunner {
     pool: ResourcePool,
     caches: HashMap<TargetId, GraphCache>,
     histories: HashMap<TargetId, HistoryStore>,
+    // Targets whose history this frame wrote: their next frame may read it only once the frame is committed.
+    written_this_frame: Vec<TargetId>,
     capture: bool,
     clear_color: Color,
 }
@@ -52,6 +54,7 @@ impl GraphRunner {
             pool: ResourcePool::new(),
             caches: HashMap::new(),
             histories: HashMap::new(),
+            written_this_frame: Vec::new(),
             capture: false,
             clear_color,
         }
@@ -63,17 +66,30 @@ impl GraphRunner {
 
     pub(crate) fn forget_target(&mut self, target: TargetId, release: &mut DeferredRelease, frame: u64) {
         self.caches.remove(&target);
+        self.written_this_frame.retain(|written| *written != target);
         if let Some(mut history) = self.histories.remove(&target) {
-            for texture in history.textures() {
-                self.pool.release_views_of(texture, release, frame);
+            history.release_all(&mut self.pool, release, frame);
+        }
+    }
+
+    // The frame reached the GPU (or the host): what its views wrote to history is real.
+    pub(crate) fn commit_frame(&mut self) {
+        self.written_this_frame.clear();
+    }
+
+    // The frame was dropped after recording, so its history was never written and its states are wrong.
+    pub(crate) fn abandon_frame(&mut self, release: &mut DeferredRelease, frame: u64) {
+        for target in std::mem::take(&mut self.written_this_frame) {
+            if let Some(history) = self.histories.get_mut(&target) {
+                history.release_all(&mut self.pool, release, frame);
             }
-            history.release_all(release, frame);
         }
     }
 
     pub(crate) fn forget_device(&mut self) {
         self.pool.forget_all();
         self.caches.clear();
+        self.written_this_frame.clear();
         for history in self.histories.values_mut() {
             history.forget_all();
         }
@@ -111,12 +127,17 @@ impl GraphRunner {
         let outcome = graph.execute(compiled, env.device, &mut self.pool, history, env.release, env.frame);
         diagnostics.extend(fresh_warnings);
         match outcome {
-            Ok(execution) => Ok(ViewRun {
-                commands: execution.commands,
-                stats: execution.stats,
-                compiled: fresh,
-                capture: execution.capture,
-            }),
+            Ok(execution) => {
+                if history.has_textures() && !self.written_this_frame.contains(&target) {
+                    self.written_this_frame.push(target);
+                }
+                Ok(ViewRun {
+                    commands: execution.commands,
+                    stats: execution.stats,
+                    compiled: fresh,
+                    capture: execution.capture,
+                })
+            }
             Err(RhiError::DeviceLost) => Err(RenderError::DeviceLost),
             Err(error) => {
                 diagnostics.push(Diagnostic::error("F0105", format!("a pass failed to record: {error}")));
@@ -244,5 +265,52 @@ mod tests {
                 .any(|command| matches!(command, Command::PushDebugGroup("clear output")))
         );
         device.submit(run.commands).expect("valid commands");
+    }
+
+    #[test]
+    fn forgetting_a_target_releases_its_history_textures_and_views() {
+        let device = Device::null();
+        let size = PhysicalSize::new(32, 16);
+        let desc = target::offscreen_desc(size, Format::Rgba8Unorm);
+        let output = OutputTarget {
+            texture: device.create_texture(&desc).expect("texture"),
+            desc,
+            initial: Access::empty(),
+            final_access: OFFSCREEN_FINAL,
+            keeps_contents: false,
+        };
+        let target = Pool::<TargetId, ()>::new().insert(());
+        let mut release = DeferredRelease::new(2);
+        let mut runner = GraphRunner::new(Color::BLACK);
+        let mut diagnostics = Vec::new();
+        runner
+            .run_view(
+                target,
+                output,
+                FrameSizes::same(size),
+                |graph, _output| {
+                    let history = graph.history_texture("history", GraphTextureDesc::render(Format::Rgba8Unorm));
+                    let mut pass = graph.add_pass(PassDesc::new("writes history", Stage::PostProcess));
+                    let current = pass.write(history.current, Access::COLOR_ATTACHMENT);
+                    pass.record(move |ctx| {
+                        ctx.view(current)?;
+                        Ok(())
+                    });
+                    Vec::new()
+                },
+                FrameEnv {
+                    device: &device,
+                    release: &mut release,
+                    frame: 0,
+                },
+                &mut diagnostics,
+            )
+            .expect("run");
+        let before = release.len();
+
+        runner.forget_target(target, &mut release, 1);
+
+        assert!(runner.histories.is_empty());
+        assert_eq!(release.len(), before + 3, "two textures and the view of `current`");
     }
 }

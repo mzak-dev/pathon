@@ -121,7 +121,7 @@ impl ResourcePool {
         Ok(view)
     }
 
-    pub fn release_views_of(&mut self, texture: TextureId, release: &mut DeferredRelease, frame: u64) {
+    pub(crate) fn release_views_of(&mut self, texture: TextureId, release: &mut DeferredRelease, frame: u64) {
         self.views.retain(|(owner, _), view| {
             let keep = *owner != texture;
             if !keep {

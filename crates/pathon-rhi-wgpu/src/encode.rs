@@ -182,7 +182,10 @@ fn encode_render_pass(
             Some(wgpu::RenderPassDepthStencilAttachment {
                 view: view(objects, depth.view)?,
                 depth_ops,
-                stencil_ops: None,
+                stencil_ops: depth.clear_stencil.map(|value| wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(value),
+                    store: wgpu::StoreOp::Store,
+                }),
             })
         }
         None => None,

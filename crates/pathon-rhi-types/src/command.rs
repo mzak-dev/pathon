@@ -88,6 +88,8 @@ pub struct DepthAttachment {
     pub load: LoadOp<f32>,
     pub store: StoreOp,
     pub access: DepthAccess,
+    // Only meaningful for a depth-stencil format; `None` leaves the stencil aspect untouched.
+    pub clear_stencil: Option<u32>,
 }
 
 impl DepthAttachment {
@@ -98,6 +100,15 @@ impl DepthAttachment {
             load: LoadOp::Clear(0.0),
             store: StoreOp::Store,
             access: DepthAccess::ReadWrite,
+            clear_stencil: None,
+        }
+    }
+
+    #[must_use]
+    pub const fn with_stencil_clear(self, value: u32) -> Self {
+        Self {
+            clear_stencil: Some(value),
+            ..self
         }
     }
 }

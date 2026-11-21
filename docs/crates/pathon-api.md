@@ -40,7 +40,21 @@ Mapa typ → wartość. Paczka publikuje dane w `setup` albo `record`, inne je c
 
 ## `ViewCtx`
 
-Rozmiar wyjścia i renderu, jitter, mip bias, kamera (`Camera`, reverse-Z) oraz czas i numer klatki od wołającego — rdzeń nie czyta zegara.
+Rozmiar wyjścia i renderu, jitter, mip bias, kamera (`Camera`, reverse-Z) oraz czas od wołającego — rdzeń nie czyta zegara. Numeracją klatek zajmuje się rdzeń ([ADR-0022](../adr/0022-zegar-klatki-paczek.md), [pojęcia](../../CONTEXT.md)); paczka dostaje dwa pola tylko do odczytu, wspólne dla wszystkich widoków jednej próby nagrania:
+
+| Pole | Znaczenie | Do czego |
+| --- | --- | --- |
+| `frame` | liczba zatwierdzonych klatek | zegar opóźnionego zwolnienia |
+| `record_epoch` | rośnie z każdą próbą `render_frame` / `record_frame`, także porzuconą | restart scratchu per nagranie, np. `UniformRing::begin_frame()` |
+
+```rust,ignore
+if self.ring_epoch != Some(ctx.view().record_epoch) {
+    ring.begin_frame();
+    self.ring_epoch = Some(ctx.view().record_epoch);
+}
+```
+
+Wymieniony obiekt GPU paczka oddaje przez `RecordCtx::release_later(resource)`: rdzeń zniszczy go dopiero po `frames_in_flight` zatwierdzonych klatkach, nawet gdy bieżąca klatka zostanie porzucona. Host w trybie A musi ustawić `with_frames_in_flight` na co najmniej swoje opóźnienie między `record_frame` a `submit`.
 
 `ViewId` to tożsamość celu widoku: stała, dopóki cel żyje, i nowa po jego ponownym utworzeniu (nie zależy od pozycji widoku w klatce).
 

@@ -2,7 +2,7 @@
 
 `Renderer` — rdzeń silnika (M2-11). Składa klatkę z paczek: rejestruje je, negocjuje z nimi możliwości GPU, ustala kolejność i role, a co klatkę buduje i wykonuje graf z ich passów. Sam nie zna żadnej techniki renderowania.
 
-Nie ma też pętli, okna, wątku, ECS ani systemu assetów (ADR-0005): wołający podaje czas i widoki, a urządzenie i cele renderu mogą należeć do niego.
+Nie ma też pętli, okna, wątku, ECS ani systemu assetów (ADR-0005): wołający podaje czas i widoki, a urządzenie i cele renderu mogą należeć do niego. Numeracja klatek należy do rdzenia, nie do hosta (zob. „Zegar klatki”).
 
 ## Trzy możliwości
 
@@ -30,6 +30,17 @@ Cache grafu i `ViewId` są per cel, nie per pozycja widoku: zmiana kolejności w
 Jeden widok na cel w klatce ([ADR-0013](../adr/0013-dwa-widoki-na-celu-i-paczki-po-resecie.md)). Drugi widok tego samego celu jest pomijany przed pobraniem wyjścia (okno nie jest pobierane dwa razy), liczy się w `FrameReport::skipped_views` i zgłasza [F0106](../diag/F0106.md); w trybie A trafia ona tylko do logu.
 
 `FrameReport::diagnostics` zbiera diagnostyki z tej klatki (F0105, F0106, ostrzeżenia grafu). Gdy klatka kończy się błędem, jej diagnostyki trafiają do logu, ale nie do następnego raportu. Po `set_capture(true)` `FrameReport::captures` ma jeden `GraphCapture` na widok, a `feature_details()` opisuje każdą paczkę (status, etap, priorytet, rola, kolejność). Z tego korzystają [devtools](../devtools.md).
+
+## Zegar klatki
+
+[ADR-0022](../adr/0022-zegar-klatki-paczek.md), pojęcia w [CONTEXT.md](../../CONTEXT.md). `FrameInput` nie niesie numeru klatki; rdzeń liczy dwa zegary i podaje je paczkom w `ViewCtx`:
+
+- `frame` (`Renderer::frame_index()` dla hosta) — klatki zatwierdzone. Rośnie przy zatwierdzeniu stanu: po udanym `submit` w `render_frame` (także gdy `present` potem zawiedzie) albo przy zwrocie listy w `record_frame`. Klatka porzucona go nie rusza. Na nim chodzi `DeferredRelease`.
+- `record_epoch` — rośnie na początku każdej próby `render_frame` / `record_frame` (po sprawdzeniu urządzenia), także porzuconej; wszystkie widoki próby mają tę samą wartość.
+
+`RecordCtx::release_later` odkłada zasób do `DeferredRelease` przy bieżącym `frame`; rdzeń przenosi go tam po przebiegu widoku, także gdy ten zakończył się błędem.
+
+Tryb A: `frame` rośnie przy nagraniu, więc host musi ustawić `with_frames_in_flight` na co najmniej liczbę klatek, o którą wyprzedza swój `submit`; inaczej obiekt oddany przez `release_later` może zniknąć, zanim lista go użyje.
 
 ## Rejestr paczek
 

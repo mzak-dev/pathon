@@ -453,10 +453,20 @@ impl Renderer {
         let device = self.device.as_ref();
         let registry = &mut self.registry;
         let shared = &mut self.shared;
+        // `self.release` is lent to the runner while `fill` runs, so packs queue here and the queue is drained below.
+        let mut released = Vec::new();
         let fill = |graph: &mut FrameGraph, output_handle: TextureHandle| {
             let mut slots = Slots::new();
             let mut diagnostics = Vec::new();
-            let mut ctx = RecordCtx::new(graph, &mut slots, &view_ctx, device, &mut diagnostics, shared);
+            let mut ctx = RecordCtx::new(
+                graph,
+                &mut slots,
+                &view_ctx,
+                device,
+                &mut diagnostics,
+                &mut released,
+                shared,
+            );
             ctx.set_slot(Slot::OUTPUT, output_handle);
             let record_failures = registry.record_view(&mut ctx);
             diagnostics.extend(record_failures);
@@ -471,6 +481,9 @@ impl Renderer {
         let run = self
             .runner
             .run_view(view.target, output, sizes, fill, env, &mut diagnostics);
+        for resource in released {
+            self.release.release(self.frame, resource);
+        }
         for diagnostic in &diagnostics {
             self.report(diagnostic);
         }

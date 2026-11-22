@@ -1,0 +1,3 @@
+name,src_file,src_line,total_ns,total_perc,counts,mean_ns,min_ns,max_ns,std_ns
+clear output,crates\pathon-profile\src\tracy_sink.rs,62,124087665,0.758789,900,137875,91324,639036,34957.869365
+unlit mesh,crates\pathon-profile\src\tracy_sink.rs,62,160286957,0.980146,900,178096,118676,321005,26237.032827

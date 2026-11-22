@@ -21,7 +21,7 @@ pathon::runtime::run(WinitPlatform::new(), Renderer::builder().with_feature(…)
 
 Ograniczenie: po utracie urządzenia surface'y okien są odtwarzane na wątku renderu; na macOS trzeba to przenieść na wątek główny, gdy runner będzie testowany na tym systemie.
 
-`StdTaskPool` dzieli zakres na tyle części, ile jest rdzeni, na `std::thread::scope`. Pułap: wątki startują przy każdym wywołaniu; stałe wątki robocze, gdy pomiar (M4-17) pokaże ten koszt.
+`StdTaskPool` dzieli zakres na tyle części, ile jest rdzeni, na `std::thread::scope`. Pułap: wątki startują przy każdym wywołaniu; stałe wątki robocze, gdy pomiar (M4-17) pokaże ten koszt. `try_spawn` (ADR-0024) uruchamia zadanie w tle na jednym nazwanym wątku (`pathon-task`) na zadanie; liczbę równoległych zadań ogranicza wołający (`BackgroundCompiler`), a nieudany start wątku oddaje zadanie w `Err`.
 
 ## Runner w przeglądarce (ADR-0014)
 

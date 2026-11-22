@@ -1,6 +1,6 @@
 # pathon-shader
 
-Składanie shaderów WGSL z modułów (M3-01, [ADR-0021](../adr/0021-importy-shaderow-wesl.md)), permutacje i kesze (M3-03, [ADR-0023](../adr/0023-permutacje-shaderow.md)). Crate zależy od `pathon-rhi-types` i naga, nie od backendów RHI ani wgpu: bierze tekst, oddaje tekst, który trafia do `create_shader_module`, oraz layouty bind groupów z refleksji ([ADR-0006](../adr/0006-wejscie-shaderow.md)).
+Składanie shaderów WGSL z modułów (M3-01, [ADR-0021](../adr/0021-importy-shaderow-wesl.md)), permutacje i kesze (M3-03, [ADR-0023](../adr/0023-permutacje-shaderow.md)), kompilacja w tle (M3-04, [ADR-0024](../adr/0024-kompilacja-w-tle.md)). Crate zależy od `pathon-rhi-types`, `pathon-api` (`TaskPool`, `Diagnostic`) i naga, nie od backendów RHI ani wgpu: bierze tekst, oddaje tekst, który trafia do `create_shader_module`, oraz layouty bind groupów z refleksji ([ADR-0006](../adr/0006-wejscie-shaderow.md)).
 
 - **`ShaderComposer::add_module(path, source)`** — rejestruje moduł pod ścieżką `path` (identyfikatory rozdzielone `::`, np. `colors` albo `lighting::pbr`); shader importuje go jako `package::<path>`. Dodanie modułu pod tą samą ścieżką zastępuje poprzedni, a moduły zależne od niego widzą nową treść. Moduł jest parsowany dopiero przy składaniu.
 - **`ShaderComposer::compose(source, file_path)`** — składa shader od zera z aktualnych modułów i zwraca samodzielne źródło WGSL. `file_path` służy tylko do komunikatów błędów.
@@ -26,10 +26,39 @@ Permutacja to flagi WESL `@if(flaga)` (deklaracje, instrukcje i `@else`, także 
 
 - **`ShaderFeatures`** — posortowany zbiór włączonych flag (nazwa: identyfikator ASCII, który nie jest słowem zarezerwowanym WGSL/WESL, więc nie `_`, `if`, `true` ani `false`; inaczej `InvalidFeatureName`): `with(name)`, `set(name, enabled)`, `iter()`. Flaga wyłączona jest nieobecna, więc inna kolejność, duplikaty i jawne wyłączenie dają równe zbiory.
 - **`ShaderKey { root, features }`** — nazwa shadera głównego i flagi.
-- **`ShaderLibrary`** — `add_module(path, source)` (zwraca `Result<Vec<ShaderModuleId>>`), `add_root(name, source)` (zwraca `Vec<ShaderModuleId>`), `module(device, &key)`: składa i tworzy moduł raz na klucz. Nieudane składanie ani tworzenie nie trafia do kesza. Rejestracja nowej ścieżki modułu albo nowej nazwy shadera głównego, a także ponowna rejestracja tej samej treści, nie rusza kesza. Zastąpienie istniejącego modułu lub shadera inną treścią usuwa z kesza wszystkie moduły (każdy shader główny mógł go importować) i **oddaje ich id**: biblioteka nie ma urządzenia, więc wołający sam woła `device.destroy(Resource::ShaderModule(id))`. Potoki w `PipelineCache` zbudowane z usuniętych modułów zostają w keszu do M3-06 (hot-reload i unieważnianie potoków). Jedna biblioteka obsługuje jedno urządzenie.
+- **`ShaderLibrary`** — `add_module(path, source)` (zwraca `Result<Vec<ShaderModuleId>>`), `add_root(name, source)` (zwraca `Vec<ShaderModuleId>`), `wgsl(&key)` (złożony tekst `Arc<str>`, składany raz na klucz i zachowany także do refleksji), `module(device, &key)`: składa (przez `wgsl`) i tworzy moduł raz na klucz. Nieudane składanie ani tworzenie nie trafia do kesza. Rejestracja nowej ścieżki modułu albo nowej nazwy shadera głównego, a także ponowna rejestracja tej samej treści, nie rusza kesza. Zastąpienie istniejącego modułu lub shadera inną treścią usuwa z kesza wszystkie moduły (każdy shader główny mógł go importować) i **oddaje ich id**: biblioteka nie ma urządzenia, więc wołający sam woła `device.destroy(Resource::ShaderModule(id))`. Potoki w `PipelineCache` zbudowane z usuniętych modułów zostają w keszu do M3-06 (hot-reload i unieważnianie potoków). Jedna biblioteka obsługuje jedno urządzenie.
 - **`PipelineCache`** — `render(device, &desc)` i `compute(device, &desc)`: kluczem jest opis potoku po posortowaniu `constants` po nazwie; permutacja wchodzi do klucza przez `ShaderModuleId`. Etykieta (`label`) opisu należy do klucza: ten sam opis z inną etykietą to osobny potok. Nieudane tworzenie nie jest zapamiętywane. Jeden kesz obsługuje jedno urządzenie.
 
 Paczka może zależeć od `pathon-shader` obok `pathon-api`; rdzeń nie zależy od tego crate'u.
+
+## Kompilacja w tle
+
+`ShaderLibrary::module` i `PipelineCache::render` budują na wątku wołającego: pierwsze użycie permutacji zatrzymuje klatkę na składaniu wesl i kompilacji sterownika. `BackgroundCompiler` robi to samo poza wątkiem klatki ([ADR-0024](../adr/0024-kompilacja-w-tle.md), M3-04). Należy do jednej paczki i jednego urządzenia; paczka tworzy go w `setup` z uchwytów `SetupCtx::device_handle()` i `task_pool_handle()`.
+
+```rust,ignore
+// setup
+let mut compiler = BackgroundCompiler::new(ctx.device_handle(), ctx.task_pool_handle(), BackgroundConfig::new());
+compiler.add_root("lit", LIT_WGSL);
+// każda klatka
+compiler.pump();
+for failure in compiler.take_failures() { record_ctx.report(failure.diagnostic()); }
+let module = compiler.shader_module(&key);            // Lookup<ShaderModuleId>
+if let Lookup::Ready(module) = module {
+    let pipeline = compiler.render_pipeline(&desc_for(module)); // Lookup<RenderPipelineId>
+    if let Some(pipeline) = pipeline.resolve(MissPolicy::Skip) { /* draw */ }
+}
+```
+
+- **`Lookup<T>`** — `Ready(T)`, `Pending`, `Failed`; `ready()` i `resolve(MissPolicy)`.
+- **`MissPolicy<T>`** — `Skip` (draw pominięty) albo `Placeholder(T)` (zastępczy potok z tym samym layoutem bind groupów i vertex buffers, np. zbudowany synchronnie w `setup`); `Pending` i `Failed` traktuje tak samo. Politykę wybiera paczka: placeholder wymaga wiedzy o layoutach potoku docelowego, której rdzeń nie ma (uzasadnienie i rekomendacja w ADR-0024).
+- **Zlecenia** — `shader_module(&ShaderKey)`, `render_pipeline(&desc)`, `compute_pipeline(&desc)`: pierwsze zapytanie kolejkuje build, kolejne zwracają `Pending`, aż wynik wpadnie do kesza. Klucze są deduplikowane (potok po normalizacji `constants`, jak w `PipelineCache`), flagi w innej kolejności to ten sam klucz. Potok wymaga gotowego modułu, więc paczka prosi najpierw o moduł, a gdy jest `Ready`, buduje z jego id opis potoku. Zapytanie, które trafia w kesz, nie alokuje; po `Ready` zapamiętaj id.
+- **`pump()`** — raz na klatkę, nigdy nie czeka: zbiera gotowe wyniki, uruchamia zakolejkowane zadania przez `TaskPool::try_spawn` do limitu `max_in_flight` (domyślnie `thread_count() - 1`, minimum 1) i zwraca `PumpReport`. Pula bez wątków (`SerialTaskPool`, wasm) oddaje zadanie, więc pump wykonuje je inline, ale najwyżej `inline_jobs_per_pump` (domyślnie 1) na klatkę: budżet jest liczbą, nie czasem (`Instant` nie działa na `wasm32-unknown-unknown`). Na wasm daje to rozłożenie kosztu w czasie; zacięcie jednej klatki jest równe kosztowi jednego buildu.
+- **Wątki** — zadanie niesie migawkę źródeł (`ShaderComposer` kopiowany przy zapisie), uchwyt urządzenia i nadawcę `mpsc`; stanu kompilatora nie dotyka, więc nie ma blokad ani wzajemnego czekania. Crate sam nie tworzy wątków (reguła `no-threads`): wszystko idzie przez `TaskPool`.
+- **Błędy** — nieudane składanie, tworzenie albo panika w zadaniu (przechwycona) daje `BuildFailure { subject, error }` w `take_failures()` (raz na błąd) i klucz w stanie `Failed`, bez ponawiania co klatkę. `BuildFailure::diagnostic()` to `Diagnostic` z kodem [S0001](../diag/S0001.md) (moduł) albo [S0002](../diag/S0002.md) (potok). `retry_failed()` zwalnia klucze; `add_root` / `add_module` z inną treścią zwalnia nieudane moduły.
+- **Zmiana źródła w trakcie** — wynik zadania, które zaczęło się na starszych źródłach (inna generacja biblioteki), jest niszczony, a klucz zamawiany od nowa.
+- **Drop i zasoby** — drop kompilatora niczego nie joinuje: ustawia flagę anulowania, kolejka przepada, a zasób, który zadanie dokończy po dropie albo który leży nieodebrany w kanale, jest niszczony przez przesyłkę na uchwycie urządzenia. Zasoby odebrane i keszowane oddaje `release_all()` (do `RecordCtx::release_later`, ADR-0022). `finish_all(max_wait)` kończy wszystko do końca (rozgrzewka, testy).
+
+Testy: `tests/background.rs` (urządzenie `rhi-null` z opóźnieniem kompilacji 40 ms na build i bramką sterowaną z testu) sprawdza deduplikację, politykę, błędy i panikę, limit równoległości, brak joinu przy dropie bez wycieków, unieważnienie przy zmianie źródła oraz p99 kosztu klatki dla 40 nowych permutacji (budżet 10 ms przy buildzie 40 ms; test kontrolny pokazuje, że ścieżka blokująca budżet łamie); bez wątków liczy buildy na klatkę, a czas tylko wypisuje. `tests/background_gpu.rs` (`--features gpu-tests`) kompiluje 16 permutacji compute na realnym wgpu na wątkach puli, sprawdza ten sam budżet i wyniki obliczeń.
 
 ## Refleksja
 
@@ -68,4 +97,4 @@ Testy GPU (`--features gpu-tests`) składają cztery permutacje compute z `@if` 
 - Flaga, której nikt nie włączył, jest wyłączona, więc literówka w nazwie po cichu wybiera `@else` albo pomija deklarację; test paczki musi sprawdzać permutacje, których używa.
 - Źródło z BOM jest przyjmowane (BOM jest obcinany).
 - **Głębokość:** patologicznie głębokie wyrażenia lub długie łańcuchy importów mogą przepełnić stos (wesl przechodzi AST rekurencją), a nie zwrócić `Err`; limity są niższe w buildzie debug. To limit parsera wesl: źródła shaderów to kod deweloperski, a stacker ani wątek nie wchodzą w grę (ADR-0004, wasm). Szczegóły w ADR-0021.
-- **Koszt:** składanie rośnie mniej więcej kwadratowo z liczbą deklaracji (kilkaset deklaracji to dziesiąte części sekundy); wynik trzeba keszować (M3-04, M3-05).
+- **Koszt:** składanie rośnie mniej więcej kwadratowo z liczbą deklaracji (kilkaset deklaracji to dziesiąte części sekundy); wynik jest keszowany (`ShaderLibrary::wgsl`), a składanie nowej permutacji idzie w tle (`BackgroundCompiler`). Cache na dysku to M3-05.

@@ -32,7 +32,8 @@ impl Texture {
     }
 }
 
-// `TextureDesc` keeps its view formats as a static slice so it stays `Copy`; 8-bit colour is the only case that needs one.
+// `TextureDesc` keeps its view formats as a static slice so it stays `Copy`; 8-bit colour is the only case that needs
+// one.
 pub(crate) fn view_formats_for(storage: Format, sampling: Format) -> &'static [Format] {
     match (storage, sampling) {
         (Format::Rgba8Unorm, Format::Rgba8UnormSrgb) => &[Format::Rgba8UnormSrgb],

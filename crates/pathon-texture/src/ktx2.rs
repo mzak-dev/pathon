@@ -10,6 +10,9 @@ const HEADER_BYTES: usize = 80;
 const LEVEL_INDEX_ENTRY_BYTES: usize = 24;
 const NO_SUPERCOMPRESSION: u32 = 0;
 const CUBE_FACES: u32 = 6;
+// 32 mips cover u32 dimensions; the layer cap is far above any device limit and keeps arithmetic in range on wasm32.
+const MAX_LEVELS: u32 = 32;
+const MAX_LAYERS: u32 = 1 << 16;
 
 /// One image of a KTX2 file: the encoding it was stored in and its mip levels, borrowed from the file bytes.
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -52,11 +55,23 @@ impl<'data> Ktx2Image<'data> {
             return Err(error(format!("{face_count} faces")));
         }
         let (format, srgb) = format_from_vk(vk_format)?;
-        let stored_levels = level_count.max(1);
+        if level_count > MAX_LEVELS {
+            return Err(error(format!("{level_count} levels (at most {MAX_LEVELS})")));
+        }
+        let layers = layer_count
+            .max(1)
+            .checked_mul(face_count)
+            .filter(|&layers| layers <= MAX_LAYERS)
+            .ok_or_else(|| {
+                error(format!(
+                    "{layer_count} layers of {face_count} faces (at most {MAX_LAYERS})"
+                ))
+            })?;
+        let stored_levels = level_count.max(1) as usize;
         let index = reader
-            .take(stored_levels as usize * LEVEL_INDEX_ENTRY_BYTES)
+            .take(stored_levels * LEVEL_INDEX_ENTRY_BYTES)
             .map_err(|_| error("level index is cut off"))?;
-        let mut levels = Vec::with_capacity(stored_levels as usize);
+        let mut levels = Vec::with_capacity(stored_levels);
         for entry in index.as_chunks::<LEVEL_INDEX_ENTRY_BYTES>().0 {
             let (offset, length) = (u64_at(entry, 0), u64_at(entry, 8));
             let range = usize::try_from(offset)
@@ -71,7 +86,7 @@ impl<'data> Ktx2Image<'data> {
             srgb,
             width,
             height,
-            layers: layer_count.max(1) * face_count,
+            layers,
             wants_mip_generation: level_count == 0,
             levels,
         })
@@ -228,6 +243,21 @@ mod tests {
         let image = Ktx2Image::parse(&bytes).expect("valid");
         assert_eq!((image.format, image.layers), (Format::Bc7RgbaUnorm, 6));
         assert!(image.source("cube").validate().is_ok());
+    }
+
+    #[test]
+    fn absurd_level_and_layer_counts_are_rejected_not_overflowed() {
+        let base = [0_u8; 64];
+        let good = file(VK_RGBA8_SRGB, (4, 4), 6, 0, 1, &[&base]);
+        let with_word = |offset: usize, value: u32| {
+            let mut bytes = good.clone();
+            bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+            bytes
+        };
+        let (layers_at, levels_at) = (IDENTIFIER.len() + 5 * 4, IDENTIFIER.len() + 7 * 4);
+        for bytes in [with_word(levels_at, u32::MAX), with_word(layers_at, u32::MAX)] {
+            assert!(matches!(Ktx2Image::parse(&bytes), Err(TextureError::Container { .. })));
+        }
     }
 
     #[test]

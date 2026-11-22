@@ -1,13 +1,20 @@
 #![doc = include_str!("../../../docs/crates/pathon-shader.md")]
 
+mod features;
+mod library;
+mod pipeline_cache;
 mod reflect;
 
 use std::collections::BTreeMap;
 
+pub use features::ShaderFeatures;
+pub use library::{ShaderKey, ShaderLibrary};
+use pathon_rhi_types::RhiError;
+pub use pipeline_cache::PipelineCache;
 pub use reflect::reflect_bind_groups;
 use wesl::resolver::VirtualResolver;
 use wesl::syntax::ModulePath;
-use wesl::{Compiler, Error as WeslError};
+use wesl::{Compiler, Error as WeslError, Feature, Features};
 
 const RESERVED_SEGMENTS: &[&str] = &[
     "_",
@@ -49,6 +56,12 @@ const RESERVED_SEGMENTS: &[&str] = &[
 pub enum ShaderError {
     #[error("invalid module path `{path}`: {message}")]
     InvalidModulePath { path: String, message: String },
+    #[error("`{name}` is not a WGSL identifier, so it cannot be a shader flag")]
+    InvalidFeatureName { name: String },
+    #[error("no shader is registered under `{name}`")]
+    UnknownRoot { name: String },
+    #[error("creating the shader module failed: {0}")]
+    Rhi(#[source] RhiError),
     #[error("{file_path}: {message}")]
     Compose { file_path: String, message: String },
     #[error("invalid WGSL: {message}")]
@@ -90,8 +103,19 @@ impl ShaderComposer {
         Ok(())
     }
 
-    /// Resolves the imports of `source` against the current modules; `file_path` only labels errors.
+    /// Resolves the imports of `source` against the current modules with every flag disabled; `file_path` only labels
+    /// errors.
     pub fn compose(&self, source: &str, file_path: &str) -> Result<String, ShaderError> {
+        self.compose_with(source, file_path, &ShaderFeatures::default())
+    }
+
+    /// Like [`Self::compose`], with the flags of `features` enabled for `@if` in the shader and its modules.
+    pub fn compose_with(
+        &self,
+        source: &str,
+        file_path: &str,
+        features: &ShaderFeatures,
+    ) -> Result<String, ShaderError> {
         let mut resolver = VirtualResolver::new();
         resolver.add_module(ModulePath::new_root(), without_byte_order_mark(source).into());
         for module in self.modules.values() {
@@ -102,6 +126,10 @@ impl ShaderComposer {
         // pipelines address its overrides by name even when no entry point reads them.
         compiler.options.strip = true;
         compiler.options.keep_main = true;
+        compiler.options.features = Features {
+            default: Feature::Disable,
+            flags: features.iter().map(|name| (name.to_owned(), Feature::Enable)).collect(),
+        };
         compiler
             .compile_root()
             .map(|result| result.to_string())

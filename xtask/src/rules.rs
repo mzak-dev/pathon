@@ -87,7 +87,10 @@ fn renderer_independent_of_platform(member: &Member, violations: &mut Vec<Violat
     }
 }
 
-// Regular packs see pathon-api only; vendor packs and host adapters may also use a backend's interop module.
+const PACK_CRATES: &[&str] = &["pathon-api", "pathon-shader"];
+
+// Regular packs see pathon-api and pathon-shader (ADR-0023); vendor packs and host adapters may also use a backend's
+// interop module.
 fn pack_boundary(member: &Member, violations: &mut Vec<Violation>) {
     let kind = member.kind.as_deref();
     let is_pack = member.area == Area::Packs || matches!(kind, Some("pack" | "vendor"));
@@ -97,12 +100,12 @@ fn pack_boundary(member: &Member, violations: &mut Vec<Violation>) {
     }
     let may_use_backend = matches!(kind, Some("vendor" | "host"));
     for dep in member.deps.iter().filter(|dep| dep.starts_with("pathon")) {
-        let allowed = dep == "pathon-api" || (may_use_backend && (is_backend_crate(dep) || is_host));
+        let allowed = PACK_CRATES.contains(&dep.as_str()) || (may_use_backend && (is_backend_crate(dep) || is_host));
         if !allowed {
             let hint = if is_backend_crate(dep) {
                 "declare [package.metadata.pathon] kind = \"vendor\" to use interop"
             } else {
-                "packs depend on pathon-api only"
+                "packs depend on pathon-api and pathon-shader only"
             };
             violations.push(violation(
                 "pack-boundary",
@@ -267,6 +270,16 @@ mod tests {
             member("pathon-fsr4", Area::Packs, &["pathon-api", "pathon-rhi-wgpu"]),
         ]);
         assert_eq!(rules_hit(&model), ["pack-boundary", "pack-boundary"]);
+    }
+
+    #[test]
+    fn pack_may_depend_on_the_shader_crate() {
+        let model = model_with(vec![member(
+            "pathon-ssao",
+            Area::Packs,
+            &["pathon-api", "pathon-shader"],
+        )]);
+        assert_eq!(check(&model).violations, []);
     }
 
     #[test]

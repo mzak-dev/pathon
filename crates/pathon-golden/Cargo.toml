@@ -1,0 +1,20 @@
+[package]
+name = "pathon-golden"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+# Dev-only: tests pull it in through [dev-dependencies], so it never lands in the closure of pathon-core.
+[dependencies]
+pathon-rhi.workspace = true
+png.workspace = true
+thiserror.workspace = true
+
+[features]
+gpu-tests = []
+
+[lints]
+workspace = true

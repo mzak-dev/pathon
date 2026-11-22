@@ -16,9 +16,14 @@ thiserror.workspace = true
 
 [dev-dependencies]
 divan.workspace = true
+pathon-bench.workspace = true
 
 [[bench]]
 name = "extract"
+harness = false
+
+[[bench]]
+name = "probe"
 harness = false
 
 [lints]

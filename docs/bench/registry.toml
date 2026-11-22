@@ -1,0 +1,25 @@
+# Rejestr sond dla `cargo xtask bench` i `cargo xtask budgets` (M4-17, ADR-0035; format: docs/bench/README.md).
+# Nowy pomiar = jeden wpis: komenda drukuje linie `PATHON_BENCH` (crate `pathon-bench`), `id` grupuje je w baseline.
+#   ci  = true  -> uruchamia go też CI (`cargo xtask budgets`): tylko liczniki i czasy z szerokim marginesem
+#   gpu = true  -> wymaga GPU; `--skip-gpu` go pomija
+
+[[suite]]
+id = "scene"
+command = "cargo bench -p pathon-scene --bench probe"
+ci = true
+
+[[suite]]
+id = "mesh"
+command = "cargo bench -p pathon-mesh --bench probe"
+ci = true
+
+[[suite]]
+id = "core-frame"
+command = "cargo bench -p pathon-core --bench probe"
+ci = true
+
+# M4-05 (scena PBR w 1440p, jeden wpis na GPU; baseline osobno na RX 9070 XT i MacBooku Air M5):
+# [[suite]]
+# id = "pbr-1440p"
+# command = "cargo bench -p pathon-pbr --bench scene_1440p"
+# gpu = true

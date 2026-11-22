@@ -102,7 +102,7 @@ Proporcje obrazu pochodzą z widoku, który kamerę renderuje, nie z kamery: `Ca
 
 ## Budżet i testy
 
-Tymczasowy budżet ([ADR-0029](../adr/0029-render-world-i-extract.md), do przeniesienia w M4-17): extract 10 000 instancji (zarówno `spawn` wszystkich, jak i ruch wszystkich) poniżej 2 ms CPU w release. Pomiar na maszynie deweloperskiej: spawn 10 000 ≈ 1,2 ms (zawiera pierwszy wzrost kolumn), ruch 10 000 ≈ 0,19 ms, ruch 1% z 100 000 ≈ 0,04 ms, 100 000 ruchów ≈ 2,9 ms.
+Budżet ([ADR-0029](../adr/0029-render-world-i-extract.md), limit w `docs/bench/budgets.toml`, [ADR-0035](../adr/0035-budzety-i-regresje.md)): extract 10 000 instancji (zarówno `spawn` wszystkich, jak i ruch wszystkich) poniżej 2 ms CPU w release. Pomiar na maszynie deweloperskiej: spawn 10 000 ≈ 1,2 ms (zawiera pierwszy wzrost kolumn), ruch 10 000 ≈ 0,19 ms, ruch 1% z 100 000 ≈ 0,04 ms, 100 000 ruchów ≈ 2,9 ms.
 
 - `cargo test -p pathon-scene` — testy jednostkowe (uchwyty, dirty, kamery: macierze reverse-Z dla znanych punktów i zgodność z `pathon_api::Camera`, jitter, światła) oraz `tests/scene.rs`: pusta scena, migawka niezmienna podczas extract, zamiana buforów, wymuszona przebudowa, uchwyty generacyjne, brak przepisywania niezmienionych danych, `previous_model`, odzyskiwanie po panice, **losowa historia 300 extractów porównana z prostym modelem** (także: każdy zmieniony slot jest na liście zmian), skalowanie do 100 000 instancji.
 - `tests/allocations.rs` — licznik alokacji: extract w stanie ustalonym (ruch 10 000, brak ruchu, `snapshot()`) = 0 alokacji.

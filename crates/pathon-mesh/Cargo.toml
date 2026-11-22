@@ -15,6 +15,7 @@ pathon-api.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+pathon-bench.workspace = true
 pathon-rhi.workspace = true
 
 [features]
@@ -22,3 +23,7 @@ gpu-tests = []
 
 [lints]
 workspace = true
+
+[[bench]]
+name = "probe"
+harness = false

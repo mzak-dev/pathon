@@ -54,9 +54,9 @@ Reguła `pack-boundary` ([deps-check](../deps-check.md)) pozwala paczce zależe�
 
 Prefiks **N** (scene): `N0001` nieaktualny uchwyt, `N0002` niepoprawna kamera, `N0003` niepoprawne światło, `N0004` wartość nieskończona lub `NaN`. Strony w `docs/diag/`. Nowe publiczne struktury z opisami (`InstanceDesc`, `CameraDesc`, `CameraData`, `Light`, `ExtractStats`) mają `#[non_exhaustive]` i konstruktory (ADR-0020).
 
-### Tymczasowy budżet extract (do przeniesienia w M4-17)
+### Budżet extract (przeniesiony do `budgets.toml` w M4-17, [ADR-0035](0035-budzety-i-regresje.md))
 
-Budżet z M4-17 jeszcze nie istnieje, więc zadanie ustala wartość tymczasową: **extract 10 000 instancji < 2 ms CPU w release** (jeden wątek, mediana 41 przebiegów), osobno dla `spawn` wszystkich i dla ruchu wszystkich. Pilnuje go test `crates/pathon-scene/tests/budget.rs` (`#[ignore]`, uruchamiany ręcznie w release) oraz benchmark `divan`. Deterministycznie pilnują kosztu: test zero alokacji w stanie ustalonym i test, że extract bez zmian nie zapisuje ani nie oznacza niczego. Pomiar na maszynie dewelopera (22.11.2026): spawn 10 000 ≈ 1,2 ms, ruch 10 000 ≈ 0,19 ms, nic się nie zmieniło ≈ 0,08 ms; przy 100 000: spawn ≈ 9,3 ms, ruch ≈ 2,9 ms, ruch 1% ≈ 0,04 ms, bez zmian ≈ 0,8 ms. M4-17 zastępuje stałą 2 ms wartością z tabeli budżetów.
+Budżet z M4-17 jeszcze nie istnieje, więc zadanie ustala wartość tymczasową: **extract 10 000 instancji < 2 ms CPU w release** (jeden wątek, mediana 41 przebiegów), osobno dla `spawn` wszystkich i dla ruchu wszystkich. Pilnuje go test `crates/pathon-scene/tests/budget.rs` (`#[ignore]`, uruchamiany ręcznie w release) oraz benchmark `divan`. Deterministycznie pilnują kosztu: test zero alokacji w stanie ustalonym i test, że extract bez zmian nie zapisuje ani nie oznacza niczego. Pomiar na maszynie dewelopera (22.11.2026): spawn 10 000 ≈ 1,2 ms, ruch 10 000 ≈ 0,19 ms, nic się nie zmieniło ≈ 0,08 ms; przy 100 000: spawn ≈ 9,3 ms, ruch ≈ 2,9 ms, ruch 1% ≈ 0,04 ms, bez zmian ≈ 0,8 ms. Od M4-17 limit 2 ms to wpis `scene.extract.spawn_10k` / `scene.extract.move_10k` w `docs/bench/budgets.toml`, który czyta test `budget.rs`; sondy `cargo xtask bench` pilnują też regresji względem baseline maszyny.
 
 ## Rozważane warianty
 
@@ -74,4 +74,4 @@ Budżet z M4-17 jeszcze nie istnieje, więc zadanie ustala wartość tymczasową
 - Zmiana układu kolumn instancji, semantyki `previous_transform` albo konwencji jittera po powstaniu paczek konsumentów wymaga nowego ADR.
 - Czytelnik, który zatrzymuje migawkę dłużej niż jeden extract, płaci jedną kopią O(n) na extract (nie błędem); widoczne w `ExtractStats::rebuilt_back_buffer`.
 - Pamięć: dwa komplety kolumn (ok. 150 B na instancję na bufor).
-- Stała 2 ms jest wartością tymczasową; M4-17 ją zastępuje.
+- Budżet 2 ms żyje w `docs/bench/budgets.toml` (ADR-0035).

@@ -1884,12 +1884,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "pathon-bench"
+version = "0.0.1"
+dependencies = [
+ "toml",
+]
+
+[[package]]
 name = "pathon-core"
 version = "0.0.1"
 dependencies = [
  "bytemuck",
  "divan",
  "pathon-api",
+ "pathon-bench",
  "pathon-diag",
  "pathon-golden",
  "pathon-graph",
@@ -1996,6 +2004,7 @@ version = "0.0.1"
 dependencies = [
  "bytemuck",
  "pathon-api",
+ "pathon-bench",
  "pathon-rhi",
  "thiserror 2.0.21",
 ]
@@ -2085,6 +2094,7 @@ dependencies = [
  "bitflags 2.13.2",
  "divan",
  "pathon-api",
+ "pathon-bench",
  "thiserror 2.0.21",
 ]
 
@@ -3912,7 +3922,10 @@ checksum = "b9cc00251562a284751c9973bace760d86c0276c471b4be569fe6b068ee97a56"
 name = "xtask"
 version = "0.0.1"
 dependencies = [
+ "pathon-bench",
+ "serde",
  "serde_json",
+ "toml",
 ]
 
 [[package]]

@@ -1,0 +1,140 @@
+{
+  "schema": 1,
+  "machines": {
+    "windows-rx9070xt": {
+      "os_family": "windows",
+      "os": "Microsoft Windows 11 Pro 10.0.26200",
+      "cpu": "AMD Ryzen 5 5600G with Radeon Graphics",
+      "gpus": [
+        "Parsec Virtual Display Adapter",
+        "AMD Radeon RX 9070 XT",
+        "AMD Radeon(TM) Graphics"
+      ],
+      "suites": {
+        "core-frame": {
+          "recorded_at": "2026-11-22T17:53:26Z",
+          "commit": "ae07f965c50d",
+          "dirty": true,
+          "rustc": "1.100.0",
+          "repeats": 7,
+          "metrics": {
+            "core.frame.allocated_bytes_1view": {
+              "unit": "bytes",
+              "median": 13256.0,
+              "min": 13256.0,
+              "samples": 7
+            },
+            "core.frame.allocated_bytes_4view": {
+              "unit": "bytes",
+              "median": 56220.0,
+              "min": 56220.0,
+              "samples": 7
+            },
+            "core.frame.allocations_1view": {
+              "unit": "count",
+              "median": 85.0,
+              "min": 85.0,
+              "samples": 7
+            },
+            "core.frame.allocations_4view": {
+              "unit": "count",
+              "median": 337.0,
+              "min": 337.0,
+              "samples": 7
+            },
+            "core.frame.commands_1view": {
+              "unit": "count",
+              "median": 34.0,
+              "min": 34.0,
+              "samples": 7
+            },
+            "core.frame.commands_4view": {
+              "unit": "count",
+              "median": 136.0,
+              "min": 136.0,
+              "samples": 7
+            },
+            "core.frame.record_1view": {
+              "unit": "ns",
+              "median": 11444.0,
+              "min": 8571.0,
+              "samples": 217
+            },
+            "core.frame.record_4view": {
+              "unit": "ns",
+              "median": 48651.0,
+              "min": 37885.0,
+              "samples": 217
+            }
+          }
+        },
+        "mesh": {
+          "recorded_at": "2026-11-22T17:53:26Z",
+          "commit": "ae07f965c50d",
+          "dirty": true,
+          "rustc": "1.100.0",
+          "repeats": 7,
+          "metrics": {
+            "mesh.pool.recycle_1000": {
+              "unit": "ns",
+              "median": 370200.0,
+              "min": 293500.0,
+              "samples": 217
+            },
+            "mesh.pool.upload_1000": {
+              "unit": "ns",
+              "median": 770500.0,
+              "min": 613000.0,
+              "samples": 217
+            },
+            "mesh.pool.upload_allocations_1000": {
+              "unit": "count",
+              "median": 20.0,
+              "min": 20.0,
+              "samples": 7
+            }
+          }
+        },
+        "scene": {
+          "recorded_at": "2026-11-22T17:53:26Z",
+          "commit": "ae07f965c50d",
+          "dirty": true,
+          "rustc": "1.100.0",
+          "repeats": 7,
+          "metrics": {
+            "scene.extract.move_100k": {
+              "unit": "ns",
+              "median": 4591300.0,
+              "min": 3871100.0,
+              "samples": 217
+            },
+            "scene.extract.move_10k": {
+              "unit": "ns",
+              "median": 290400.0,
+              "min": 239700.0,
+              "samples": 217
+            },
+            "scene.extract.spawn_100k": {
+              "unit": "ns",
+              "median": 21360700.0,
+              "min": 14083500.0,
+              "samples": 217
+            },
+            "scene.extract.spawn_10k": {
+              "unit": "ns",
+              "median": 2036400.0,
+              "min": 1524900.0,
+              "samples": 217
+            },
+            "scene.extract.steady_allocations_10k": {
+              "unit": "count",
+              "median": 0.0,
+              "min": 0.0,
+              "samples": 7
+            }
+          }
+        }
+      }
+    }
+  }
+}

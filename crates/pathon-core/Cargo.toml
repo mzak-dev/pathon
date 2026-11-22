@@ -16,6 +16,7 @@ thiserror.workspace = true
 
 [dev-dependencies]
 divan.workspace = true
+pathon-bench.workspace = true
 bytemuck.workspace = true
 pathon-golden.workspace = true
 pathon-test.workspace = true
@@ -29,4 +30,8 @@ workspace = true
 
 [[bench]]
 name = "frame"
+harness = false
+
+[[bench]]
+name = "probe"
 harness = false

@@ -304,7 +304,7 @@ Hosty (M6, M7) nie są na ścieżce minimalnej, ale ich szew jest: M2-19 i M4-20
 - [ ] **M4-07 · `pathon-shadow`** — CSM + PCF, rola Shadows. **Gotowe gdy:** golden image z cieniami.
 - [ ] **M4-08 · `pathon-sky`** — atmosfera; jako źródło dla IBL. **Gotowe gdy:** golden image.
 - [ ] **M4-09 · `pathon-post`** ★ — ekspozycja (slot `exposure`), bloom, tonemapping SDR. **Gotowe gdy:** golden image.
-- [ ] **M4-10 · Scena testowa** — loader glTF tylko w `examples/`. **Gotowe gdy:** scena ładuje się na 3 systemach i w Chrome.
+- [ ] **M4-10 · Scena testowa** — loader glTF tylko w `examples/`. Dane: scena „classroom” wyeksportowana skryptem `tools/scenes/export_classroom.py`, opis i ograniczenia w [scenes.md](scenes.md). **Gotowe gdy:** scena ładuje się na 3 systemach i w Chrome.
 - [ ] **M4-11 · Culling** ★ — frustum na CPU; na Desktop culling na GPU + indirect (`MULTI_DRAW_INDIRECT_COUNT` na DX12 i Vulkanie; na Metalu wariant bez count). Dołożyć komendy indirect (`DrawIndirect`, `DispatchIndirect`, `MultiDraw…`, `…Count`; limit 32 B, powtórzyć benchmark ADR-0009), patrz [spike-ash.md](spike-ash.md). **Gotowe gdy:** liczba draw calli spada w pomiarze, golden images bez zmian.
 - [ ] **M4-12 · `pathon-skin`** — skinning w compute, morph targets, pozycje poprzedniej klatki dla wektorów ruchu (layout ustalony w M4-01). **Gotowe gdy:** animowany model z poprawnym TAA (bez smużenia) w M5.
 - [ ] **M4-13 · Tekstury** — kompresja według matrycy `Caps` (iOS bez BCn), mipmapy w compute, opcjonalny `pathon-ktx2`. **Gotowe gdy:** ta sama scena z teksturami BCn na desktopie i fallbackiem tam, gdzie BCn brak.

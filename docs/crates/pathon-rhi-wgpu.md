@@ -8,6 +8,8 @@ Backend RHI na wgpu 30 — jedyny crate, który importuje wgpu (M0-08).
 - `Caps` liczone z adaptera: matryca formatów pomija formaty, których funkcje (BC, ETC2, ASTC, 16-bit norm) nie zostały włączone.
 - Błędy walidacji wgpu przy tworzeniu obiektów i `submit` wracają jako `R0009` zamiast trafiać do handlera, który domyślnie panikuje.
 - Przy włączonym `Features::PIPELINE_CACHE` (dziś Vulkan) urządzenie ma jeden `wgpu::PipelineCache` przekazywany każdemu potokowi. Własne urządzenie startuje z blobem z `DeviceRequest::pipeline_cache`; cache powstaje w zakresie błędów walidacji, a blob odrzucony przez wgpu (inny adapter lub backend, uszkodzony, ze starszego sterownika) daje pusty cache, nigdy błąd ani panikę, urządzenie hosta (`adopt`) dostaje cache bez danych; `pipeline_cache_data()` oddaje blob do zapisu (ADR-0019).
+- Domyślny widok tekstury (`TextureViewDesc::default()`) bierze format z opisu tekstury, gdy ten różni się od formatu zasobu wgpu: powierzchnie webowe są skonfigurowane jako Unorm, a opisane jako sRGB, i bez tego kodowanie sRGB ginęłoby w widoku (kolor w Chrome różniłby się od natywnego).
+- Test `tests/caps_report.rs` (`gpu-tests`) porównuje `Caps` z surowym wgpu na każdym natywnym backendzie systemu, dla urządzenia pathon i przyjętego przez `adopt`, i zapisuje raport do pliku z `PATHON_CAPS_REPORT` (CI: podsumowanie joba).
 - Komendy `TextureAccess` są pomijane: wgpu śledzi stany sam, plan barier waliduje `pathon-rhi-null`.
 
 ## `interop`

@@ -82,6 +82,7 @@ Hosty (M6, M7) nie są na ścieżce minimalnej, ale ich szew jest: M2-19 i M4-20
 
 - [ ] **M0-00 · Decyzje startowe (ADR)** ★
   - **Stan 20.11.2026:** 8 ADR w docs/adr/; nazwa `pathon` wolna na crates.io, rezerwacja czeka na autora (ADR-0002).
+  - **Stan 22.11.2026:** nazwa nadal wolna (API crates.io zwraca 404 dla `pathon` i dla wszystkich crate'ów workspace'u). Rezerwacja czeka na autora; fasada z workspace'u nie nadaje się do publikacji (zależności ścieżkowe bez wersji), więc publikuje się pusty crate `pathon` 0.0.1 — kroki w [weryfikacji platform](weryfikacja-platform.md).
   - Licencja (publikacja, vendoring, dystrybucja bibliotek SDK).
   - Rezerwacja nazwy `pathon` na crates.io z twojego konta.
   - **WebGL2 poza zakresem**, web tylko przez WebGPU.
@@ -115,11 +116,13 @@ Hosty (M6, M7) nie są na ścieżce minimalnej, ale ich szew jest: M2-19 i M4-20
 
 - [ ] **M0-05 · `pathon-platform-winit`** ★
   - **Stan 20.11.2026:** działa na Windows (przykłady clear, vertical_slice); Linux i macOS do ręcznego sprawdzenia.
+  - **Stan 22.11.2026:** Windows potwierdzony testem `window_events` (okno z `WinitPlatform`, rozmiar zmieniany z kodu, `Resized` wraca, `inner_size()` się zgadza). Test działa w CI na Linuksie (X11 pod Xvfb, drugi przebieg ze skalą 1,5), macOS i Windows (job `window`) oraz na Wayland (headless weston, eksperymentalny `window-wayland`); czeka na pierwszy przebieg tych jobów. Zostaje ręcznie: `ScaleChanged` przy przeniesieniu okna między monitorami (Windows, Linux X11 i Wayland, macOS), Wayland na prawdziwym kompozytorze ([weryfikacja platform](weryfikacja-platform.md)).
   - Implementacja `Platform` na winit 0.30; tłumaczenie zdarzeń; pętla na wątku głównym.
   - **Gotowe gdy:** okno reaguje na resize i zmianę skali na Windows, Linux (X11 i Wayland) i macOS.
 
 - [ ] **M0-06 · `pathon-platform-web`** ★
   - **Stan 21.11.2026:** komunikat bez WebGPU działa (sprawdzony w przeglądarce w aplikacji), przykład loguje do konsoli i pokazuje pętlę klatek. Powierzchnie webowe renderują przez widok sRGB, więc kolor jest taki sam jak natywnie. Renderowanie w Chrome i Safari 26 z WebGPU czeka na ręczne sprawdzenie.
+  - **Stan 22.11.2026:** Chrome sprawdzony (Chromium 153 i 157, Windows, adapter AMD): przykład startuje, urządzenie powstaje asynchronicznie, pętla klatek rusza (log `frame 0`, `frame 120`), canvas ma kolor (89, 124, 160). Sprawdzenie znalazło błąd: kolor w Chrome był (26, 51, 89), bo domyślny widok powierzchni gubił kodowanie sRGB; poprawione w `create_texture_view` (rhi-wgpu). Skrypt `examples/web/verify.cjs` powtarza to w jobie `wasm` (software WebGPU na runnerze nie jest gwarantowane, więc krok może się nie uruchomić). Zostaje: Safari 26 ręcznie ([weryfikacja platform](weryfikacja-platform.md)).
   - Canvas, asynchroniczny start, `requestAnimationFrame`; brak WebGPU → czytelny komunikat w stronie, nie fallback.
   - **Gotowe gdy:** przykład startuje w Chrome i Safari 26; w przeglądarce bez WebGPU pokazuje komunikat.
 
@@ -132,18 +135,21 @@ Hosty (M6, M7) nie są na ścieżce minimalnej, ale ich szew jest: M2-19 i M4-20
 
 - [ ] **M0-08 · `pathon-rhi-wgpu`** ★
   - **Stan 20.11.2026:** sprawdzone na Windows (test zgodności na GPU); Metal i WebGPU do sprawdzenia.
+  - **Stan 22.11.2026:** test `crates/pathon-rhi-wgpu/tests/caps_report.rs` tworzy urządzenie na każdym natywnym backendzie systemu i porównuje `Caps` z surowym wgpu; urządzenie surowego wgpu przyjęte przez `adopt` raportuje te same `Caps` co urządzenie pathon z tym samym deskryptorem (`caps_of_an_adopted_device_match_raw_wgpu`). Sprawdzone: DX12 i Vulkan (Windows, AMD RX 9070 XT), WebGPU (Chrome, przykład web). Vulkan na lavapipe ma job `gpu`. Metal czeka na pierwszy przebieg jobu `gpu-metal` (macOS, Apple Silicon); po zielonym przebiegu można odhaczyć.
   - Urządzenie z `DeviceRequest`, asynchronicznie; konwersje typów makrem z jednej tabeli; brak `impl From<wgpu::X>` w publicznym API.
   - Moduł `interop` (surowe `wgpu::Device`, `Queue`, tekstury, enkoder) — publiczny, ale dostępny tylko paczkom vendorowym i hostom (reguła deps-check).
   - `interop::adopt(instance, adapter, device, queue)` — przyjęcie urządzenia utworzonego poza pathon; `Caps` liczone z przyjętego adaptera. W drugą stronę eksport surowych obiektów, żeby host mógł użyć urządzenia pathon.
   - **Gotowe gdy:** urządzenie powstaje na DX12, Vulkanie, Metalu i WebGPU w CI lub ręcznym teście na sprzęcie; test przyjmuje urządzenie utworzone surowym wgpu i raportuje te same `Caps`.
 
-- [ ] **M0-09 · `pathon-rhi` (fasada)** ★
+- [x] **M0-09 · `pathon-rhi` (fasada)** ★
   - **Stan 20.11.2026:** natywnie sprawdzone; wasm tylko kompiluje się (cargo check).
+  - **Stan 22.11.2026:** sprawdzone na wasm: w Chrome ten sam kod buduje urządzenie przez `build_async()` (log `caps: Caps { backend: WebGpu, … }` przed pierwszą klatką), natywnie przez blokujące `build()` (testy GPU, `clear`). Dowód: `examples/web/verify.cjs` (Chromium 153, Windows, kod wyjścia 0).
   - `enum Device { Wgpu(..) }`, `build_async()` + natywny blokujący `build()`, re-eksport typów.
   - **Gotowe gdy:** ten sam kod tworzy urządzenie natywnie (blokująco) i na wasm (async).
 
 - [ ] **M0-10 · Przykład `clear`** ★ — **Gotowe gdy:** spełniona pierwsza część kryterium M0.
   - **Stan 20.11.2026:** działa na Windows; wersja webowa (`examples/web`) buduje się, obraz do sprawdzenia w Chrome; Linux i macOS do sprawdzenia.
+  - **Stan 22.11.2026:** Windows (natywnie, `PATHON_EXIT_AFTER_FRAMES=60` — 60 klatek i wyjście 0) i Chrome (kolor (89, 124, 160), jak natywnie) potwierdzone. Przykład ma teraz automatyczne wyjście po N klatkach (`PATHON_EXIT_AFTER_FRAMES`), więc job `window` uruchamia go bez człowieka na Linuksie (Xvfb, lavapipe) i macOS (Metal); czeka na pierwszy przebieg. Odhaczyć po zielonym `window` na obu systemach.
 
 - [x] **M0-11 · Przykład `external-window`** — okno z surowego winita albo SDL3, bez `pathon-platform`. **Gotowe gdy:** przykład rysuje.
   - **Stan 20.11.2026:** działa na Windows (surowy winit, bez pathon-platform).
@@ -152,6 +158,7 @@ Hosty (M6, M7) nie są na ścieżce minimalnej, ale ich szew jest: M2-19 i M4-20
 
 - [ ] **M1-01 · Caps** ★
   - **Stan 20.11.2026:** Caps z adaptera i matryca formatów gotowe, test konwersji w obie strony; porównanie na 3 systemach i w Chrome do zrobienia.
+  - **Stan 22.11.2026:** `caps_report` porównuje funkcje, limity i matrycę formatów z surowym wgpu; raport (adapter, profil, funkcje, limity) trafia do podsumowania joba. Windows: Vulkan i DX12 zgodne. Chrome: `verify.cjs` porównuje `Caps` z `navigator.gpu` — 9 funkcji i 6 limitów zgodne (`SUBGROUP` nie występuje na web, bo wgpu 30.0.2 nie ma mapowania `subgroups`). Linux (lavapipe) i macOS (Metal): raporty w podsumowaniach jobów `gpu` i `gpu-metal`, czekają na pierwszy przebieg.
   - Bity funkcji i limitów z adaptera, matryca formatów tekstur (BCn, ASTC, ETC2, formaty storage), nazwane profile Web / Desktop / High.
   - **Gotowe gdy:** raport `Caps` przy starcie zgadza się z `get_capabilities` / `features()` wgpu na 3 systemach i w Chrome.
 
@@ -208,8 +215,9 @@ Hosty (M6, M7) nie są na ścieżce minimalnej, ale ich szew jest: M2-19 i M4-20
   - **Konwencje przestrzeni** w tym samym kontrakcie: układ prawoskrętny, Y w górę, metry, jednostki fizyczne światła (lux, lumen). Konwersje z konwencji hosta robią adaptery hostów, nie paczki.
   - Sloty: `depth`, `depth_pyramid`, `normals`, `motion`, `material_id`, `roughness`, `albedo` (na żądanie — SSR, DLSS RR), `reactive` (maska dla upscalerów), `diffuse` / `specular` (podział światła), `hdr`, `ao`, `exposure`, `output`.
   - **Gotowe gdy:** kontrakt slotów i konwencji opisany i pokryty testem formatów.
-- [ ] **M2-11 · `pathon-core`** ★
+- [x] **M2-11 · `pathon-core`** ★
   - **Stan 20.11.2026:** natywnie z runnerem (wątek pathon-render) działa; na wasm rdzeń kompiluje się, uruchomienie czeka na M0-06.
+  - **Stan 22.11.2026:** runner bez wątków uruchomiony w Chrome (`examples/web` przez `run_with_hook`: asynchroniczne urządzenie, klatki, kolor, brak błędów w konsoli — `verify.cjs`); natywnie runner z wątkiem renderu na Windows (`clear`, 60 klatek). Reguła „core bez wątków” ma test w `xtask deps-check`. Job `window` powtórzy natywny przebieg na Linuksie i macOS.
   - `Renderer::builder()…build_async()` / `build()` — bez okna; `with_device(...)` zamiast tworzenia własnego urządzenia; `add_surface`, `add_offscreen_target`, `import_texture`, `remove_*`, headless.
   - Wejścia klatki: `render_frame()` (pathon zgłasza na własną kolejkę, robi acquire i present swoich surface'ów) oraz `record_frame()` (zwraca `CommandList`; host nagrywa ją do swojego enkodera przez `interop::encode_into` i zgłasza sam).
   - Core nie tworzy wątków; runner z wątkiem renderu zgodny z ADR z M0-00 żyje w fasadzie `pathon` (feature `runtime`).

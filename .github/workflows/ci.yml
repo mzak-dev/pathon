@@ -247,6 +247,11 @@ jobs:
       - name: Window events (macOS, Windows)
         if: runner.os != 'Linux'
         run: cargo test -p pathon-examples --features window-tests --test window_events
+      - name: Surface reconfigure (Windows, DX12 on WARP)
+        if: runner.os == 'Windows'
+        env:
+          PATHON_BACKEND: dx12
+        run: cargo test -p pathon-examples --features window-tests --test surface_reconfigure
       - name: clear for 120 frames (macOS, Metal)
         if: runner.os == 'macOS'
         env:

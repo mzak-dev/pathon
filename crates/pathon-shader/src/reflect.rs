@@ -11,6 +11,8 @@ use pathon_rhi_types::{
 use crate::ShaderError;
 
 const REFLECTED_LABEL: &str = "reflected";
+// Bounds the layout list; far above the groups a pipeline layout can hold, far below an overflowing index.
+const MAX_BIND_GROUPS: u32 = 32;
 
 type SlotKey = (u32, u32);
 
@@ -38,11 +40,18 @@ pub fn reflect_bind_groups(wgsl: &str, entry_points: &[&str]) -> Result<Vec<Bind
         let Some(resource_binding) = variable.binding else {
             continue;
         };
-        let visibility = visibility_of_users(&info, &selected, handle)?;
+        let visibility = visibility_of_users(&info, &selected, handle);
         if visibility.is_empty() {
             continue;
         }
         let key = (resource_binding.group, resource_binding.binding);
+        if key.0 >= MAX_BIND_GROUPS {
+            return Err(ShaderError::UnsupportedBinding {
+                group: key.0,
+                binding: key.1,
+                reason: format!("group index must be below {MAX_BIND_GROUPS}"),
+            });
+        }
         let kind =
             resource_kind(&module, variable.space, variable.ty).map_err(|reason| ShaderError::UnsupportedBinding {
                 group: key.0,
@@ -60,20 +69,31 @@ fn invalid_wgsl(message: &str) -> ShaderError {
     }
 }
 
-fn select_entry_points<'a>(
-    module: &'a Module,
-    names: &[&str],
-) -> Result<Vec<(usize, &'a naga::EntryPoint)>, ShaderError> {
+struct SelectedEntryPoint {
+    index: usize,
+    stage: ShaderStages,
+}
+
+fn select_entry_points(module: &Module, names: &[&str]) -> Result<Vec<SelectedEntryPoint>, ShaderError> {
     let mut selected = Vec::new();
     for name in names {
         let before = selected.len();
-        selected.extend(
-            module
-                .entry_points
-                .iter()
-                .enumerate()
-                .filter(|(_, entry_point)| entry_point.name == *name),
-        );
+        for (index, entry_point) in module.entry_points.iter().enumerate() {
+            if entry_point.name != *name {
+                continue;
+            }
+            let stage = match entry_point.stage {
+                naga::ShaderStage::Vertex => ShaderStages::VERTEX,
+                naga::ShaderStage::Fragment => ShaderStages::FRAGMENT,
+                naga::ShaderStage::Compute => ShaderStages::COMPUTE,
+                _ => {
+                    return Err(ShaderError::UnsupportedStage {
+                        entry_point: entry_point.name.clone(),
+                    });
+                }
+            };
+            selected.push(SelectedEntryPoint { index, stage });
+        }
         if selected.len() == before {
             return Err(ShaderError::UnknownEntryPoint {
                 name: (*name).to_owned(),
@@ -85,26 +105,15 @@ fn select_entry_points<'a>(
 
 fn visibility_of_users(
     info: &ModuleInfo,
-    selected: &[(usize, &naga::EntryPoint)],
+    selected: &[SelectedEntryPoint],
     variable: Handle<naga::GlobalVariable>,
-) -> Result<ShaderStages, ShaderError> {
-    let mut visibility = ShaderStages::empty();
-    for (index, entry_point) in selected {
-        if info.get_entry_point(*index)[variable] == GlobalUse::empty() {
-            continue;
-        }
-        visibility |= match entry_point.stage {
-            naga::ShaderStage::Vertex => ShaderStages::VERTEX,
-            naga::ShaderStage::Fragment => ShaderStages::FRAGMENT,
-            naga::ShaderStage::Compute => ShaderStages::COMPUTE,
-            _ => {
-                return Err(ShaderError::UnsupportedStage {
-                    entry_point: entry_point.name.clone(),
-                });
-            }
-        };
-    }
-    Ok(visibility)
+) -> ShaderStages {
+    selected
+        .iter()
+        .filter(|entry_point| info.get_entry_point(entry_point.index)[variable] != GlobalUse::empty())
+        .fold(ShaderStages::empty(), |visibility, entry_point| {
+            visibility | entry_point.stage
+        })
 }
 
 fn merge_into_slots(
@@ -192,7 +201,7 @@ fn image_binding_type(dim: ImageDimension, arrayed: bool, class: ImageClass) -> 
     let dimension = texture_view_dimension(dim, arrayed)?;
     match class {
         ImageClass::Sampled { kind, multi } => Ok(BindingType::SampledTexture {
-            sample_type: sample_type(kind)?,
+            sample_type: sample_type(kind, multi)?,
             dimension,
             multisampled: multi,
         }),
@@ -222,8 +231,10 @@ fn texture_view_dimension(dim: ImageDimension, arrayed: bool) -> Result<TextureV
     }
 }
 
-fn sample_type(kind: ScalarKind) -> Result<TextureSampleType, String> {
+fn sample_type(kind: ScalarKind, multisampled: bool) -> Result<TextureSampleType, String> {
     match kind {
+        // wgpu rejects filterable multisampled textures, and they cannot be sampled anyway.
+        ScalarKind::Float if multisampled => Ok(TextureSampleType::UnfilterableFloat),
         ScalarKind::Float => Ok(TextureSampleType::Float),
         ScalarKind::Sint => Ok(TextureSampleType::Sint),
         ScalarKind::Uint => Ok(TextureSampleType::Uint),
@@ -232,6 +243,9 @@ fn sample_type(kind: ScalarKind) -> Result<TextureSampleType, String> {
 }
 
 fn storage_texture_access(access: naga::StorageAccess) -> Result<StorageAccess, String> {
+    if access.contains(naga::StorageAccess::ATOMIC) {
+        return Err("atomic storage textures have no RHI equivalent".to_owned());
+    }
     let loads = access.contains(naga::StorageAccess::LOAD);
     let stores = access.contains(naga::StorageAccess::STORE);
     match (loads, stores) {

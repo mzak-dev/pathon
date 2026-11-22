@@ -250,7 +250,7 @@ fn integer_and_multisampled_textures() {
     let expected = [
         sampled(TextureSampleType::Sint, TextureViewDimension::D2, false),
         sampled(TextureSampleType::Uint, TextureViewDimension::D3, false),
-        sampled(TextureSampleType::Float, TextureViewDimension::D2, true),
+        sampled(TextureSampleType::UnfilterableFloat, TextureViewDimension::D2, true),
         sampled(TextureSampleType::Float, TextureViewDimension::D2Array, false),
         sampled(TextureSampleType::Float, TextureViewDimension::Cube, false),
         sampled(TextureSampleType::Float, TextureViewDimension::D1, false),
@@ -463,6 +463,119 @@ fn shader_composed_from_modules_reflects_module_bindings() {
             )]),
         ]
     );
+}
+
+#[test]
+fn group_index_above_the_bound_is_an_error_not_a_panic() {
+    for group in ["4294967295", "33", "32"] {
+        let wgsl = format!(
+            "@group({group}) @binding(0) var<uniform> value: vec4<f32>;
+             @compute @workgroup_size(1) fn main() {{ _ = value; }}"
+        );
+        assert!(
+            matches!(
+                reflect_err(&wgsl, &["main"]),
+                ShaderError::UnsupportedBinding { binding: 0, .. }
+            ),
+            "group {group}"
+        );
+    }
+    let highest = "
+@group(31) @binding(0) var<uniform> value: vec4<f32>;
+@compute @workgroup_size(1) fn main() { _ = value; }
+";
+    assert_eq!(reflect_ok(highest, &["main"]).len(), 32);
+}
+
+#[test]
+fn atomic_storage_texture_is_an_error() {
+    let wgsl = "
+@group(0) @binding(0) var counters: texture_storage_2d<r32uint, atomic>;
+@compute @workgroup_size(1) fn main() { textureAtomicAdd(counters, vec2<i32>(0), 1u); }
+";
+    assert!(matches!(
+        reflect_err(wgsl, &["main"]),
+        ShaderError::UnsupportedBinding {
+            group: 0,
+            binding: 0,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn binding_used_only_through_helper_functions_is_reflected() {
+    let wgsl = "
+@group(0) @binding(0) var<uniform> value: vec4<f32>;
+fn inner() -> vec4<f32> { return value; }
+fn outer() -> vec4<f32> { return inner(); }
+@vertex fn vs() -> @builtin(position) vec4<f32> { return outer(); }
+";
+    assert_eq!(
+        reflect_ok(wgsl, &["vs"]),
+        vec![group(vec![entry(0, ShaderStages::VERTEX, BindingType::UniformBuffer)])]
+    );
+}
+
+#[test]
+fn external_texture_is_an_error() {
+    let wgsl = "
+@group(0) @binding(0) var video: texture_external;
+@compute @workgroup_size(1) fn main() { _ = textureDimensions(video); }
+";
+    assert!(matches!(
+        reflect_err(wgsl, &["main"]),
+        ShaderError::UnsupportedBinding { .. }
+    ));
+}
+
+#[test]
+fn binding_array_sized_by_an_override_is_an_error() {
+    let wgsl = "
+enable wgpu_binding_array;
+override count: u32 = 4;
+@group(0) @binding(0) var views: binding_array<texture_2d<f32>, count>;
+@compute @workgroup_size(1) fn main() { _ = textureDimensions(views[0]); }
+";
+    assert!(reflect_bind_groups(wgsl, &["main"]).is_err());
+}
+
+#[test]
+fn binding_arrays_of_buffers_and_storage_textures_keep_their_count() {
+    let wgsl = "
+enable wgpu_binding_array;
+struct Item { value: vec4<f32> }
+struct Counts { values: array<u32, 4> }
+@group(0) @binding(0) var<uniform> uniforms: binding_array<Item, 2>;
+@group(0) @binding(1) var<storage, read_write> storages: binding_array<Counts, 3>;
+@group(0) @binding(2) var images: binding_array<texture_storage_2d<rgba8unorm, write>, 5>;
+@compute @workgroup_size(1) fn main() {
+    _ = uniforms[0].value;
+    storages[0].values[0] = 1u;
+    textureStore(images[0], vec2<i32>(0), vec4<f32>(1.0));
+}
+";
+    let entries = &reflect_ok(wgsl, &["main"])[0].entries;
+    let counts: Vec<Option<NonZeroU32>> = entries.iter().map(|entry| entry.count).collect();
+    assert_eq!(counts, [NonZeroU32::new(2), NonZeroU32::new(3), NonZeroU32::new(5)]);
+    assert_eq!(entries[0].ty, BindingType::UniformBuffer);
+}
+
+#[test]
+fn multisampled_depth_texture_and_empty_entry_point_list() {
+    let wgsl = "
+@group(0) @binding(0) var depth: texture_depth_multisampled_2d;
+@compute @workgroup_size(1) fn main() { _ = textureDimensions(depth); }
+";
+    assert_eq!(
+        reflect_ok(wgsl, &["main"]),
+        vec![group(vec![entry(
+            0,
+            ShaderStages::COMPUTE,
+            sampled(TextureSampleType::Depth, TextureViewDimension::D2, true)
+        )])]
+    );
+    assert_eq!(reflect_ok(wgsl, &[]), vec![]);
 }
 
 #[cfg(feature = "gpu-tests")]

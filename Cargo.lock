@@ -1884,6 +1884,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "pathon-bench"
+version = "0.0.1"
+dependencies = [
+ "toml",
+]
+
+[[package]]
 name = "pathon-bindless"
 version = "0.0.1"
 dependencies = [
@@ -1905,6 +1912,7 @@ dependencies = [
  "bytemuck",
  "divan",
  "pathon-api",
+ "pathon-bench",
  "pathon-diag",
  "pathon-golden",
  "pathon-graph",
@@ -1963,6 +1971,7 @@ dependencies = [
  "pathon-devtools",
  "pathon-material",
  "pathon-mesh",
+ "pathon-post",
  "pathon-profile",
  "pathon-rhi-wgpu",
  "pathon-scene",
@@ -2012,6 +2021,7 @@ version = "0.0.1"
 dependencies = [
  "bytemuck",
  "pathon-api",
+ "pathon-bench",
  "pathon-rhi",
  "thiserror 2.0.21",
 ]
@@ -2033,6 +2043,17 @@ dependencies = [
  "wasm-bindgen",
  "web-sys",
  "winit",
+]
+
+[[package]]
+name = "pathon-post"
+version = "0.0.1"
+dependencies = [
+ "bytemuck",
+ "pathon-api",
+ "pathon-core",
+ "pathon-golden",
+ "pathon-rhi",
 ]
 
 [[package]]
@@ -2101,6 +2122,7 @@ dependencies = [
  "bitflags 2.13.2",
  "divan",
  "pathon-api",
+ "pathon-bench",
  "thiserror 2.0.21",
 ]
 
@@ -3928,7 +3950,10 @@ checksum = "b9cc00251562a284751c9973bace760d86c0276c471b4be569fe6b068ee97a56"
 name = "xtask"
 version = "0.0.1"
 dependencies = [
+ "pathon-bench",
+ "serde",
  "serde_json",
+ "toml",
 ]
 
 [[package]]

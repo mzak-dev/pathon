@@ -56,6 +56,9 @@ mod tests {
         for preset in SamplerPreset::ALL {
             assert_eq!(SamplerPreset::from_index(preset.index()), Some(preset));
         }
-        assert_eq!(SamplerPreset::from_index(u32::try_from(SamplerPreset::COUNT).expect("four presets")), None);
+        assert_eq!(
+            SamplerPreset::from_index(u32::try_from(SamplerPreset::COUNT).expect("four presets")),
+            None
+        );
     }
 }

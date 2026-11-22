@@ -10,8 +10,7 @@ use pathon_api::rhi::{
     TextureUsage, TextureViewDesc, TextureViewId,
 };
 
-use crate::error::BindlessShortfall;
-use crate::error::fallback_diagnostic;
+use crate::error::{BindlessShortfall, fallback_diagnostic};
 use crate::path::{DEFAULT_CAPACITY, choose_path};
 use crate::wgsl::{
     BINDLESS_FIRST_SAMPLER_BINDING, BINDLESS_TEXTURES_BINDING, MATERIAL_FIRST_SAMPLER_BINDING,

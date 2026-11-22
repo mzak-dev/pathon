@@ -5,7 +5,9 @@
 
 mod common;
 
-use common::scene::{SIZE, render};
+#[cfg(feature = "gpu-tests")]
+use common::scene::SIZE;
+use common::scene::render;
 use pathon_bindless::{BINDLESS_FEATURES, PathPreference, TexturePath};
 use pathon_rhi::{Device, Features, NullDevice};
 

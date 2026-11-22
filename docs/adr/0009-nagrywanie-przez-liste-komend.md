@@ -19,4 +19,5 @@ M2-16 wymaga zmierzenia tego narzutu i progu, po którego przekroczeniu backend 
 ## Konsekwencje
 
 - Benchmark trzeba powtórzyć przy zmianach w `Command`, w tłumaczeniu (`encode.rs`) i przy M4-11 (culling na GPU i indirect zmieniają liczbę draw calli na pass).
+- Komendy indirect z M4-11 ([ADR-0033](0033-komendy-indirect.md)) są w `Command`, a benchmark powtórzono (wyniki w [docs/bench](../bench/README.md)).
 - Limit „`Command` ≤ 32 bajty” pilnuje test `command_stays_within_32_bytes` w `pathon-rhi-types`.

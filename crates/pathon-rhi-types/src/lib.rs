@@ -10,6 +10,7 @@ mod device;
 mod error;
 mod format;
 mod id;
+mod indirect;
 mod maybe_send;
 mod pipeline;
 mod surface;
@@ -39,6 +40,10 @@ pub use format::{Compression, Format, FormatKind, SampleKind};
 pub use id::{
     BindGroupId, BindGroupLayoutId, BufferId, ComputePipelineId, Id, Pool, QuerySetId, RawHandle, RenderPipelineId,
     SamplerId, ShaderModuleId, SurfaceId, TextureId, TextureViewId,
+};
+pub use indirect::{
+    DispatchIndirectArgs, DrawIndexedIndirectArgs, DrawIndirectArgs, INDIRECT_ALIGNMENT, INDIRECT_COUNT_SIZE,
+    MultiDrawCount,
 };
 pub use maybe_send::{MaybeSend, MaybeSendSync};
 pub use pipeline::{

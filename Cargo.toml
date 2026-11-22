@@ -25,6 +25,7 @@ pathon-rhi-null = { path = "crates/pathon-rhi-null" }
 pathon-rhi-types = { path = "crates/pathon-rhi-types" }
 pathon-rhi-wgpu = { path = "crates/pathon-rhi-wgpu" }
 pathon-test = { path = "crates/pathon-test" }
+pathon-texture = { path = "crates/pathon-texture" }
 pathon-devtools = { path = "tools/pathon-devtools" }
 
 bitflags = "2.13"

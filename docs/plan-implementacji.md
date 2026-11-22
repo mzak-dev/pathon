@@ -286,11 +286,12 @@ Hosty (M6, M7) nie są na ścieżce minimalnej, ale ich szew jest: M2-19 i M4-20
   - Render world w SoA, kamery, światła, API extract, podwójny bufor.
   - Bez systemu assetów i I/O plików: dane z pamięci przez handle'y; adaptery hostów mapują na nie swoje assety.
   - **Gotowe gdy:** extract 10 000 instancji mieści się w budżecie z M4-17.
-- [ ] **M4-03 · `pathon-material`** ★
+- [x] **M4-03 · `pathon-material`** ★
   - Materiał jako funkcja WGSL „wejścia powierzchni → BSDF”, oddzielona od entry pointu; ta sama funkcja dla forward, visibility buffer i punktu trafienia RT (bez pochodnych ekranowych).
   - Materiał standardowy: model glTF metallic-roughness + rozszerzenia KHR — wspólny mianownik `StandardMaterial` z Bevy i `StandardMaterial3D` z Godota.
   - Flagi: opaque, masked, transparent, subsurface, transmission; hook podziału `diffuse` / `specular`; tablica materiałów w `GpuArray`.
   - **Gotowe gdy:** ten sam materiał renderuje się w forward i w testowym compute ewaluującym punkt.
+  - **Stan 22.11.2026:** moduły WESL `material::surface` / `standard` / `hooks` / `texture_source`, `StandardMaterial` (glTF + emissive_strength, ior, specular, clearcoat, transmission, volume, diffuse_transmission), `MaterialData` (144 B), `MaterialTable` nad `GpuArray` z indeksem logicznym `MaterialId`, `MaterialVariant` (48 permutacji z flag `masked`, `transparent`, `subsurface`, `transmission`, `clearcoat`, `burley`; opaque to brak flag) i `MaterialHooks` (podmiana modułu WGSL) w [pathon-material](crates/pathon-material.md), [ADR-0030](adr/0030-material-standardowy-i-hooki-wgsl.md); w `pathon-shader` doszło `reflect_buffer_layout` (offsety i stride struktury z naga). Testy: układ CPU ↔ WGSL bez GPU, 48 permutacji na `rhi-null` i w `BackgroundCompiler`, test GPU na Vulkanie (RX 9070 XT) porównujący compute z fragmentem we wszystkich 48 permutacjach (1e-4) i z równaniami glTF w Rust (2e-3); przykład `material_sphere`. Poza zakresem: bindless (M4-04, teraz `texture_source` zwraca biel), IBL, pętla świateł, sheen, anisotropy.
 - [ ] **M4-04 · Bindless** ★ — profil Desktop: `binding_array`; profil Web: bind group per materiał, ten sam indeks logiczny. **Gotowe gdy:** ta sama scena na obu profilach.
   - **Stan 22.11.2026:** warunek wstępny RHI spełniony (PAT-119): `Features::NON_UNIFORM_INDEXING` z `TEXTURE_BINDING_ARRAY` (profil Desktop) ma test GPU, w którym każdy wątek compute i każdy piksel czyta inny element `binding_array`.
 - [ ] **M4-05 · `pathon-pbr`** ★ — prepass (`depth`, `normals`, `motion`, `material_id`, na żądanie `roughness`, `albedo`, `depth_pyramid`), clustered forward+ (przypisanie świateł w compute, także na Web). **Gotowe gdy:** golden image sceny testowej.

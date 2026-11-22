@@ -16,6 +16,7 @@ pathon-core = { path = "crates/pathon-core" }
 pathon-diag = { path = "crates/pathon-diag" }
 pathon-golden = { path = "crates/pathon-golden" }
 pathon-graph = { path = "crates/pathon-graph" }
+pathon-material = { path = "crates/pathon-material" }
 pathon-mesh = { path = "crates/pathon-mesh" }
 pathon-platform = { path = "crates/pathon-platform" }
 pathon-platform-winit = { path = "crates/pathon-platform-winit" }
@@ -24,6 +25,7 @@ pathon-rhi = { path = "crates/pathon-rhi" }
 pathon-rhi-null = { path = "crates/pathon-rhi-null" }
 pathon-rhi-types = { path = "crates/pathon-rhi-types" }
 pathon-rhi-wgpu = { path = "crates/pathon-rhi-wgpu" }
+pathon-shader = { path = "crates/pathon-shader" }
 pathon-test = { path = "crates/pathon-test" }
 pathon-devtools = { path = "tools/pathon-devtools" }
 

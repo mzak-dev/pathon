@@ -1882,9 +1882,12 @@ dependencies = [
  "log",
  "pathon",
  "pathon-devtools",
+ "pathon-material",
  "pathon-mesh",
  "pathon-rhi-wgpu",
+ "pathon-shader",
  "pathon-test",
+ "png",
  "wgpu",
  "winit",
 ]
@@ -1907,6 +1910,18 @@ dependencies = [
  "pathon-resources",
  "pathon-rhi-null",
  "pathon-rhi-types",
+]
+
+[[package]]
+name = "pathon-material"
+version = "0.0.1"
+dependencies = [
+ "bytemuck",
+ "pathon-api",
+ "pathon-golden",
+ "pathon-rhi",
+ "pathon-shader",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

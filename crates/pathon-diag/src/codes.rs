@@ -8,7 +8,7 @@ const fn code(code: &'static str, title: &'static str) -> CodeInfo {
     CodeInfo { code, title }
 }
 
-// R: RHI, G: frame graph, F: render features (packs), P: platform, M: meshes and geometry pool, S: shaders. Every
+// R: RHI, G: frame graph, F: render features (packs), P: platform, M: meshes and geometry pool, S: shaders, Y: materials. Every
 // entry needs docs/diag/<code>.md.
 pub const CODES: &[CodeInfo] = &[
     code("R0001", "no adapter or device could be created"),
@@ -57,6 +57,9 @@ pub const CODES: &[CodeInfo] = &[
     code("M0006", "unknown or removed mesh"),
     code("S0001", "shader permutation failed to compile in the background"),
     code("S0002", "pipeline failed to compile in the background"),
+    code("Y0001", "material parameter out of range"),
+    code("Y0002", "unknown or removed material"),
+    code("Y0003", "material shader hook does not compile"),
 ];
 
 pub fn is_registered(code: &str) -> bool {

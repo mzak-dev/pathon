@@ -1,0 +1,26 @@
+[package]
+name = "pathon-material"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[package.metadata.pathon]
+kind = "pack"
+
+[dependencies]
+bytemuck.workspace = true
+pathon-api.workspace = true
+pathon-shader.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+pathon-golden.workspace = true
+pathon-rhi.workspace = true
+
+[features]
+gpu-tests = []
+
+[lints]
+workspace = true

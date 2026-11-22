@@ -221,11 +221,12 @@ Hosty (M6, M7) nie są na ścieżce minimalnej, ale ich szew jest: M2-19 i M4-20
   - **Stan 20.11.2026:** zamiast paczki z hookiem materiału jest OnDemandConsumer (sloty na żądanie) — prawdziwe hooki WGSL przyjdą z M4-03.
   - Paczki testowe: podmiana roli Geometry, upscaler zmieniający `render_size`, paczka z hookiem materiału, atrapa paczki vendorowej z `Cmd::External`.
   - **Gotowe gdy:** wszystkie 4 działają bez zmian w `pathon-core` i `pathon-api`.
-- [ ] **M2-15 · Spike backendu ash (wyrzucany)**
+- [x] **M2-15 · Spike backendu ash (wyrzucany)**
   - Clear, trójkąt, compute **oraz** tekstura z samplerem, tablica bindless, resize / present, zasób z barierami per mip.
   - Papierowe mapowanie RHI v1 na `RenderingDevice` Godota (bez kodu), żeby backend z M7 nie wymusił przebudowy API na końcu projektu.
   - **Gotowe gdy:** lista poprawek `rhi-types` wniesiona przed M3.
-  - **Stan 21.11.2026:** lista zmian wniesiona ([spike-ash.md](spike-ash.md), po przeglądzie), zadania M2-20…M2-24; w prototypie **nie uruchomiono** trójkąta, tekstury z samplerem ani resize / present. Odhaczyć po ich uruchomieniu.
+  - **Stan 21.11.2026:** lista zmian wniesiona ([spike-ash.md](spike-ash.md), po przeglądzie), zadania M2-20…M2-24; w prototypie nie uruchomiono wtedy trójkąta, tekstury z samplerem ani resize / present.
+  - **Stan 22.11.2026:** wszystkie scenariusze uruchomione na RX 9070 XT (Vulkan 1.4, Windows) pod walidacją Khronos z licznikiem komunikatów (sync i GPU-AV): clear, trójkąt (konwencja WebGPU potwierdzona), compute, tekstura z samplerem i barierami per mip, tablica bindless z indeksem nierównomiernym, swapchain z resize / minimalizacją / present; 23 sprawdzenia, 0 FAIL, 0 błędów walidacji ([wynik](spike-ash.md#drugie-uruchomienie-22112026-wynik)). Poprawki M2-20…M2-24 wystarczają, bez zmian typów `rhi-types`; dodatkowe reguły backendu i M2-25 opisuje spike-ash.md. Mapowanie na Godot `RenderingDevice` jest papierowe (ADR-0015), zgodnie z zakresem.
 - [x] **M2-16 · Benchmark narzutu nagrywania** — ta sama scena przez API enkodera i bezpośrednio przez wgpu. **Gotowe gdy:** wynik w `docs/bench/`; jeśli narzut przekracza próg ustalony w ADR, backend wgpu przechodzi na nagrywanie bezpośrednie (bez zmian w API paczek).
   - **Stan 20.11.2026:** narzut listy komend +4–6% (próg 15%, ADR-0009) — backend wgpu zostaje przy liście komend ([docs/bench](bench/README.md)).
 - [x] **M2-17 · Przykład `multi-view`** — 2 okna + cel offscreen. **Gotowe gdy:** działa natywnie na 3 systemach. *(Uruchomiony na Windows; na Linux/macOS buduje się w CI.)*
@@ -246,6 +247,8 @@ Hosty (M6, M7) nie są na ścieżce minimalnej, ale ich szew jest: M2-19 i M4-20
 - [x] **M2-23 · Immediates i overrides** ★ — `Features::IMMEDIATES`, `immediate_size` w opisach potoków, `Command::SetImmediates` mieszczący się w 32 B, nazwane overrides `f64` rozwiązywane w naga. **Gotowe gdy:** test GPU przekazuje wartość przez immediate i przez override, a rozmiar `Command` pozostaje ≤ 32 B (test).
 - [x] **M2-24 · Pipeline cache i źródło shaderów** ★ — blob cache w `DeviceRequest` + getter; ADR: WGSL czy SPIR-V w `create_shader_module`; lista pól klucza potoku (bias, stencil, polygon mode, alpha-to-coverage). **Gotowe gdy:** test round-trip blobu na wgpu/Vulkanie i ADR z decyzją przed M3-01.
   - **Stan 21.11.2026:** ADR-0019 przyjęty; `DeviceRequest::pipeline_cache`, `DeviceApi::pipeline_cache_data` i cache w `rhi-wgpu` gotowe, round-trip na Vulkanie przechodzi (`crates/pathon-rhi/tests/pipeline_cache.rs`). Pola klucza potoku (bias, stencil, polygon mode, alpha-to-coverage) to tylko decyzja — dojdą z pierwszym użytkownikiem.
+
+- [ ] **M2-25 · Kontrakt powierzchni i diagnostyka trybu prezentacji** — wniosek ze spike'a M2-15: diagnostyka spadku `LowLatency` → `Vsync` (dziś po cichu) w `rhi-wgpu` oraz sekcja o powierzchni w `docs/crates/pathon-rhi-types.md` (zerowy rozmiar → `SurfaceUnavailable`, `Suboptimal` → odtworzenie po prezentacji, rozmiar z `SurfaceFrame.size`). Bez zmiany typów. **Gotowe gdy:** test na `rhi-wgpu` widzi diagnostykę przy trybie, którego powierzchnia nie oferuje.
 
 ## M3 — Shadery
 

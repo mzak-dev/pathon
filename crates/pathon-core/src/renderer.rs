@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use pathon_api::{RecordCtx, Shared, Slot, Slots, TaskPool, ViewCtx, ViewId};
 use pathon_diag::Diagnostic;
-use pathon_graph::{FrameGraph, FrameSizes, GraphCapture, GraphStats, TextureHandle};
+use pathon_graph::{FrameGraph, FrameObserver, FrameSizes, GraphCapture, GraphStats, TextureHandle};
 use pathon_resources::DeferredRelease;
 use pathon_rhi::{
     Access, Color, CommandList, Device, DeviceApi, DeviceRequest, Format, Id, PhysicalSize, Pool, PresentMode,
@@ -47,6 +47,7 @@ pub struct Renderer {
     // Offscreen targets recorded this frame: they only reach `OFFSCREEN_FINAL` once the frame is committed.
     pending_offscreen: Vec<TargetId>,
     frame_diagnostics: Vec<Diagnostic>,
+    observer: Option<Arc<dyn FrameObserver>>,
 }
 
 impl std::fmt::Debug for Renderer {
@@ -88,12 +89,19 @@ impl Renderer {
             frame_captures: Vec::new(),
             pending_offscreen: Vec::new(),
             frame_diagnostics: Vec::new(),
+            observer: None,
         }
     }
 
     // Tools (pathon-devtools): every `FrameReport` then carries a `GraphCapture` per view.
     pub fn set_capture(&mut self, enabled: bool) {
         self.runner.set_capture(enabled);
+    }
+
+    // Profilers (pathon-profile, ADR-0026) watch every frame and pass; without one the hooks cost a branch each.
+    pub fn set_frame_observer(&mut self, observer: Option<Arc<dyn FrameObserver>>) {
+        self.runner.set_observer(observer.clone());
+        self.observer = observer;
     }
 
     pub fn feature_details(&self) -> Vec<FeatureInfo> {
@@ -261,11 +269,15 @@ impl Renderer {
     pub fn render_frame(&mut self, input: &FrameInput) -> Result<FrameReport, RenderError> {
         self.ensure_device()?;
         self.record_epoch += 1;
+        self.observe_frame_start();
         let mut commands = CommandList::new();
         let mut presents = Vec::new();
         let mut report = FrameReport::default();
         let recorded = self.record_views(input, &mut commands, &mut presents, &mut report);
-        let submitted = recorded.and_then(|()| self.device.submit(commands).map_err(RenderError::from));
+        let submitted = recorded.and_then(|()| {
+            self.observe_frame_end(&mut commands);
+            self.device.submit(commands).map_err(RenderError::from)
+        });
         if let Err(error) = submitted {
             for surface in presents {
                 self.device.discard_surface(surface);
@@ -317,11 +329,13 @@ impl Renderer {
     pub fn record_frame(&mut self, input: &FrameInput) -> Result<CommandList, RenderError> {
         self.ensure_device()?;
         self.record_epoch += 1;
+        self.observe_frame_start();
         let mut commands = CommandList::new();
         if let Err(error) = self.record_offscreen_views(input, &mut commands) {
             self.abandon_frame();
             return Err(error);
         }
+        self.observe_frame_end(&mut commands);
         self.commit_frame_state();
         self.drop_frame_results();
         Ok(commands)
@@ -348,6 +362,9 @@ impl Renderer {
 
     // What the dropped frame's views wrote to history never reached the GPU.
     fn abandon_frame(&mut self) {
+        if let Some(observer) = &self.observer {
+            observer.frame_abandoned();
+        }
         self.pending_offscreen.clear();
         self.runner.abandon_frame(&mut self.release, self.frame);
         self.drop_frame_results();
@@ -367,7 +384,22 @@ impl Renderer {
         }
     }
 
+    fn observe_frame_start(&self) {
+        if let Some(observer) = &self.observer {
+            observer.begin_frame(self.device.as_ref(), self.frame);
+        }
+    }
+
+    fn observe_frame_end(&self, commands: &mut CommandList) {
+        if let Some(observer) = &self.observer {
+            observer.end_frame(self.device.as_ref(), commands);
+        }
+    }
+
     fn commit_frame_state(&mut self) {
+        if let Some(observer) = &self.observer {
+            observer.frame_committed(self.device.as_ref());
+        }
         for id in self.pending_offscreen.drain(..) {
             if let Some(TargetKind::Offscreen { state, .. }) = self.targets.get_mut(id).map(|target| &mut target.kind) {
                 *state = OFFSCREEN_FINAL;
@@ -518,6 +550,9 @@ impl Renderer {
     // textures the host handed in are dropped and must be added again.
     pub fn reset(&mut self, device: Arc<Device>) -> Result<(), RenderError> {
         self.device = device;
+        if let Some(observer) = &self.observer {
+            observer.device_reset();
+        }
         self.runner.forget_device();
         self.release.forget_all();
         let ids: Vec<TargetId> = self.targets.iter().map(|(id, _)| id).collect();

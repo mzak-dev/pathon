@@ -11,6 +11,7 @@ use crate::capture::{
 use crate::compile::{CompiledGraph, GraphStats};
 use crate::graph::{BufferHandle, FrameGraph, PassAccess, PassNode, ResourceKind, TextureHandle};
 use crate::history::HistoryStore;
+use crate::observer::FrameObserver;
 use crate::pool::ResourcePool;
 
 #[derive(Clone, Copy, Debug)]
@@ -174,6 +175,26 @@ impl BufferStateTracker {
     }
 }
 
+// Packs record their GPU passes without knowing about the profiler; the executor asks for timestamps in their name.
+fn request_pass_timestamps(
+    observer: &dyn FrameObserver,
+    device: &dyn DeviceApi,
+    pass: &'static str,
+    recorded: &mut [Command],
+) {
+    for command in recorded {
+        match command {
+            Command::BeginRenderPass(desc) if desc.timestamps.is_none() => {
+                desc.timestamps = observer.gpu_pass(device, pass, desc.label);
+            }
+            Command::BeginComputePass(desc) if desc.timestamps.is_none() => {
+                desc.timestamps = observer.gpu_pass(device, pass, desc.label);
+            }
+            _ => {}
+        }
+    }
+}
+
 fn needed_buffer_states(accesses: &[PassAccess], physical: &[Option<BufferId>]) -> Vec<(BufferId, Access)> {
     let mut needed: Vec<(BufferId, Access)> = Vec::new();
     for access in accesses {
@@ -264,7 +285,11 @@ impl FrameGraph {
                 break;
             }
             let pass = passes[*index].take().expect("each pass appears once in the order");
-            commands.push_debug_group(pass.desc.name);
+            let name = pass.desc.name;
+            if let Some(observer) = &self.observer {
+                observer.begin_pass(name);
+            }
+            commands.push_debug_group(name);
             let barriers_start = commands.commands().len();
             for (texture, needed) in needed_states(&pass.accesses, &physical) {
                 tracker.transition(texture, &needed, &mut commands);
@@ -275,6 +300,7 @@ impl FrameGraph {
             if let Some(capture) = &mut capture {
                 capture.passes[*index].barriers = barriers_since(&commands, barriers_start);
             }
+            let record_start = commands.commands().len();
             if let Some(record) = pass.record {
                 let mut context = PassContext {
                     device,
@@ -286,8 +312,21 @@ impl FrameGraph {
                 };
                 if let Err(error) = record(&mut context) {
                     failure = Some(error);
-                    break;
                 }
+            }
+            if let Some(observer) = &self.observer {
+                if failure.is_none() {
+                    request_pass_timestamps(
+                        observer.as_ref(),
+                        device,
+                        name,
+                        &mut commands.commands_mut()[record_start..],
+                    );
+                }
+                observer.end_pass(name);
+            }
+            if failure.is_some() {
+                break;
             }
             commands.pop_debug_group();
         }

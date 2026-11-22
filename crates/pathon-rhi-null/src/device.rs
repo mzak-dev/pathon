@@ -568,6 +568,9 @@ impl DeviceApi for NullDevice {
     }
 
     fn create_query_set(&self, desc: &QuerySetDesc) -> Result<QuerySetId, RhiError> {
+        if !self.caps.has(Features::TIMESTAMP_QUERY) {
+            return Err(RhiError::MissingFeatures(Features::TIMESTAMP_QUERY));
+        }
         Ok(self.lock().query_sets.insert(desc.count))
     }
 

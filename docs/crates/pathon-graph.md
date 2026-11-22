@@ -63,3 +63,7 @@ Przed każdym passem graf porównuje potrzebny `Access` każdego subresource'u z
 ## Eksport do DOT
 
 `to_dot(&GraphCapture)` zwraca graf w formacie Graphviz: węzeł na pass z etykietą `nazwa`, etap i `#kolejność`, krawędzie z `capture.edges`, passy wycięte szare i przerywane. Niższy poziom, `render_dot(&[DotPass], &[(usize, usize)])`, bierze same nazwy, etapy i krawędzie, więc korzystają z niego też devtools, które mają snapshoty, a nie `GraphCapture` (klawisz `d`). Eksport do JSON to snapshoty devtools (klawisz `s`).
+
+## Obserwator (ADR-0026)
+
+`FrameGraph::set_observer(Some(observer))` (renderer robi to sam z obserwatora rendera) sprawia, że `execute` woła `FrameObserver::begin_pass(nazwa)` i `end_pass(nazwa)` wokół domknięcia `record` każdego żywego passu — zawsze sparowane, także gdy `record` zwróci błąd — a po udanym nagraniu `gpu_pass(urządzenie, nazwa_passu, etykieta_gpu_passu)` dla każdego `BeginRenderPass` / `BeginComputePass` bez własnych `timestamps`; zwrócone `PassTimestamps` trafiają do opisu passu (przez `CommandList::commands_mut`). Passy, które mają własne timestampy, zostają nietknięte. Trait ma puste implementacje domyślne i żyje tu, bo tu wykonują się passy; implementuje go `pathon-profile`.

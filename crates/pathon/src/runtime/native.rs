@@ -94,7 +94,8 @@ struct Running {
 }
 
 enum State {
-    Waiting(Option<RendererBuilder>),
+    // Boxed: the builder is large next to the other states.
+    Waiting(Option<Box<RendererBuilder>>),
     Running(Running),
     Done,
 }
@@ -211,7 +212,7 @@ impl<Scene: FnMut(&FrameContext<'_>) -> Vec<ViewInput>> App for RunnerApp<Scene>
                 let Some(builder) = builder.take() else {
                     return;
                 };
-                match self.start(ctx, builder) {
+                match self.start(ctx, *builder) {
                     Ok(running) => self.state = State::Running(running),
                     Err(error) => {
                         *lock_error(&self.error) = Some(error);
@@ -285,7 +286,7 @@ pub fn run_with_hook(
     let error = Arc::new(Mutex::new(None));
     let now = Instant::now();
     let app = RunnerApp {
-        state: State::Waiting(Some(builder)),
+        state: State::Waiting(Some(Box::new(builder))),
         hook: Some(Box::new(hook)),
         windows,
         scene,

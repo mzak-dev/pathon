@@ -11,6 +11,7 @@ mod target;
 pub use builder::RendererBuilder;
 pub use error::RenderError;
 pub use frame::{FrameInput, FrameReport, ViewInput};
+pub use pathon_graph::FrameObserver;
 pub use registry::{FeatureInfo, FeatureStatus};
 pub use renderer::Renderer;
 pub use target::TargetId;

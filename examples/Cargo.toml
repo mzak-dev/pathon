@@ -14,6 +14,7 @@ log.workspace = true
 pathon.workspace = true
 pathon-devtools.workspace = true
 pathon-mesh.workspace = true
+pathon-profile.workspace = true
 pathon-rhi-wgpu.workspace = true
 pathon-test.workspace = true
 wgpu.workspace = true
@@ -22,6 +23,10 @@ winit.workspace = true
 [features]
 gpu-tests = []
 window-tests = []
+# Streams the passes of the `profile` example to a profiler (needs the matching viewer, docs/crates/pathon-profile.md).
+tracy = ["pathon-profile/tracy"]
+puffin = ["pathon-profile/puffin"]
+tracing = ["pathon-profile/tracing"]
 
 [lints]
 workspace = true

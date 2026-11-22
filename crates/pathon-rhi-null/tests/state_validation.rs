@@ -4,9 +4,9 @@ use pathon_rhi_null::NullDevice;
 use pathon_rhi_types::{
     Access, BindGroupDesc, BindGroupEntry, BindGroupLayoutDesc, BindGroupLayoutEntry, BindingResource, BindingType,
     Color, ColorAttachment, ColorTargetState, CommandList, ComputePassDesc, ComputePipelineDesc, ComputePipelineId,
-    DepthAttachment, DeviceApi, Features, Format, PrimitiveState, RenderPassDesc, RenderPipelineDesc, RhiError,
-    ShaderModuleDesc, ShaderStage, ShaderStages, StorageAccess, SubresourceRange, SurfaceConfig, TextureDesc,
-    TextureId, TextureUsage, TextureViewDesc, TextureViewDimension,
+    DepthAttachment, DeviceApi, Features, Format, PassTimestamps, PrimitiveState, QuerySetDesc, QuerySetId,
+    RenderPassDesc, RenderPipelineDesc, Resource, RhiError, ShaderModuleDesc, ShaderStage, ShaderStages, StorageAccess,
+    SubresourceRange, SurfaceConfig, TextureDesc, TextureId, TextureUsage, TextureViewDesc, TextureViewDimension,
 };
 
 fn code(result: Result<(), RhiError>) -> &'static str {
@@ -1504,4 +1504,86 @@ fn a_rejected_list_leaves_buffer_bytes_untouched() {
     assert_eq!(code(device.submit(rejected)), "R0103");
 
     assert_eq!(device.read_buffer(target).expect("read"), [0; 16]);
+}
+
+fn timestamp_pass(query_set: QuerySetId, begin_index: u32, end_index: u32) -> ComputePassDesc {
+    ComputePassDesc {
+        label: "timed",
+        timestamps: Some(PassTimestamps {
+            query_set,
+            begin_index,
+            end_index,
+        }),
+    }
+}
+
+fn run_compute_pass(device: &NullDevice, desc: ComputePassDesc) -> Result<(), RhiError> {
+    let mut list = CommandList::new();
+    drop(list.compute_pass(desc));
+    device.submit(list)
+}
+
+fn query_set_of(device: &NullDevice, count: u32) -> QuerySetId {
+    device
+        .create_query_set(&QuerySetDesc {
+            label: "timestamps",
+            count,
+        })
+        .expect("query set")
+}
+
+#[test]
+fn pass_timestamps_inside_the_query_set_are_accepted() {
+    let device = NullDevice::new();
+    let query_set = query_set_of(&device, 4);
+
+    run_compute_pass(&device, timestamp_pass(query_set, 2, 3)).expect("valid timestamps");
+}
+
+#[test]
+fn pass_timestamps_outside_the_query_set_are_rejected() {
+    let device = NullDevice::new();
+    let query_set = query_set_of(&device, 2);
+
+    assert_eq!(
+        code(run_compute_pass(&device, timestamp_pass(query_set, 0, 2))),
+        "R0104"
+    );
+}
+
+#[test]
+fn pass_timestamps_with_equal_begin_and_end_are_rejected() {
+    let device = NullDevice::new();
+    let query_set = query_set_of(&device, 2);
+
+    assert_eq!(
+        code(run_compute_pass(&device, timestamp_pass(query_set, 1, 1))),
+        "R0104"
+    );
+}
+
+#[test]
+fn pass_timestamps_of_a_destroyed_query_set_are_rejected() {
+    let device = NullDevice::new();
+    let query_set = query_set_of(&device, 2);
+    device.destroy(Resource::QuerySet(query_set));
+
+    assert_eq!(
+        code(run_compute_pass(&device, timestamp_pass(query_set, 0, 1))),
+        "R0003"
+    );
+}
+
+#[test]
+fn query_sets_need_the_timestamp_feature() {
+    let device = NullDevice::with_features(Features::empty());
+
+    let error = device
+        .create_query_set(&QuerySetDesc {
+            label: "timestamps",
+            count: 2,
+        })
+        .expect_err("no timestamp feature");
+
+    assert!(matches!(error, RhiError::MissingFeatures(Features::TIMESTAMP_QUERY)));
 }

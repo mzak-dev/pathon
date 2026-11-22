@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use pathon_rhi_types::{
     Access, BufferId, BufferUsage, Extent3d, Format, MaybeSend, PhysicalSize, RhiError, SubresourceRange, TextureDesc,
     TextureId,
@@ -5,6 +7,7 @@ use pathon_rhi_types::{
 
 use crate::execute::PassContext;
 use crate::history::{HistoryStore, HistoryTexture};
+use crate::observer::FrameObserver;
 
 // Coarse frame order. Ties inside a stage are broken by priority, then by registration order (with G0006).
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
@@ -288,6 +291,7 @@ pub struct FrameGraph {
     pub(crate) resources: Vec<ResourceNode>,
     pub(crate) passes: Vec<PassNode>,
     pub(crate) capture: bool,
+    pub(crate) observer: Option<Arc<dyn FrameObserver>>,
     pub(crate) histories: Vec<HistoryDecl>,
     // Names declared again with a different description.
     pub(crate) history_conflicts: Vec<&'static str>,
@@ -302,6 +306,7 @@ impl std::fmt::Debug for FrameGraph {
             .field("resources", &self.resources)
             .field("passes", &passes)
             .field("capture", &self.capture)
+            .field("observed", &self.observer.is_some())
             .field("histories", &self.histories)
             .field("history_conflicts", &self.history_conflicts)
             .field("known_history", &self.known_history)
@@ -320,6 +325,7 @@ impl FrameGraph {
             resources: Vec::new(),
             passes: Vec::new(),
             capture: false,
+            observer: None,
             histories: Vec::new(),
             history_conflicts: Vec::new(),
             known_history: Vec::new(),
@@ -460,6 +466,11 @@ impl FrameGraph {
     // Ask `execute` for a `GraphCapture` (tools only; it allocates).
     pub fn set_capture(&mut self, enabled: bool) {
         self.capture = enabled;
+    }
+
+    // Profilers watch the passes `execute` records (ADR-0026).
+    pub fn set_observer(&mut self, observer: Option<Arc<dyn FrameObserver>>) {
+        self.observer = observer;
     }
 
     pub fn pass_count(&self) -> usize {

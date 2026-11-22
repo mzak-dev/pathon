@@ -23,6 +23,7 @@ const ALLOWED_LICENSES: &[&str] = &[
 const PINNED_DEPENDENCIES: &[(&str, &[&str])] = &[
     ("wgpu", &["pathon-rhi-wgpu"]),
     ("wesl", &["pathon-shader"]),
+    ("naga", &["pathon-shader"]),
     ("winit", &["pathon-platform-winit"]),
     ("bevy", &["pathon-bevy"]),
     ("godot", &["pathon-rhi-godot", "pathon-godot"]),

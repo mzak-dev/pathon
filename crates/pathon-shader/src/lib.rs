@@ -1,7 +1,10 @@
 #![doc = include_str!("../../../docs/crates/pathon-shader.md")]
 
+mod reflect;
+
 use std::collections::BTreeMap;
 
+pub use reflect::reflect_bind_groups;
 use wesl::resolver::VirtualResolver;
 use wesl::syntax::ModulePath;
 use wesl::{Compiler, Error as WeslError};
@@ -48,6 +51,16 @@ pub enum ShaderError {
     InvalidModulePath { path: String, message: String },
     #[error("{file_path}: {message}")]
     Compose { file_path: String, message: String },
+    #[error("invalid WGSL: {message}")]
+    InvalidWgsl { message: String },
+    #[error("unknown entry point `{name}`")]
+    UnknownEntryPoint { name: String },
+    #[error("entry point `{entry_point}` has a stage that bind group layouts cannot describe")]
+    UnsupportedStage { entry_point: String },
+    #[error("@group({group}) @binding({binding}): {reason}")]
+    UnsupportedBinding { group: u32, binding: u32, reason: String },
+    #[error("@group({group}) @binding({binding}) is declared as different resources by the given entry points")]
+    BindingConflict { group: u32, binding: u32 },
 }
 
 #[derive(Debug)]

@@ -7,11 +7,12 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+naga.workspace = true
+pathon-rhi-types.workspace = true
 thiserror.workspace = true
 wesl.workspace = true
 
 [dev-dependencies]
-naga.workspace = true
 pathon-rhi.workspace = true
 
 [features]

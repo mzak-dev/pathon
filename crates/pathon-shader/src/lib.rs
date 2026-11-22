@@ -1,6 +1,7 @@
 #![doc = include_str!("../../../docs/crates/pathon-shader.md")]
 
 mod background;
+mod buffer_layout;
 mod features;
 mod library;
 mod pipeline_cache;
@@ -9,6 +10,7 @@ mod reflect;
 use std::collections::BTreeMap;
 
 pub use background::{BackgroundCompiler, BackgroundConfig, BuildError, BuildFailure, Lookup, MissPolicy, PumpReport};
+pub use buffer_layout::{BufferLayout, MemberLayout, reflect_buffer_layout};
 pub use features::ShaderFeatures;
 pub use library::{ShaderKey, ShaderLibrary};
 use pathon_rhi_types::RhiError;

@@ -8,6 +8,8 @@ Składanie shaderów WGSL z modułów (M3-01, [ADR-0021](../adr/0021-importy-sha
 - **`ShaderError`** (`#[non_exhaustive]`) — `InvalidModulePath` dla złej ścieżki, `InvalidFeatureName` dla flagi, która nie jest identyfikatorem WGSL, `UnknownRoot` dla nieznanego shadera głównego, `Rhi` dla błędu `create_shader_module`, `Compose` dla błędu składania (komunikat wesl bez kolorów ANSI, niezależnie od terminala i zmiennych środowiska, poprzedzony `file_path`; błędy rozwiązywania importów nie wskazują importującego pliku, więc nazwa pochodzi stąd).
 - **`reflect_bind_groups(wgsl, entry_points)`** — parsuje i waliduje złożony WGSL w naga (`Capabilities::all()`) i zwraca `Vec<BindGroupLayoutDesc>` indeksowany numerem grupy (M3-02).
 
+- **`reflect_buffer_layout(wgsl, group, binding)`** — układ struktury za bindingiem `uniform` albo `storage` według naga (M4-03, [ADR-0030](../adr/0030-material-standardowy-i-hooki-wgsl.md)): `BufferLayout { element_stride, struct_size, members: Vec<MemberLayout { name, offset, size }> }`. Dla `array<T>` `element_stride` to stride, a `members` to pola `T`; dla `array<vec4<f32>>` `members` jest puste. Binding, którego nie ma albo który nie jest buforem, to `UnsupportedBinding`. Służy do sprawdzania, że struktura CPU (`#[repr(C)]`) ma te same offsety co w shaderze.
+
 Składnia to WESL: `import package::colors::{pack, unpack};`, a `import` stoi przed `enable`.
 
 ```rust

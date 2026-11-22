@@ -3,6 +3,9 @@
 // endpoints with a shared p-bit, 4-bit indices) and a matching decoder that produces the RGBA8 variant, so the two
 // variants carry exactly the same texels.
 
+// The golden-image half of this file needs a device; without `gpu-tests` only the encoder tests build.
+#![cfg_attr(not(feature = "gpu-tests"), allow(unused_imports, dead_code))]
+
 use pathon_golden::{GoldenImage, Tolerance, announce_adapter, assert_golden, compare, gpu_or_skip};
 use pathon_rhi::{
     Access, BindGroupDesc, BindGroupEntry, BindGroupLayoutDesc, BindGroupLayoutEntry, BindingResource, BindingType,

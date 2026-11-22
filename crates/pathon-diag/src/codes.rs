@@ -9,7 +9,8 @@ const fn code(code: &'static str, title: &'static str) -> CodeInfo {
 }
 
 // G: frame graph, P: platform, M: meshes and geometry pool, S: shaders, T: profiling, N: scene, X: textures. Every
-// entry needs docs/diag/<code>.md.
+// R: RHI, G: frame graph, F: render features (packs), P: platform, M: meshes and geometry pool, S: shaders, Y:
+// materials. Every entry needs docs/diag/<code>.md.
 pub const CODES: &[CodeInfo] = &[
     code("R0001", "no adapter or device could be created"),
     code("R0002", "adapter lacks required features"),
@@ -69,6 +70,9 @@ pub const CODES: &[CodeInfo] = &[
     code("X0004", "unsupported or broken KTX2 container"),
     code("X0005", "mip chain cannot be generated for this format"),
     code("X0006", "texture uses a fallback format"),
+    code("Y0001", "material parameter out of range"),
+    code("Y0002", "unknown or removed material"),
+    code("Y0003", "material shader hook does not compile"),
 ];
 
 pub fn is_registered(code: &str) -> bool {

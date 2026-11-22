@@ -276,10 +276,11 @@ Hosty (M6, M7) nie są na ścieżce minimalnej, ale ich szew jest: M2-19 i M4-20
 
 - [ ] **M4-00 · Golden images** ★ — **pierwszy task etapu.** Render headless; referencje per backend albo metryka percepcyjna (np. FLIP); CI na lavapipe, WARP i macOS (sprawdzić Metal na hostowanych runnerach, w razie potrzeby własny runner). **Gotowe gdy:** golden test wycinka z M2-18 w CI.
   - **Stan 22.11.2026:** crate `pathon-golden` (`assert_golden(name, &image, tolerance)`, tryb `PATHON_UPDATE_GOLDEN=1`, artefakty actual / expected / diff, test negatywny), [ADR-0025](adr/0025-golden-images.md) i test `unlit_cube_matches_its_golden_image` zielone lokalnie (Windows, sprzętowy GPU); zadania `gpu` (lavapipe) i `golden` (WARP, macOS) w ci.yml. **Nie odhaczone:** zgodność referencji z lavapipe, WARP i Metalem potwierdzi dopiero pierwszy przebieg CI.
-- [ ] **M4-01 · `pathon-mesh`** ★
+- [x] **M4-01 · `pathon-mesh`** ★
   - Pula geometrii (mega-bufory vertex / index), layouty wierzchołków, upload meshy, dane poprzedniej klatki (transformacje, pozycje skinowane) dla wektorów ruchu.
   - Wspólna dla forward, visibility buffer i RT.
   - **Gotowe gdy:** scena testowa z wieloma meshami w jednym buforze.
+  - **Stan 22.11.2026:** `GeometryPool` (chunki mega-buforów per strumień, alokacja w jednostkach, odroczone zwalnianie, reuse, diagnostyki `M0001`…`M0006`), `VertexLayout` (mapowanie na `pathon-rhi-types`), `TransformHistory` i `DeformedPositions` (layout dla M4-12) w [pathon-mesh](crates/pathon-mesh.md), [ADR-0027](adr/0027-pula-geometrii-i-dane-poprzedniej-klatki.md). Testy na `rhi-null` (alokacje, nakładanie, reuse, granice, wyczerpanie) oraz test GPU rysujący 3 meshe z jednego chunka z odczytem pikseli; przykład `mesh_pool`. Defragmentacja i budowa BLAS (`BLAS_INPUT`) czekają na użytkownika (M8).
 - [ ] **M4-02 · `pathon-scene`** ★
   - Render world w SoA, kamery, światła, API extract, podwójny bufor.
   - Bez systemu assetów i I/O plików: dane z pamięci przez handle'y; adaptery hostów mapują na nie swoje assety.

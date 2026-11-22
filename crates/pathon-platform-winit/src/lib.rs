@@ -13,34 +13,40 @@ use winit::event::{MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::window::Window;
 
+mod pending;
 #[cfg(target_arch = "wasm32")]
 mod web;
 
+use pending::PendingEvents;
+
 #[derive(Debug)]
-struct WinitWindow(Arc<Window>);
+struct WinitWindow {
+    window: Arc<Window>,
+    pending: PendingEvents,
+}
 
 impl HasWindowHandle for WinitWindow {
     fn window_handle(&self) -> Result<WindowHandle<'_>, HandleError> {
-        self.0.window_handle()
+        self.window.window_handle()
     }
 }
 
 impl HasDisplayHandle for WinitWindow {
     fn display_handle(&self) -> Result<DisplayHandle<'_>, HandleError> {
-        self.0.display_handle()
+        self.window.display_handle()
     }
 }
 
 impl PlatformWindow for WinitWindow {
     fn id(&self) -> WindowId {
-        WindowId(u64::from(self.0.id()))
+        WindowId(u64::from(self.window.id()))
     }
 
     fn inner_size(&self) -> PhysicalSize {
-        let size = self.0.inner_size();
+        let size = self.window.inner_size();
         #[cfg(target_arch = "wasm32")]
         if size.width == 0 || size.height == 0 {
-            return web::canvas_size(&self.0);
+            return web::canvas_size(&self.window);
         }
         PhysicalSize {
             width: size.width,
@@ -49,18 +55,24 @@ impl PlatformWindow for WinitWindow {
     }
 
     fn scale_factor(&self) -> f64 {
-        self.0.scale_factor()
+        self.window.scale_factor()
     }
 
     fn request_redraw(&self) {
-        self.0.request_redraw();
+        self.window.request_redraw();
     }
 
     fn request_inner_size(&self, size: PhysicalSize) {
-        // Platforms that resize at once report it as `Resized` too, so the returned size is not needed.
-        let _ = self
-            .0
-            .request_inner_size(winit::dpi::PhysicalSize::new(size.width, size.height));
+        let before = self.inner_size();
+        let applied_at_once = self
+            .window
+            .request_inner_size(winit::dpi::PhysicalSize::new(size.width, size.height))
+            .map(|applied| PhysicalSize {
+                width: applied.width,
+                height: applied.height,
+            });
+        self.pending
+            .push_resize_applied_at_once(self.id(), before, applied_at_once);
     }
 }
 
@@ -79,6 +91,7 @@ impl Platform for WinitPlatform {
         let handler = Handler {
             app,
             windows: HashMap::new(),
+            pending: PendingEvents::default(),
         };
         run_loop(event_loop, handler)
     }
@@ -106,11 +119,13 @@ fn run_loop(event_loop: EventLoop<()>, handler: Handler) -> Result<(), PlatformE
 struct Handler {
     app: Box<dyn App>,
     windows: HashMap<WindowId, Arc<dyn PlatformWindow>>,
+    pending: PendingEvents,
 }
 
 struct Ctx<'loop_> {
     event_loop: &'loop_ ActiveEventLoop,
     windows: &'loop_ mut HashMap<WindowId, Arc<dyn PlatformWindow>>,
+    pending: &'loop_ PendingEvents,
 }
 
 impl PlatformCtx for Ctx<'_> {
@@ -125,7 +140,10 @@ impl PlatformCtx for Ctx<'_> {
             .map_err(|error| PlatformError::WindowCreation(error.to_string()))?;
         #[cfg(target_arch = "wasm32")]
         window.request_redraw();
-        let window: Arc<dyn PlatformWindow> = Arc::new(WinitWindow(Arc::new(window)));
+        let window: Arc<dyn PlatformWindow> = Arc::new(WinitWindow {
+            window: Arc::new(window),
+            pending: self.pending.clone(),
+        });
         self.windows.insert(window.id(), Arc::clone(&window));
         Ok(window)
     }
@@ -169,6 +187,7 @@ impl Handler {
         let mut ctx = Ctx {
             event_loop,
             windows: &mut self.windows,
+            pending: &self.pending,
         };
         self.app.on_frame(&mut ctx);
         for window in self.windows.values() {
@@ -182,8 +201,16 @@ impl Handler {
         let mut ctx = Ctx {
             event_loop,
             windows: &mut self.windows,
+            pending: &self.pending,
         };
         self.app.on_event(&mut ctx, event);
+    }
+
+    // Events the platform raised itself (a size winit applied without reporting it) go out before anything newer.
+    fn deliver_pending(&mut self, event_loop: &ActiveEventLoop) {
+        for event in self.pending.drain() {
+            self.dispatch(event_loop, event);
+        }
     }
 }
 
@@ -266,6 +293,7 @@ impl ApplicationHandler for Handler {
             self.run_web_frame(event_loop);
             return;
         }
+        self.deliver_pending(event_loop);
         if let Some(event) = translate(WindowId(u64::from(window_id)), event) {
             self.dispatch(event_loop, event);
         }
@@ -273,9 +301,11 @@ impl ApplicationHandler for Handler {
 
     #[cfg(not(target_arch = "wasm32"))]
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        self.deliver_pending(event_loop);
         let mut ctx = Ctx {
             event_loop,
             windows: &mut self.windows,
+            pending: &self.pending,
         };
         self.app.on_frame(&mut ctx);
     }

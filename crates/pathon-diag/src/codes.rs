@@ -10,7 +10,7 @@ const fn code(code: &'static str, title: &'static str) -> CodeInfo {
 
 // G: frame graph, P: platform, M: meshes and geometry pool, S: shaders, T: profiling, N: scene, X: textures. Every
 // R: RHI, G: frame graph, F: render features (packs), P: platform, M: meshes and geometry pool, S: shaders, Y:
-// materials. Every entry needs docs/diag/<code>.md.
+// materials, Q: post-processing. Every entry needs docs/diag/<code>.md.
 pub const CODES: &[CodeInfo] = &[
     code("R0001", "no adapter or device could be created"),
     code("R0002", "adapter lacks required features"),
@@ -73,6 +73,9 @@ pub const CODES: &[CodeInfo] = &[
     code("Y0001", "material parameter out of range"),
     code("Y0002", "unknown or removed material"),
     code("Y0003", "material shader hook does not compile"),
+    code("Q0001", "post-processing setting outside its range was repaired"),
+    code("Q0002", "output transfer is not implemented yet, sRGB used"),
+    code("Q0003", "tonemapping skipped because the exposure slot is missing"),
 ];
 
 pub fn is_registered(code: &str) -> bool {

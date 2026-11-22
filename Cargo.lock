@@ -1947,6 +1947,7 @@ dependencies = [
  "pathon-devtools",
  "pathon-material",
  "pathon-mesh",
+ "pathon-post",
  "pathon-profile",
  "pathon-rhi-wgpu",
  "pathon-scene",
@@ -2017,6 +2018,17 @@ dependencies = [
  "wasm-bindgen",
  "web-sys",
  "winit",
+]
+
+[[package]]
+name = "pathon-post"
+version = "0.0.1"
+dependencies = [
+ "bytemuck",
+ "pathon-api",
+ "pathon-core",
+ "pathon-golden",
+ "pathon-rhi",
 ]
 
 [[package]]

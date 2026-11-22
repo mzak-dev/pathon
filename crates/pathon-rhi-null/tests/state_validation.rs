@@ -456,6 +456,7 @@ fn surface_frame_must_reach_present_state() {
                 size: target.size,
                 present_mode: pathon_rhi_types::PresentMode::default(),
                 format: None,
+                color_space: pathon_rhi_types::SurfaceColorSpace::Auto,
             },
         )
         .expect("configure");

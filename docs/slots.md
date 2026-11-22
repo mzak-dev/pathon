@@ -31,6 +31,8 @@ Sloty to nazwane tekstury, przez które paczki wymieniają dane w obrębie widok
 
 Rozmiar „render” to `ViewCtx::render_size` (ustala rola TemporalResolve), „wyjście” to `ViewCtx::output_size`. Render pass nie może mieszać tych klas (G0004).
 
+`Slot::OUTPUT` okna ma kodowanie przestrzeni barw powierzchni: `ViewCtx::output` (`OutputInfo`) mówi, jaka to przestrzeń (`Srgb` albo HDR, nigdy `Auto`) i jaki jest szczyt wyświetlacza w nitach ([ADR-0034](adr/0034-wyjscie-hdr.md)). Cele offscreen i importowane są `Srgb`. Tonemapping, który zamienia liniowy `hdr` na to kodowanie, robi `pathon-post` (M4-09).
+
 ## Własne sloty paczek
 
 Lista powyżej to sloty wbudowane, nie zamknięty zbiór. Paczka może zadeklarować własny slot dla innych paczek:

@@ -8,8 +8,7 @@ const fn code(code: &'static str, title: &'static str) -> CodeInfo {
     CodeInfo { code, title }
 }
 
-// G: frame graph, P: platform, M: meshes and geometry pool, S: shaders, T: profiling, N: scene, X: textures. Every
-// R: RHI, G: frame graph, F: render features (packs), P: platform, M: meshes and geometry pool, S: shaders, Y:
+// G: frame graph, P: platform, M: meshes and geometry pool, S: shaders, T: profiling, N: scene, X: textures, Y:
 // materials. Every entry needs docs/diag/<code>.md.
 pub const CODES: &[CodeInfo] = &[
     code("R0001", "no adapter or device could be created"),
@@ -50,6 +49,10 @@ pub const CODES: &[CodeInfo] = &[
     code("F0106", "second view of the same target in one frame skipped"),
     code("F0201", "features require different backends"),
     code("P0001", "browser without WebGPU"),
+    code(
+        "H0001",
+        "output colour space not offered by the surface; SDR used instead",
+    ),
     code("M0001", "invalid vertex layout"),
     code("M0002", "mesh data does not match the pool's vertex layout"),
     code("M0003", "geometry pool exhausted"),

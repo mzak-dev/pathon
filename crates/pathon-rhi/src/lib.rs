@@ -90,7 +90,8 @@ delegate! {
     create_query_set(&self, desc: &QuerySetDesc) -> Result<QuerySetId, RhiError>;
     destroy(&self, resource: Resource) -> ();
     create_surface(&self, target: &SurfaceTarget) -> Result<SurfaceId, RhiError>;
-    configure_surface(&self, surface: SurfaceId, config: &SurfaceConfig) -> Result<Format, RhiError>;
+    surface_caps(&self, surface: SurfaceId) -> Result<SurfaceCaps, RhiError>;
+    configure_surface(&self, surface: SurfaceId, config: &SurfaceConfig) -> Result<SurfaceOutput, RhiError>;
     acquire_surface(&self, surface: SurfaceId) -> Result<SurfaceFrame, RhiError>;
     present_surface(&self, surface: SurfaceId) -> Result<(), RhiError>;
     discard_surface(&self, surface: SurfaceId) -> ();

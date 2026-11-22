@@ -15,10 +15,10 @@ use pathon_api::{BackgroundJob, TaskPool};
 use pathon_rhi::Device;
 use pathon_rhi_types::{
     BindGroupDesc, BindGroupId, BindGroupLayoutDesc, BindGroupLayoutId, BufferDesc, BufferId, Caps, CommandList,
-    ComputePipelineDesc, ComputePipelineId, DeviceApi, Extent3d, Format, PipelineCacheData, QuerySetDesc, QuerySetId,
+    ComputePipelineDesc, ComputePipelineId, DeviceApi, Extent3d, PipelineCacheData, QuerySetDesc, QuerySetId,
     RenderPipelineDesc, RenderPipelineId, Resource, RhiError, SamplerDesc, SamplerId, ShaderModuleDesc, ShaderModuleId,
-    SurfaceConfig, SurfaceFrame, SurfaceId, SurfaceTarget, TexelLayout, TextureCopy, TextureDesc, TextureId,
-    TextureViewDesc, TextureViewId,
+    SurfaceCaps, SurfaceConfig, SurfaceFrame, SurfaceId, SurfaceOutput, SurfaceTarget, TexelLayout, TextureCopy,
+    TextureDesc, TextureId, TextureViewDesc, TextureViewId,
 };
 
 pub fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -211,7 +211,10 @@ impl DeviceApi for TestDevice {
     fn create_surface(&self, target: &SurfaceTarget) -> Result<SurfaceId, RhiError> {
         self.inner.create_surface(target)
     }
-    fn configure_surface(&self, surface: SurfaceId, config: &SurfaceConfig) -> Result<Format, RhiError> {
+    fn surface_caps(&self, surface: SurfaceId) -> Result<SurfaceCaps, RhiError> {
+        self.inner.surface_caps(surface)
+    }
+    fn configure_surface(&self, surface: SurfaceId, config: &SurfaceConfig) -> Result<SurfaceOutput, RhiError> {
         self.inner.configure_surface(surface, config)
     }
     fn acquire_surface(&self, surface: SurfaceId) -> Result<SurfaceFrame, RhiError> {

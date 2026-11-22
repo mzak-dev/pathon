@@ -1,6 +1,8 @@
+use pathon_api::OutputInfo;
+use pathon_diag::Diagnostic;
 use pathon_rhi::{
-    Access, DeviceApi, Format, Id, PhysicalSize, RawHandle, RhiError, SurfaceConfig, SurfaceId, SurfaceTarget,
-    TextureDesc, TextureId, TextureUsage,
+    Access, DeviceApi, Format, Id, PhysicalSize, RawHandle, RhiError, SurfaceColorSpace, SurfaceConfig, SurfaceId,
+    SurfaceTarget, TextureDesc, TextureId, TextureUsage,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -24,7 +26,9 @@ pub(crate) enum TargetKind {
     Surface {
         surface: SurfaceId,
         window: Option<SurfaceTarget>,
+        // `config.color_space` is what was asked for; `output` what the surface presents after the last configure.
         config: SurfaceConfig,
+        output: OutputInfo,
     },
     Offscreen {
         texture: TextureId,
@@ -63,18 +67,53 @@ pub(crate) fn offscreen_desc(size: PhysicalSize, format: Format) -> TextureDesc 
     )
 }
 
+// Returns H0001 when the surface could not present the colour space that was asked for.
 pub(crate) fn configure(
     device: &dyn DeviceApi,
     surface: SurfaceId,
     config: &mut SurfaceConfig,
-) -> Result<(), RhiError> {
+    output: &mut OutputInfo,
+) -> Result<Option<Diagnostic>, RhiError> {
     match device.configure_surface(surface, config) {
-        Ok(format) => {
-            config.format = Some(format);
-            Ok(())
+        Ok(configured) => {
+            config.format = Some(configured.format);
+            *output = OutputInfo {
+                color_space: configured.color_space,
+                display: configured.display,
+            };
+            Ok(unsupported_color_space(config.color_space, configured.color_space))
         }
         // Minimised windows have no size; the surface is configured on the next resize.
-        Err(RhiError::SurfaceUnavailable) => Ok(()),
+        Err(RhiError::SurfaceUnavailable) => Ok(None),
         Err(error) => Err(error),
+    }
+}
+
+fn unsupported_color_space(requested: SurfaceColorSpace, presented: SurfaceColorSpace) -> Option<Diagnostic> {
+    if requested == SurfaceColorSpace::Auto || requested == presented {
+        return None;
+    }
+    Some(
+        Diagnostic::warning(
+            "H0001",
+            format!("the surface cannot present colour space {requested:?}; presenting {presented:?} instead"),
+        )
+        .with_hint("Renderer::target_surface_caps lists what the surface offers; HDR needs the OS to have HDR on"),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_an_explicit_space_that_was_replaced_is_reported() {
+        let srgb = SurfaceColorSpace::Srgb;
+        let scrgb = SurfaceColorSpace::ExtendedSrgbLinear;
+        assert!(unsupported_color_space(SurfaceColorSpace::Auto, srgb).is_none());
+        assert!(unsupported_color_space(srgb, srgb).is_none());
+        assert!(unsupported_color_space(scrgb, scrgb).is_none());
+        let diagnostic = unsupported_color_space(scrgb, srgb).expect("a fallback is reported");
+        assert_eq!(diagnostic.code, "H0001");
     }
 }

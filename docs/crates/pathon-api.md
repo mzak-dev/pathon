@@ -46,6 +46,7 @@ Rozmiar wyjścia i renderu, jitter, mip bias, kamera (`Camera`, reverse-Z) oraz 
 | --- | --- | --- |
 | `frame` | liczba zatwierdzonych klatek | zegar opóźnionego zwolnienia |
 | `record_epoch` | rośnie z każdą próbą `render_frame` / `record_frame`, także porzuconą | restart scratchu per nagranie, np. `UniformRing::begin_frame()` |
+| `output` | `OutputInfo { color_space, display }`: przestrzeń barw, w której cel wyświetla `Output` (`Srgb` albo HDR, nigdy `Auto`), i co wiadomo o wyświetlaczu (`peak_nits()`, `display.headroom`, `sdr_white_nits`) | wybór krzywej i kodowania w tonemapperze ([ADR-0034](../adr/0034-wyjscie-hdr.md)); cele offscreen i importowane to `OutputInfo::SDR` |
 
 ```rust,ignore
 if self.ring_epoch != Some(ctx.view().record_epoch) {

@@ -4,12 +4,12 @@ use std::sync::Arc;
 
 use crate::binding::{BindGroupDesc, BindGroupLayoutDesc};
 use crate::caps::{Backend, Caps, Features};
+use crate::color_space::{SurfaceCaps, SurfaceOutput};
 use crate::command::CommandList;
 use crate::desc::{
     BufferDesc, Extent3d, QuerySetDesc, SamplerDesc, TexelLayout, TextureCopy, TextureDesc, TextureViewDesc,
 };
 use crate::error::RhiError;
-use crate::format::Format;
 use crate::id::{
     BindGroupId, BindGroupLayoutId, BufferId, ComputePipelineId, QuerySetId, RenderPipelineId, SamplerId,
     ShaderModuleId, SurfaceId, TextureId, TextureViewId,
@@ -160,7 +160,11 @@ pub trait DeviceApi: MaybeSendSync {
 
     fn create_surface(&self, target: &SurfaceTarget) -> Result<SurfaceId, RhiError>;
 
-    fn configure_surface(&self, surface: SurfaceId, config: &SurfaceConfig) -> Result<Format, RhiError>;
+    // Formats and colour spaces the surface can present, and what the platform knows about its display.
+    fn surface_caps(&self, surface: SurfaceId) -> Result<SurfaceCaps, RhiError>;
+
+    // An explicit colour space the surface lacks is replaced by sRGB, not rejected: the result says what was chosen.
+    fn configure_surface(&self, surface: SurfaceId, config: &SurfaceConfig) -> Result<SurfaceOutput, RhiError>;
 
     fn acquire_surface(&self, surface: SurfaceId) -> Result<SurfaceFrame, RhiError>;
 

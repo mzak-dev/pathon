@@ -1,13 +1,13 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use pathon_api::{RecordCtx, Shared, Slot, Slots, TaskPool, ViewCtx, ViewId};
+use pathon_api::{OutputInfo, RecordCtx, Shared, Slot, Slots, TaskPool, ViewCtx, ViewId};
 use pathon_diag::Diagnostic;
 use pathon_graph::{FrameGraph, FrameObserver, FrameSizes, GraphCapture, GraphStats, TextureHandle};
 use pathon_resources::DeferredRelease;
 use pathon_rhi::{
     Access, Color, CommandList, Device, DeviceApi, DeviceRequest, Format, Id, PhysicalSize, Pool, PresentMode,
-    RhiError, SurfaceConfig, SurfaceId, SurfaceTarget, TextureId,
+    RhiError, SurfaceCaps, SurfaceColorSpace, SurfaceConfig, SurfaceId, SurfaceTarget, TextureId,
 };
 
 use crate::builder::RendererBuilder;
@@ -48,6 +48,7 @@ pub struct Renderer {
     pending_offscreen: Vec<TargetId>,
     frame_diagnostics: Vec<Diagnostic>,
     observer: Option<Arc<dyn FrameObserver>>,
+    default_color_space: SurfaceColorSpace,
 }
 
 impl std::fmt::Debug for Renderer {
@@ -90,7 +91,13 @@ impl Renderer {
             pending_offscreen: Vec::new(),
             frame_diagnostics: Vec::new(),
             observer: None,
+            default_color_space: SurfaceColorSpace::Auto,
         }
+    }
+
+    // For windows added after this call without an explicit colour space; existing targets keep theirs.
+    pub fn set_default_color_space(&mut self, color_space: SurfaceColorSpace) {
+        self.default_color_space = color_space;
     }
 
     // Tools (pathon-devtools): every `FrameReport` then carries a `GraphCapture` per view.
@@ -152,13 +159,31 @@ impl Renderer {
     }
 
     pub fn add_window(&mut self, window: SurfaceTarget) -> Result<TargetId, RenderError> {
+        self.add_window_with_color_space(window, self.default_color_space)
+    }
+
+    // `Auto` presents sRGB and never HDR; an explicit space the surface lacks falls back to sRGB with H0001.
+    pub fn add_window_with_color_space(
+        &mut self,
+        window: SurfaceTarget,
+        color_space: SurfaceColorSpace,
+    ) -> Result<TargetId, RenderError> {
         let surface = self.device.create_surface(&window)?;
-        self.attach_surface(surface, window.size, Some(window))
+        self.attach_surface(surface, window.size, Some(window), color_space)
     }
 
     // For surfaces the host created with `Device::create_surface` (on the main thread, ADR-0004).
     pub fn add_surface(&mut self, surface: SurfaceId, size: PhysicalSize) -> Result<TargetId, RenderError> {
-        self.attach_surface(surface, size, None)
+        self.add_surface_with_color_space(surface, size, self.default_color_space)
+    }
+
+    pub fn add_surface_with_color_space(
+        &mut self,
+        surface: SurfaceId,
+        size: PhysicalSize,
+        color_space: SurfaceColorSpace,
+    ) -> Result<TargetId, RenderError> {
+        self.attach_surface(surface, size, None, color_space)
     }
 
     fn attach_surface(
@@ -166,21 +191,74 @@ impl Renderer {
         surface: SurfaceId,
         size: PhysicalSize,
         window: Option<SurfaceTarget>,
+        color_space: SurfaceColorSpace,
     ) -> Result<TargetId, RenderError> {
         let mut config = SurfaceConfig {
             size,
             present_mode: PresentMode::Vsync,
             format: None,
+            color_space,
         };
-        target::configure(self.device.as_ref(), surface, &mut config)?;
+        let mut output = OutputInfo::SDR;
+        let fallback = target::configure(self.device.as_ref(), surface, &mut config, &mut output)?;
+        if let Some(diagnostic) = fallback {
+            self.report(&diagnostic);
+        }
         Ok(self.targets.insert(Target {
             kind: TargetKind::Surface {
                 surface,
                 window,
                 config,
+                output,
             },
             size,
         }))
+    }
+
+    // Asks for another output space and reconfigures the surface now; the result is in `target_output`.
+    pub fn set_target_color_space(&mut self, id: TargetId, color_space: SurfaceColorSpace) -> Result<(), RenderError> {
+        let device = Arc::clone(&self.device);
+        let target = self.targets.get_mut(id).ok_or(RenderError::UnknownTarget)?;
+        let TargetKind::Surface {
+            surface,
+            config,
+            output,
+            ..
+        } = &mut target.kind
+        else {
+            return Err(RenderError::Rhi(RhiError::Unsupported(
+                "only window surfaces have an output colour space",
+            )));
+        };
+        config.color_space = color_space;
+        let fallback = target::configure(device.as_ref(), *surface, config, output)?;
+        if let Some(diagnostic) = fallback {
+            self.report(&diagnostic);
+        }
+        Ok(())
+    }
+
+    // What the target presents; offscreen and imported targets are plain sRGB. `None` for an unknown target.
+    pub fn target_output(&self, id: TargetId) -> Option<OutputInfo> {
+        match &self.targets.get(id)?.kind {
+            TargetKind::Surface { output, .. } => Some(*output),
+            TargetKind::Offscreen { .. } | TargetKind::Imported { .. } => Some(OutputInfo::SDR),
+        }
+    }
+
+    // Formats and colour spaces a window surface can present and what the OS knows of its display; asked anew each
+    // call, so it follows the window to another monitor and OS HDR being switched.
+    pub fn target_surface_caps(&self, id: TargetId) -> Result<SurfaceCaps, RenderError> {
+        match &self.targets.get(id).ok_or(RenderError::UnknownTarget)?.kind {
+            TargetKind::Surface { surface, .. } => Ok(self.device.surface_caps(*surface)?),
+            TargetKind::Offscreen { .. } | TargetKind::Imported { .. } => Err(RenderError::Rhi(RhiError::Unsupported(
+                "only window surfaces have surface capabilities",
+            ))),
+        }
+    }
+
+    pub fn target_ids(&self) -> Vec<TargetId> {
+        self.targets.iter().map(|(id, _)| id).collect()
     }
 
     pub fn add_offscreen_target(&mut self, size: PhysicalSize, format: Format) -> Result<TargetId, RenderError> {
@@ -228,11 +306,17 @@ impl Renderer {
     pub fn resize_target(&mut self, id: TargetId, size: PhysicalSize) -> Result<(), RenderError> {
         let device = Arc::clone(&self.device);
         let frame = self.frame;
+        let mut fallback = None;
         let target = self.targets.get_mut(id).ok_or(RenderError::UnknownTarget)?;
         match &mut target.kind {
-            TargetKind::Surface { surface, config, .. } => {
+            TargetKind::Surface {
+                surface,
+                config,
+                output,
+                ..
+            } => {
                 config.size = size;
-                target::configure(device.as_ref(), *surface, config)?;
+                fallback = target::configure(device.as_ref(), *surface, config, output)?;
             }
             TargetKind::Offscreen { texture, desc, state } => {
                 let resized = target::offscreen_desc(size, desc.format);
@@ -248,6 +332,9 @@ impl Renderer {
             }
         }
         target.size = size;
+        if let Some(diagnostic) = fallback {
+            self.report(&diagnostic);
+        }
         Ok(())
     }
 
@@ -472,6 +559,7 @@ impl Renderer {
     ) -> Result<(GraphStats, bool), RenderError> {
         let output_size = PhysicalSize::new(output.desc.size.width, output.desc.size.height);
         let mut view_ctx = ViewCtx::new(view_id(view.target), output_size, view.camera);
+        view_ctx.output = self.target_output(view.target).unwrap_or_default();
         view_ctx.frame = self.frame;
         view_ctx.record_epoch = self.record_epoch;
         view_ctx.time_seconds = input.time_seconds;
@@ -556,16 +644,18 @@ impl Renderer {
         self.runner.forget_device();
         self.release.forget_all();
         let ids: Vec<TargetId> = self.targets.iter().map(|(id, _)| id).collect();
+        let mut fallbacks = Vec::new();
         for id in ids {
             let keep = match self.targets.get_mut(id).map(|target| &mut target.kind) {
                 Some(TargetKind::Surface {
                     surface,
                     window: Some(window),
                     config,
+                    output,
                 }) => {
                     *surface = self.device.create_surface(window)?;
                     config.format = None;
-                    target::configure(self.device.as_ref(), *surface, config)?;
+                    fallbacks.extend(target::configure(self.device.as_ref(), *surface, config, output)?);
                     true
                 }
                 Some(TargetKind::Offscreen { texture, desc, state }) => {
@@ -578,6 +668,9 @@ impl Renderer {
             if !keep {
                 self.targets.remove(id);
             }
+        }
+        for diagnostic in &fallbacks {
+            self.report(diagnostic);
         }
         let handle: Arc<dyn DeviceApi> = Arc::<Device>::clone(&self.device);
         self.registry.reset(&handle, &self.task_pool, &mut self.shared);

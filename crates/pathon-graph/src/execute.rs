@@ -463,6 +463,7 @@ impl FrameGraph {
                         dimension: TextureDimension::D2,
                         format: graph_desc.format,
                         usage: compiled.usages[index],
+                        view_formats: &[],
                     };
                     transients.push((index, first, last, desc));
                 }

@@ -140,6 +140,25 @@ impl Format {
         )
     }
 
+    // The non-sRGB twin of an sRGB format; any other format is returned unchanged.
+    #[must_use]
+    pub fn linear_variant(self) -> Self {
+        match self {
+            Self::Rgba8UnormSrgb => Self::Rgba8Unorm,
+            Self::Bgra8UnormSrgb => Self::Bgra8Unorm,
+            Self::Bc1RgbaUnormSrgb => Self::Bc1RgbaUnorm,
+            Self::Bc3RgbaUnormSrgb => Self::Bc3RgbaUnorm,
+            Self::Bc7RgbaUnormSrgb => Self::Bc7RgbaUnorm,
+            Self::Astc4x4UnormSrgb => Self::Astc4x4Unorm,
+            other => other,
+        }
+    }
+
+    // Views may reinterpret a texture only as a format of the same family: itself or its sRGB / non-sRGB twin.
+    pub fn is_view_compatible_with(self, other: Self) -> bool {
+        self.linear_variant() == other.linear_variant()
+    }
+
     pub fn sample_kind(self) -> SampleKind {
         match self {
             Self::R8Uint | Self::R32Uint | Self::Rg32Uint | Self::Rgba32Uint => SampleKind::Uint,
@@ -202,6 +221,24 @@ mod tests {
         for format in Format::ALL {
             let copyable = format.kind() != FormatKind::DepthStencil;
             assert_eq!(format.block_size_bytes().is_some(), copyable, "{format:?}");
+        }
+    }
+
+    #[test]
+    fn views_may_switch_only_between_srgb_twins() {
+        assert!(Format::Rgba8Unorm.is_view_compatible_with(Format::Rgba8UnormSrgb));
+        assert!(Format::Bc7RgbaUnormSrgb.is_view_compatible_with(Format::Bc7RgbaUnorm));
+        assert!(Format::R32Float.is_view_compatible_with(Format::R32Float));
+        assert!(!Format::Rgba8Unorm.is_view_compatible_with(Format::Bgra8UnormSrgb));
+        assert!(!Format::Rgba8Unorm.is_view_compatible_with(Format::R32Uint));
+    }
+
+    #[test]
+    fn every_srgb_format_has_a_linear_twin_of_the_same_size() {
+        for format in Format::ALL.iter().filter(|format| format.is_srgb()) {
+            let linear = format.linear_variant();
+            assert!(!linear.is_srgb(), "{format:?}");
+            assert_eq!(linear.block_size_bytes(), format.block_size_bytes(), "{format:?}");
         }
     }
 

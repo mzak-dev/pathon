@@ -113,6 +113,8 @@ impl WgpuDevice {
             },
             format,
             usage: convert::texture_usage_from_wgpu(texture.usage()),
+            // wgpu does not expose the view formats of a texture the host created.
+            view_formats: &[],
         };
         Ok(self.lock().textures.insert(TextureEntry { texture, desc }))
     }

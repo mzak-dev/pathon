@@ -226,6 +226,18 @@ mod tests {
     }
 
     #[test]
+    fn bindless_needs_non_uniform_indexing_and_only_desktop_has_it() {
+        let bindless = Features::TEXTURE_BINDING_ARRAY | Features::NON_UNIFORM_INDEXING;
+        assert!(Profile::Desktop.features().contains(bindless));
+        assert!(!Profile::Web.features().intersects(bindless));
+        assert!(!caps_with(Features::TEXTURE_BINDING_ARRAY).has(bindless));
+        assert_eq!(
+            caps_with(Features::TEXTURE_BINDING_ARRAY).missing(bindless),
+            Features::NON_UNIFORM_INDEXING
+        );
+    }
+
+    #[test]
     fn best_profile_follows_feature_bits() {
         assert_eq!(caps_with(Features::empty()).best_profile(), Profile::Web);
         assert_eq!(caps_with(Profile::Desktop.features()).best_profile(), Profile::Desktop);

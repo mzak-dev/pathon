@@ -13,6 +13,7 @@ use pathon_rhi_types::{
 
 use crate::texel_layout::{RowAlignment, check_texel_layout};
 use crate::validator::Validator;
+use crate::view_rules;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub(crate) struct SubresourceState {
@@ -49,12 +50,17 @@ impl NullTexture {
     // Like `subresource_list`, but a range reaching past the texture is an error instead of being clamped;
     // a `u32::MAX` count means "to the end".
     pub(crate) fn checked_subresources(&self, range: SubresourceRange) -> Result<Vec<(u32, u32)>, RhiError> {
+        self.check_range(range)?;
+        Ok(self.subresource_list(range))
+    }
+
+    pub(crate) fn check_range(&self, range: SubresourceRange) -> Result<(), RhiError> {
         let (mips, layers) = (self.desc.mip_level_count, self.desc.array_layers());
         let fits = |base: u32, count: u32, total: u32| {
             base < total && (count == u32::MAX || base.saturating_add(count) <= total)
         };
         if fits(range.base_mip, range.mip_count, mips) && fits(range.base_layer, range.layer_count, layers) {
-            return Ok(self.subresource_list(range));
+            return Ok(());
         }
         Err(RhiError::validation(
             "R0112",
@@ -402,6 +408,7 @@ impl DeviceApi for NullDevice {
                 format!("texture '{}' has an invalid mip count", desc.label),
             ));
         }
+        view_rules::check_view_formats(desc)?;
         Ok(self.lock().textures.insert(NullTexture::new(*desc)))
     }
 
@@ -454,19 +461,7 @@ impl DeviceApi for NullDevice {
     fn create_texture_view(&self, texture: TextureId, desc: &TextureViewDesc) -> Result<TextureViewId, RhiError> {
         let mut state = self.lock();
         let target = state.textures.get(texture).ok_or(RhiError::InvalidHandle("texture"))?;
-        let range = SubresourceRange {
-            base_mip: desc.base_mip,
-            mip_count: desc.mip_count.unwrap_or(u32::MAX),
-            base_layer: desc.base_layer,
-            layer_count: desc.layer_count.unwrap_or(u32::MAX),
-        }
-        .resolve(target.desc.mip_level_count, target.desc.array_layers());
-        if range.mip_count == 0 || range.layer_count == 0 {
-            return Err(RhiError::validation(
-                "R0109",
-                format!("view of '{}' selects no subresources", target.desc.label),
-            ));
-        }
+        let range = view_rules::checked_view_range(target, desc)?;
         Ok(state.views.insert(NullView { texture, range }))
     }
 

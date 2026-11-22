@@ -3,5 +3,6 @@
 mod device;
 mod texel_layout;
 mod validator;
+mod view_rules;
 
 pub use device::NullDevice;

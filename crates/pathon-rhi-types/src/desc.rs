@@ -82,9 +82,13 @@ pub struct TextureDesc {
     pub dimension: TextureDimension,
     pub format: Format,
     pub usage: TextureUsage,
+    // Formats (the sRGB / non-sRGB twin of `format`) that views of this texture may use besides `format` itself.
+    pub view_formats: &'static [Format],
 }
 
 impl TextureDesc {
+    pub const CUBE_FACES: u32 = 6;
+
     pub fn new_2d(label: &'static str, width: u32, height: u32, format: Format, usage: TextureUsage) -> Self {
         Self {
             label,
@@ -94,7 +98,37 @@ impl TextureDesc {
             dimension: TextureDimension::D2,
             format,
             usage,
+            view_formats: &[],
         }
+    }
+
+    // A 2D array of six square faces in the order +X, -X, +Y, -Y, +Z, -Z; sample it through a `Cube` view.
+    pub fn new_cube(label: &'static str, face_size: u32, format: Format, usage: TextureUsage) -> Self {
+        Self::new_2d(label, face_size, face_size, format, usage).with_layers(Self::CUBE_FACES)
+    }
+
+    #[must_use]
+    pub fn with_layers(self, layers: u32) -> Self {
+        Self {
+            size: Extent3d {
+                depth_or_layers: layers,
+                ..self.size
+            },
+            ..self
+        }
+    }
+
+    #[must_use]
+    pub fn with_view_formats(self, view_formats: &'static [Format]) -> Self {
+        Self { view_formats, ..self }
+    }
+
+    // `Cube` and `CubeArray` views need a single-sampled 2D texture of square layers, six per cube.
+    pub fn is_cube_compatible(&self) -> bool {
+        self.dimension == TextureDimension::D2
+            && self.sample_count == 1
+            && self.size.width == self.size.height
+            && self.size.depth_or_layers >= Self::CUBE_FACES
     }
 
     #[must_use]
@@ -148,6 +182,30 @@ pub struct TextureViewDesc {
 }
 
 impl TextureViewDesc {
+    pub fn with_format(format: Format) -> Self {
+        Self {
+            format: Some(format),
+            ..Self::default()
+        }
+    }
+
+    // One layer of an array texture as a plain 2D view, e.g. a render target for a single cube face.
+    pub fn layer(layer: u32) -> Self {
+        Self {
+            dimension: Some(TextureViewDimension::D2),
+            base_layer: layer,
+            layer_count: Some(1),
+            ..Self::default()
+        }
+    }
+
+    pub fn cube() -> Self {
+        Self {
+            dimension: Some(TextureViewDimension::Cube),
+            ..Self::default()
+        }
+    }
+
     pub fn single_mip(level: u32) -> Self {
         Self {
             base_mip: level,
@@ -285,6 +343,26 @@ mod tests {
         let size = Extent3d::new_2d(1024, 256);
         assert_eq!(size.max_mip_count(), 11);
         assert_eq!(size.mip_level(10), Extent3d::new_2d(1, 1));
+    }
+
+    #[test]
+    fn cube_textures_are_six_square_layers() {
+        let cube = TextureDesc::new_cube("cube", 16, Format::Rgba8Unorm, TextureUsage::SAMPLED);
+        assert!(cube.is_cube_compatible());
+        assert_eq!(cube.array_layers(), 6);
+        assert!(!cube.with_layers(5).is_cube_compatible());
+        assert!(
+            !TextureDesc::new_2d("wide", 8, 4, Format::Rgba8Unorm, TextureUsage::SAMPLED)
+                .with_layers(6)
+                .is_cube_compatible()
+        );
+    }
+
+    #[test]
+    fn view_formats_are_part_of_the_allocation_identity() {
+        let plain = TextureDesc::new_2d("a", 4, 4, Format::Rgba8Unorm, TextureUsage::SAMPLED);
+        let reinterpretable = plain.with_view_formats(&[Format::Rgba8UnormSrgb]);
+        assert!(!plain.same_allocation(&reinterpretable));
     }
 
     #[test]

@@ -399,6 +399,11 @@ impl DeviceApi for WgpuDevice {
 
     fn create_texture(&self, desc: &TextureDesc) -> Result<TextureId, RhiError> {
         let format = convert::format_to_wgpu(desc.format)?;
+        let view_formats = desc
+            .view_formats
+            .iter()
+            .map(|format| convert::format_to_wgpu(*format))
+            .collect::<Result<Vec<_>, _>>()?;
         let texture = self.scoped(|| {
             self.device.create_texture(&wgpu::TextureDescriptor {
                 label: Some(desc.label),
@@ -408,7 +413,7 @@ impl DeviceApi for WgpuDevice {
                 dimension: convert::texture_dimension_to_wgpu(desc.dimension),
                 format,
                 usage: convert::texture_usage_to_wgpu(desc.usage),
-                view_formats: &[],
+                view_formats: &view_formats,
             })
         })?;
         Ok(self.lock().textures.insert(TextureEntry { texture, desc: *desc }))

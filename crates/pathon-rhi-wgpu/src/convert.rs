@@ -561,6 +561,21 @@ mod tests {
     }
 
     #[test]
+    fn non_uniform_indexing_maps_to_the_sampled_texture_flag() {
+        assert_eq!(
+            features_to_wgpu(Features::NON_UNIFORM_INDEXING),
+            wgpu::Features::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING
+        );
+        assert_eq!(
+            features_from_wgpu(
+                wgpu::Features::TEXTURE_BINDING_ARRAY
+                    | wgpu::Features::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING
+            ),
+            Features::TEXTURE_BINDING_ARRAY | Features::NON_UNIFORM_INDEXING
+        );
+    }
+
+    #[test]
     fn every_feature_bit_round_trips_through_wgpu() {
         for (feature, _) in FEATURE_TABLE {
             assert_eq!(features_from_wgpu(features_to_wgpu(*feature)), *feature);

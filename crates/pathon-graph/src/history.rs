@@ -202,6 +202,7 @@ impl FrameGraph {
                     dimension: TextureDimension::D2,
                     format: decl.desc.format,
                     usage: needed | kept_usage,
+                    view_formats: &[],
                 };
                 history.replace(decl.desc, texture_desc, device, pool, release, frame)?;
             }

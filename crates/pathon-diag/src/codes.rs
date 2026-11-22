@@ -9,8 +9,8 @@ const fn code(code: &'static str, title: &'static str) -> CodeInfo {
 }
 
 // R: RHI, G: frame graph, F: render features (packs), P: platform, M: meshes and geometry pool, S: shaders,
-// T: profiling, N: scene, X: textures, Y: materials, H: HDR output, Q: post, B: bindless textures, I: IBL. Every entry needs
-// docs/diag/<code>.md.
+// T: profiling, N: scene, X: textures, Y: materials, H: HDR output, Q: post, B: bindless textures, I: IBL. Every entry
+// needs docs/diag/<code>.md.
 pub const CODES: &[CodeInfo] = &[
     code("R0001", "no adapter or device could be created"),
     code("R0002", "adapter lacks required features"),

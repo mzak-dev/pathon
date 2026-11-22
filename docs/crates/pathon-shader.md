@@ -1,6 +1,6 @@
 # pathon-shader
 
-Składanie shaderów WGSL z modułów (M3-01, [ADR-0021](../adr/0021-importy-shaderow-naga-oil.md)). Crate nie zależy od RHI ani od wgpu: bierze tekst, oddaje tekst, który trafia do `create_shader_module` ([ADR-0006](../adr/0006-wejscie-shaderow.md)).
+Składanie shaderów WGSL z modułów (M3-01, [ADR-0021](../adr/0021-importy-shaderow-wesl.md)). Crate nie zależy od RHI ani od wgpu: bierze tekst, oddaje tekst, który trafia do `create_shader_module` ([ADR-0006](../adr/0006-wejscie-shaderow.md)).
 
 - **`ShaderComposer::add_module(source, file_path)`** — rejestruje moduł z `#define_import_path pathon::nazwa`. Moduł jest parsowany leniwie (przy pierwszym użyciu w składaniu), ale to, czego używa z importów, musi być dodane wcześniej, więc cykl importów kończy się błędem (nie znaleziono modułu), a nie pętlą.
 - **`ShaderComposer::compose(source, file_path)`** — rozwiązuje `#import pathon::nazwa::{funkcja, STALA}` i zwraca samodzielne źródło WGSL, zapisane z `naga::Module` po walidacji.

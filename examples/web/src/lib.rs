@@ -2,7 +2,7 @@
 #![cfg(target_arch = "wasm32")]
 
 use pathon::platform::WindowDesc;
-use pathon::rhi::Color;
+use pathon::rhi::{Color, DeviceApi, DeviceRequest, Features};
 use pathon::{Renderer, ViewInput, WinitPlatform};
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -36,7 +36,13 @@ pub fn start() {
     if log::set_logger(&ConsoleLogger).is_ok() {
         log::set_max_level(log::LevelFilter::Info);
     }
-    let builder = Renderer::builder().with_clear_color(Color::rgba(0.1, 0.2, 0.35, 1.0));
+    // Every optional feature, so the logged Caps can be compared with what the browser's adapter offers.
+    let builder = Renderer::builder()
+        .with_clear_color(Color::rgba(0.1, 0.2, 0.35, 1.0))
+        .with_device_request(DeviceRequest {
+            optional_features: Features::all(),
+            ..DeviceRequest::default()
+        });
     let windows = vec![WindowDesc::new("pathon — clear", 960.0, 540.0)];
     let mut frames = 0_u64;
     let result = pathon::runtime::run_with_hook(
@@ -53,7 +59,10 @@ pub fn start() {
                 })
                 .collect()
         },
-        move |_, _| {
+        move |renderer, _| {
+            if frames == 0 {
+                log::info!("caps: {:?}", renderer.device().caps());
+            }
             if frames.is_multiple_of(LOG_EVERY_FRAMES) {
                 log::info!("frame {frames}");
             }

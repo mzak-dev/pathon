@@ -264,6 +264,7 @@ Hosty (M6, M7) nie są na ścieżce minimalnej, ale ich szew jest: M2-19 i M4-20
 ## M4 — Core działa
 
 - [ ] **M4-00 · Golden images** ★ — **pierwszy task etapu.** Render headless; referencje per backend albo metryka percepcyjna (np. FLIP); CI na lavapipe, WARP i macOS (sprawdzić Metal na hostowanych runnerach, w razie potrzeby własny runner). **Gotowe gdy:** golden test wycinka z M2-18 w CI.
+  - **Stan 22.11.2026:** crate `pathon-golden` (`assert_golden(name, &image, tolerance)`, tryb `PATHON_UPDATE_GOLDEN=1`, artefakty actual / expected / diff, test negatywny), [ADR-0025](adr/0025-golden-images.md) i test `unlit_cube_matches_its_golden_image` zielone lokalnie (Windows, sprzętowy GPU); zadania `gpu` (lavapipe) i `golden` (WARP, macOS) w ci.yml. **Nie odhaczone:** zgodność referencji z lavapipe, WARP i Metalem potwierdzi dopiero pierwszy przebieg CI.
 - [ ] **M4-01 · `pathon-mesh`** ★
   - Pula geometrii (mega-bufory vertex / index), layouty wierzchołków, upload meshy, dane poprzedniej klatki (transformacje, pozycje skinowane) dla wektorów ruchu.
   - Wspólna dla forward, visibility buffer i RT.

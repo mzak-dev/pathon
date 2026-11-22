@@ -8,6 +8,7 @@ repository.workspace = true
 
 [dependencies]
 naga.workspace = true
+pathon-api.workspace = true
 pathon-rhi-types.workspace = true
 thiserror.workspace = true
 wesl.workspace = true

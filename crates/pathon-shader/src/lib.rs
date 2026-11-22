@@ -1,5 +1,6 @@
 #![doc = include_str!("../../../docs/crates/pathon-shader.md")]
 
+mod background;
 mod features;
 mod library;
 mod pipeline_cache;
@@ -7,6 +8,7 @@ mod reflect;
 
 use std::collections::BTreeMap;
 
+pub use background::{BackgroundCompiler, BackgroundConfig, BuildError, BuildFailure, Lookup, MissPolicy, PumpReport};
 pub use features::ShaderFeatures;
 pub use library::{ShaderKey, ShaderLibrary};
 use pathon_rhi_types::RhiError;
@@ -76,13 +78,13 @@ pub enum ShaderError {
     BindingConflict { group: u32, binding: u32 },
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct Module {
     path: ModulePath,
     source: String,
 }
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct ShaderComposer {
     modules: BTreeMap<String, Module>,
 }

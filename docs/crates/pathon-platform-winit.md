@@ -6,6 +6,8 @@
 - `resumed` → `SurfacesAvailable`, `suspended` → `SurfacesLost`; zdarzenia okien tłumaczone na `PlatformEvent`, `about_to_wait` → `App::on_frame`.
 - Okna (`WinitWindow`) implementują `PlatformWindow` i `raw-window-handle`, więc trafiają wprost do `SurfaceTarget`.
 
+- `request_inner_size` na Wayland (i iOS/Android) zwraca w winit 0.30 `Some(rozmiar)`: rozmiar jest zastosowany od razu, a `WindowEvent::Resized` nie przychodzi (klient na Wayland nie zmienia rozmiaru sam, a kompozytor nie musi odpowiadać `configure`). Platforma sama kolejkuje wtedy `PlatformEvent::Resized` (`pending.rs`) i dostarcza go na początku następnej iteracji pętli, przed `on_frame`; gdy rozmiar się nie zmienił (iOS/Android), zdarzenia nie ma. Dla `None` (Windows, macOS, X11, web) zdarzenie przychodzi z winita. Jeśli kompozytor później sam przyśle `configure`, aplikacja dostanie drugi `Resized` z tym samym rozmiarem.
+
 Test M0-05 (`examples/tests/window_events.rs`, [opis](../examples.md)) zmienia rozmiar prawdziwego okna z kodu przez `PlatformWindow::request_inner_size` i czeka na `PlatformEvent::Resized`; CI robi to na Windows, macOS i Linuksie (X11 pod Xvfb, Wayland pod headless westonem). Zmiany skali (`ScaleChanged`) nie da się wymusić w CI, więc zostaje do ręcznego sprawdzenia ([weryfikacja platform](../weryfikacja-platform.md)).
 
 ## Web (ADR-0014)

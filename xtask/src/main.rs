@@ -1,37 +1,62 @@
-// Workspace checks run in CI: `cargo xtask deps-check`. Rules and rationale: docs/deps-check.md.
+// Workspace commands. `cargo xtask deps-check` (CI): rules and rationale in docs/deps-check.md.
+// `cargo xtask bench` (by hand) and `cargo xtask budgets` (CI): docs/bench/README.md, ADR-0035.
 
+mod bench;
+mod console;
 mod metadata;
 mod rules;
 
 use std::process::ExitCode;
 
-#[expect(clippy::print_stdout, clippy::print_stderr, reason = "a CLI reports to the console")]
+use console::{say, warn};
+
+const USAGE: &str = "usage: cargo xtask deps-check
+       cargo xtask bench [--update] [--suite ID]... [--repeats N] [--machine NAME] [--skip-gpu] [--allow-noisy]
+       cargo xtask budgets [--repeats N] [--no-suites] [--metric NAME=VALUE]...";
+
 fn main() -> ExitCode {
-    let command = std::env::args().nth(1);
-    if command.as_deref() != Some("deps-check") {
-        eprintln!("usage: cargo xtask deps-check");
-        return ExitCode::FAILURE;
-    }
-    let model = match metadata::load() {
-        Ok(model) => model,
-        Err(error) => {
-            eprintln!("deps-check: {error}");
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let rest = args.get(1..).unwrap_or_default();
+    let outcome = match args.first().map(String::as_str) {
+        Some("deps-check") => Ok(deps_check()),
+        Some("bench") => bench::bench(rest),
+        Some("budgets") => bench::budgets(rest),
+        _ => {
+            warn(USAGE);
             return ExitCode::FAILURE;
         }
     };
+    match outcome {
+        Ok(true) => ExitCode::SUCCESS,
+        Ok(false) => ExitCode::FAILURE,
+        Err(error) => {
+            warn(&format!("error: {error}"));
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn deps_check() -> bool {
+    let model = match metadata::load() {
+        Ok(model) => model,
+        Err(error) => {
+            warn(&format!("deps-check: {error}"));
+            return false;
+        }
+    };
     let report = rules::check(&model);
-    println!(
+    say(&format!(
         "core dependency closure: {} crates (baseline {})",
         report.core_crates,
         rules::CORE_CRATE_BASELINE
-    );
+    ));
     if report.violations.is_empty() {
-        println!("deps-check: ok");
-        return ExitCode::SUCCESS;
+        say("deps-check: ok");
+        return true;
     }
     for violation in &report.violations {
-        eprintln!("error[{}]: {}", violation.rule, violation.message);
+        warn(&format!("error[{}]: {}", violation.rule, violation.message));
     }
-    eprintln!("deps-check: {} violation(s)", report.violations.len());
-    ExitCode::FAILURE
+    warn(&format!("deps-check: {} violation(s)", report.violations.len()));
+    false
 }

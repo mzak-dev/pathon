@@ -12,6 +12,7 @@ repository = "https://github.com/mzak-dev/pathon"
 [workspace.dependencies]
 pathon = { path = "crates/pathon" }
 pathon-api = { path = "crates/pathon-api" }
+pathon-bench = { path = "tools/pathon-bench" }
 pathon-core = { path = "crates/pathon-core" }
 pathon-diag = { path = "crates/pathon-diag" }
 pathon-golden = { path = "crates/pathon-golden" }
@@ -44,6 +45,7 @@ raw-window-handle = "0.6"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
+toml = "1"
 tracing = { version = "0.1", default-features = false, features = ["std"] }
 # Localhost only: a profiled build must not open Tracy's port to the network; the other defaults (system tracing, sampling) need elevated rights.
 tracy-client = { version = "0.19", default-features = false, features = ["enable", "only-localhost"] }

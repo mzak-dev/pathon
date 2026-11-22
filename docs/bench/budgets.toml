@@ -1,0 +1,73 @@
+# Budżety i progi regresji (M4-17, ADR-0035; format: docs/bench/README.md).
+# Podniesienie budżetu to zmiana tego pliku w PR i uzasadnienie w opisie: CI nie ma innego sposobu, żeby przejść dalej.
+
+[regression]
+time_pct = 10.0     # czas: mediana i minimum rosną o więcej niż tyle względem baseline tej samej maszyny
+count_pct = 0.0     # liczniki i rozmiary są deterministyczne: każdy wzrost to regresja
+min_samples = 21    # tyle próbek czasu musi zgłosić jedno uruchomienie sondy
+repeats = 3         # tyle razy `xtask bench` uruchamia sondę; wynik to mediana median
+
+# Wyjątek od progu dla pomiaru, którego szum na tej maszynie przekracza 10% (z uzasadnieniem w ADR-0035):
+[regression.overrides]
+
+# `max` — budżet (lokalny `xtask bench`, testy mierzące czas); `ci_max` — szerszy limit dla CI na współdzielonym
+# runnerze. Pomiar bez `ci_max` jest w CI sprawdzany względem `max` (liczniki i rozmiary).
+
+[budgets."scene.extract.spawn_10k"]       # ADR-0029: extract 10 000 instancji, spawn wszystkich
+max = "2 ms"
+ci_max = "20 ms"
+
+[budgets."scene.extract.move_10k"]        # ADR-0029: extract 10 000 instancji, ruch wszystkich
+max = "2 ms"
+ci_max = "20 ms"
+
+[budgets."scene.extract.steady_allocations_10k"]   # stan ustalony nie alokuje (ADR-0029)
+max = 0
+
+# Pula meshy na urządzeniu null: tysiąc wgrań i ponowne użycie zwolnionych zakresów.
+[budgets."mesh.pool.upload_1000"]
+max = "2 ms"
+ci_max = "20 ms"
+
+[budgets."mesh.pool.recycle_1000"]
+max = "1 ms"
+ci_max = "10 ms"
+
+[budgets."mesh.pool.upload_allocations_1000"]
+max = 24
+
+# Klatka rdzenia na rhi-null (`record_frame`, cztery paczki testowe, cel 1920x1080). Liczniki są deterministyczne
+# i pilnują kształtu pracy, nie szybkości maszyny; czas ma szeroki margines, bo runner CI jest współdzielony.
+[budgets."core.frame.record_1view"]
+max = "50 µs"
+ci_max = "500 µs"
+
+[budgets."core.frame.record_4view"]
+max = "200 µs"
+ci_max = "2 ms"
+
+[budgets."core.frame.commands_1view"]
+max = 40
+
+[budgets."core.frame.commands_4view"]
+max = 150
+
+[budgets."core.frame.allocations_1view"]
+max = 95
+
+[budgets."core.frame.allocations_4view"]
+max = 370
+
+[budgets."core.frame.allocated_bytes_1view"]
+max = "15 KiB"
+
+[budgets."core.frame.allocated_bytes_4view"]
+max = "62 KiB"
+
+# Release WASM przykładu `examples/web` po `wasm-pack build --release` (job `wasm`): lokalnie 692 KiB i 283 KiB
+# (surowy i gzip), czyli ok. 16% zapasu na różnice toolchaina w CI.
+[budgets."wasm.raw_bytes"]
+max = "800 KiB"
+
+[budgets."wasm.gzip_bytes"]
+max = "330 KiB"

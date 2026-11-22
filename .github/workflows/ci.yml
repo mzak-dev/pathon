@@ -93,6 +93,31 @@ jobs:
           cp examples/web/index.html "$site/"
           cp -r examples/web/pkg "$site/pkg"
           node examples/web/verify.cjs "$site"
+      - name: WASM size budget (docs/bench/budgets.toml)
+        # Last on purpose: the report and the browser check above run even when the budget is exceeded.
+        run: |
+          wasm=examples/web/pkg/pathon_example_web_bg.wasm
+          cargo xtask budgets --no-suites             --metric wasm.raw_bytes="$(stat -c %s "$wasm")"             --metric wasm.gzip_bytes="$(gzip -c "$wasm" | wc -c)"
+
+  # M4-17 / ADR-0035: budgets that do not depend on the machine. Counters (commands and allocations per frame on
+  # rhi-null, allocations of the geometry pool and of a steady extract) are exact; timings only fail with a wide margin
+  # (`ci_max`), because a hosted runner is too noisy for the real budgets and the baselines, which are checked by hand
+  # with `cargo xtask bench`. The limits live in docs/bench/budgets.toml.
+  budgets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: CPU budgets on rhi-null
+        run: |
+          set -o pipefail
+          cargo xtask budgets | tee budgets.log
+      - name: Budgets in the job summary
+        if: always()
+        run: |
+          [ -s budgets.log ] || exit 0
+          { echo '### Budgets'; echo '```'; cat budgets.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
   gpu:
     runs-on: ubuntu-latest

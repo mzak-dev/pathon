@@ -55,7 +55,7 @@ jobs:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
       - name: Core builds for the web (single thread, no platform)
-        run: cargo check --target wasm32-unknown-unknown -p pathon-core -p pathon-test -p pathon-shader -p pathon-mesh -p pathon-profile -p pathon --no-default-features
+        run: cargo check --target wasm32-unknown-unknown -p pathon-core -p pathon-test -p pathon-shader -p pathon-mesh -p pathon-profile -p pathon-scene -p pathon --no-default-features
       - name: Lint the web runner, platform and example
         run: cargo clippy --target wasm32-unknown-unknown -p pathon -p pathon-platform-winit -p pathon-example-web -- -D warnings
       - uses: taiki-e/install-action@v2

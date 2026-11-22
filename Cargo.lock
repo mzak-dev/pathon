@@ -1948,6 +1948,7 @@ dependencies = [
  "pathon-mesh",
  "pathon-profile",
  "pathon-rhi-wgpu",
+ "pathon-scene",
  "pathon-test",
  "wgpu",
  "winit",
@@ -2059,6 +2060,16 @@ dependencies = [
  "pathon-rhi-types",
  "raw-window-handle",
  "wgpu",
+]
+
+[[package]]
+name = "pathon-scene"
+version = "0.0.1"
+dependencies = [
+ "bitflags 2.13.2",
+ "divan",
+ "pathon-api",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

@@ -9,7 +9,7 @@ const fn code(code: &'static str, title: &'static str) -> CodeInfo {
 }
 
 // R: RHI, G: frame graph, F: render features (packs), P: platform, M: meshes and geometry pool, S: shaders, T:
-// profiling. Every entry needs docs/diag/<code>.md.
+// profiling, N: scene. Every entry needs docs/diag/<code>.md.
 pub const CODES: &[CodeInfo] = &[
     code("R0001", "no adapter or device could be created"),
     code("R0002", "adapter lacks required features"),
@@ -59,6 +59,10 @@ pub const CODES: &[CodeInfo] = &[
     code("S0002", "pipeline failed to compile in the background"),
     code("T0001", "GPU pass timings unavailable"),
     code("T0002", "more GPU passes in a frame than the profiler can time"),
+    code("N0001", "scene handle is stale or unknown"),
+    code("N0002", "invalid camera"),
+    code("N0003", "invalid light"),
+    code("N0004", "scene value is not finite"),
 ];
 
 pub fn is_registered(code: &str) -> bool {

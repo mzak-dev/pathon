@@ -35,8 +35,8 @@ impl Default for Camera {
     }
 }
 
-// Per-view, per-frame state. The host supplies time and frame index (core never reads a clock); the TemporalResolve
-// role sets render size, jitter and mip bias in `prepare_view`, everyone else only reads them.
+// Per-view, per-frame state. The host supplies time (core never reads a clock); core owns `frame` and `record_epoch`.
+// The TemporalResolve role sets render size, jitter and mip bias in `prepare_view`, everyone else only reads them.
 #[derive(Clone, PartialEq, Debug)]
 pub struct ViewCtx {
     pub view: ViewId,
@@ -44,7 +44,10 @@ pub struct ViewCtx {
     pub render_size: PhysicalSize,
     pub jitter: Vec2,
     pub mip_bias: f32,
-    pub frame_index: u64,
+    // Frames committed so far: the clock `DeferredRelease` runs on. Equal for every view of one frame.
+    pub frame: u64,
+    // Grows with every record attempt, abandoned ones included: per-record scratch (rings) restarts when it changes.
+    pub record_epoch: u64,
     pub time_seconds: f64,
     pub delta_seconds: f32,
     pub camera: Camera,
@@ -59,7 +62,8 @@ impl ViewCtx {
             render_size: output_size,
             jitter: Vec2::ZERO,
             mip_bias: 0.0,
-            frame_index: 0,
+            frame: 0,
+            record_epoch: 0,
             time_seconds: 0.0,
             delta_seconds: 0.0,
             camera,

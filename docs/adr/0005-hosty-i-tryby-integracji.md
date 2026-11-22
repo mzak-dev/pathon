@@ -29,7 +29,8 @@ pathon ma działać w trzech hostach: we własnym silniku, zamiast renderera Bev
 | Zgłoszenie komend | host (`record_frame`) | pathon na wspólnej kolejce (`render_frame`) albo host (`record_frame`) | pathon |
 | Acquire / present | host | host | pathon |
 | Utrata urządzenia | host, potem `reset(new_device)` | właściciel urządzenia | pathon |
-| Czas i numer klatki | host | host | host (aplikacja albo runner) |
+| Czas | host | host | host (aplikacja albo runner) |
+| Numer klatki | pathon (ADR-0022) | pathon | pathon |
 | Własny silnik | tak | tak | tak |
 | Bevy | opcjonalnie (M6-05) | M6-04 | M6-03 |
 | Godot | `CompositorEffect` (M7-04) | `Texture2DRD` (M7-05) | niemożliwy |

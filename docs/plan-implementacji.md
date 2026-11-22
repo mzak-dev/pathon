@@ -203,7 +203,7 @@ Hosty (M6, M7) nie są na ścieżce minimalnej, ale ich szew jest: M2-19 i M4-20
 - [x] **M2-10 · `pathon-api`** ★
   - `RenderFeature`: `requirements()` (faza 1: backend, funkcje, rozszerzenia przez hak), `negotiate(&Caps)` (faza 2), **`prepare_view()`** (przed budową grafu), `setup`, `record`, `on_resize`, `on_device_reset`.
   - Rola TemporalResolve w `prepare_view()` ustala `render_size`, sekwencję jittera i mip bias w `ViewCtx` — rdzeń je przechowuje, inne paczki tylko czytają.
-  - `ViewCtx` dostaje od hosta czas i numer klatki — core nie czyta zegara.
+  - `ViewCtx` dostaje od hosta czas — core nie czyta zegara. Numer klatki (`frame`) i epokę nagrania (`record_epoch`) liczy core ([ADR-0022](adr/0022-zegar-klatki-paczek.md)).
   - **Kontrakt slotów** (tabela w docs): reverse-Z; wektory ruchu w pikselach, z bieżącej klatki do poprzedniej, bez jittera; normalne oct-encoded w przestrzeni świata; `hdr` liniowe, pre-exposed; slot `exposure`.
   - **Konwencje przestrzeni** w tym samym kontrakcie: układ prawoskrętny, Y w górę, metry, jednostki fizyczne światła (lux, lumen). Konwersje z konwencji hosta robią adaptery hostów, nie paczki.
   - Sloty: `depth`, `depth_pyramid`, `normals`, `motion`, `material_id`, `roughness`, `albedo` (na żądanie — SSR, DLSS RR), `reactive` (maska dla upscalerów), `diffuse` / `specular` (podział światła), `hdr`, `ao`, `exposure`, `output`.

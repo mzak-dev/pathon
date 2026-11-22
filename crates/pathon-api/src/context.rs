@@ -1,7 +1,7 @@
 use glam::Vec2;
 use pathon_diag::Diagnostic;
 use pathon_graph::{FrameGraph, GraphTextureDesc, TextureHandle};
-use pathon_rhi_types::{Caps, DeviceApi, PhysicalSize};
+use pathon_rhi_types::{Caps, DeviceApi, PhysicalSize, Resource};
 
 use crate::graph_builder::GraphBuilder;
 use crate::shared::Shared;
@@ -106,6 +106,7 @@ pub struct RecordCtx<'frame> {
     view: &'frame ViewCtx,
     device: &'frame dyn DeviceApi,
     diagnostics: &'frame mut Vec<Diagnostic>,
+    released: &'frame mut Vec<Resource>,
     shared: &'frame mut Shared,
 }
 
@@ -126,6 +127,7 @@ impl<'frame> RecordCtx<'frame> {
         view: &'frame ViewCtx,
         device: &'frame dyn DeviceApi,
         diagnostics: &'frame mut Vec<Diagnostic>,
+        released: &'frame mut Vec<Resource>,
         shared: &'frame mut Shared,
     ) -> Self {
         Self {
@@ -134,6 +136,7 @@ impl<'frame> RecordCtx<'frame> {
             view,
             device,
             diagnostics,
+            released,
             shared,
         }
     }
@@ -189,12 +192,17 @@ impl<'frame> RecordCtx<'frame> {
     pub fn report(&mut self, diagnostic: Diagnostic) {
         self.diagnostics.push(diagnostic);
     }
+
+    // The core destroys the object once the GPU is done with every frame that could still use it (ADR-0022).
+    pub fn release_later(&mut self, resource: impl Into<Resource>) {
+        self.released.push(resource.into());
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use pathon_rhi_null::NullDevice;
-    use pathon_rhi_types::Format;
+    use pathon_rhi_types::{BufferDesc, BufferUsage, Format};
 
     use super::*;
     use crate::view::{Camera, ViewId};
@@ -213,8 +221,17 @@ mod tests {
         let mut slots = Slots::new();
         let view = ViewCtx::new(ViewId(0), PhysicalSize::new(4, 4), Camera::default());
         let mut diagnostics = Vec::new();
+        let mut released = Vec::new();
         let mut shared = Shared::new();
-        let mut ctx = RecordCtx::new(&mut graph, &mut slots, &view, &device, &mut diagnostics, &mut shared);
+        let mut ctx = RecordCtx::new(
+            &mut graph,
+            &mut slots,
+            &view,
+            &device,
+            &mut diagnostics,
+            &mut released,
+            &mut shared,
+        );
 
         let wrong = ctx
             .graph()
@@ -226,6 +243,41 @@ mod tests {
         assert_eq!(slots.get(Slot::AO), Some(right));
         assert_eq!(diagnostics.len(), 1);
         assert_eq!(diagnostics[0].code, "G0005");
+    }
+
+    #[test]
+    fn release_later_queues_the_resource_for_the_core() {
+        let device = NullDevice::new();
+        let buffer = device
+            .create_buffer(&BufferDesc {
+                label: "old",
+                size: 4,
+                usage: BufferUsage::UNIFORM,
+            })
+            .expect("buffer");
+        let mut graph = FrameGraph::new();
+        let mut slots = Slots::new();
+        let view = ViewCtx::new(ViewId(0), PhysicalSize::new(4, 4), Camera::default());
+        let mut diagnostics = Vec::new();
+        let mut released = Vec::new();
+        let mut shared = Shared::new();
+        let mut ctx = RecordCtx::new(
+            &mut graph,
+            &mut slots,
+            &view,
+            &device,
+            &mut diagnostics,
+            &mut released,
+            &mut shared,
+        );
+
+        ctx.release_later(buffer);
+
+        assert_eq!(released, [Resource::Buffer(buffer)]);
+        assert!(
+            device.write_buffer(buffer, 0, &[0; 4]).is_ok(),
+            "queued, not destroyed here"
+        );
     }
 
     #[test]

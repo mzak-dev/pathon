@@ -5,8 +5,9 @@ use pathon_api::graph::{GraphTextureDesc, PassDesc, Stage};
 use pathon_api::{Camera, PrepareCtx, RecordCtx, RenderFeature, Role, SetupCtx, ViewId};
 use pathon_core::{FeatureStatus, FrameInput, RenderError, Renderer, RendererBuilder, ViewInput};
 use pathon_rhi::{
-    Access, Backend, Color, ColorAttachment, CommandList, Device, DeviceApi, DeviceRequest, Extent3d, Format,
-    PhysicalSize, RenderPassDesc, RhiError, SubresourceRange, SurfaceTarget, TextureDesc, TextureId, TextureUsage,
+    Access, Backend, BufferDesc, BufferId, BufferUsage, Color, ColorAttachment, CommandList, Device, DeviceApi,
+    DeviceRequest, Extent3d, Format, PhysicalSize, RenderPassDesc, RhiError, SubresourceRange, SurfaceTarget,
+    TextureDesc, TextureId, TextureUsage,
 };
 use pathon_test::{GeometryPack, OnDemandConsumer, UnlitMeshPack, UpscalerPack, VendorDummy};
 
@@ -50,13 +51,8 @@ fn empty_renderer_clears_an_offscreen_target_under_state_validation() {
     let mut renderer = null_builder().build().expect("renderer");
     let input = one_view(&mut renderer, Format::Rgba8Unorm);
 
-    for frame in 0..3 {
-        let report = renderer
-            .render_frame(&FrameInput {
-                frame_index: frame,
-                ..input.clone()
-            })
-            .expect("frame");
+    for _ in 0..3 {
+        let report = renderer.render_frame(&input).expect("frame");
         assert_eq!(report.views.len(), 1);
         assert_eq!(report.views[0].passes_live, 1);
     }
@@ -297,8 +293,7 @@ fn stable_scene_compiles_its_graph_once() {
     let compiled: Vec<usize> = (0..5)
         .map(|frame| {
             let input = FrameInput {
-                frame_index: frame,
-                time_seconds: frame as f64 * 0.016,
+                time_seconds: f64::from(frame) * 0.016,
                 ..input.clone()
             };
             renderer.render_frame(&input).expect("frame").compiled_views
@@ -1359,10 +1354,244 @@ fn frames_recover_after_present_failed_following_a_successful_submit() {
     };
 
     assert!(renderer.render_frame(&input).is_err(), "presenting must fail");
+    assert_eq!(renderer.frame_index(), 1, "the list ran, so the frame counts");
     active.store(false, Ordering::SeqCst);
     for _ in 0..3 {
         renderer
             .render_frame(&input)
             .expect("the failed present did not roll back states of a list that ran");
     }
+}
+
+type SeenClocks = Arc<Mutex<Vec<(u64, u64)>>>;
+
+// Records the (frame, record epoch) every view sees.
+struct RecordsClock {
+    seen: SeenClocks,
+}
+
+impl RenderFeature for RecordsClock {
+    fn name(&self) -> &'static str {
+        "records clock"
+    }
+
+    fn stage(&self) -> Stage {
+        Stage::PostProcess
+    }
+
+    fn record(&mut self, ctx: &mut RecordCtx<'_>) -> Result<(), RhiError> {
+        let view = ctx.view();
+        self.seen.lock().expect("mutex").push((view.frame, view.record_epoch));
+        Ok(())
+    }
+}
+
+fn clock_renderer() -> (Renderer, SeenClocks) {
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let renderer = null_builder()
+        .with_feature(RecordsClock {
+            seen: Arc::clone(&seen),
+        })
+        .build()
+        .expect("renderer");
+    (renderer, seen)
+}
+
+#[test]
+fn the_frame_counts_committed_frames_and_the_record_epoch_counts_attempts() {
+    let (mut renderer, seen) = clock_renderer();
+    let healthy = one_view(&mut renderer, Format::Rgba8Unorm);
+    let failing = failing_second_view(&mut renderer, &healthy);
+
+    renderer.render_frame(&healthy).expect("first frame");
+    assert!(renderer.render_frame(&failing).is_err());
+    renderer.render_frame(&healthy).expect("frame after the failure");
+
+    assert_eq!(*seen.lock().expect("mutex"), [(0, 1), (1, 2), (1, 3)]);
+    assert_eq!(renderer.frame_index(), 2, "the abandoned attempt is not a frame");
+}
+
+#[test]
+fn every_view_of_one_attempt_shares_the_frame_and_the_epoch() {
+    let (mut renderer, seen) = clock_renderer();
+    let first = one_view(&mut renderer, Format::Rgba8Unorm);
+    let second = one_view(&mut renderer, Format::Rgba8Unorm);
+    let input = FrameInput {
+        views: [first.views, second.views].concat(),
+        ..FrameInput::default()
+    };
+
+    renderer.render_frame(&input).expect("frame");
+
+    assert_eq!(*seen.lock().expect("mutex"), [(0, 1), (0, 1)]);
+}
+
+#[test]
+fn record_frame_advances_the_clock_when_it_returns_the_list() {
+    let (mut renderer, seen) = clock_renderer();
+    let input = one_view(&mut renderer, Format::Rgba8Unorm);
+
+    renderer.record_frame(&input).expect("first list");
+    renderer.record_frame(&input).expect("second list");
+
+    assert_eq!(*seen.lock().expect("mutex"), [(0, 1), (1, 2)]);
+    assert_eq!(renderer.frame_index(), 2);
+}
+
+// Swaps a buffer in every record and hands the old one to `release_later`; `loses_device` makes the frame fail after
+// that.
+struct ReplacesBuffer {
+    current: Option<BufferId>,
+    retired: Arc<Mutex<Vec<BufferId>>>,
+    loses_device: Arc<AtomicBool>,
+}
+
+impl RenderFeature for ReplacesBuffer {
+    fn name(&self) -> &'static str {
+        "replaces buffer"
+    }
+
+    fn stage(&self) -> Stage {
+        Stage::PostProcess
+    }
+
+    fn record(&mut self, ctx: &mut RecordCtx<'_>) -> Result<(), RhiError> {
+        let buffer = ctx.device().create_buffer(&BufferDesc {
+            label: "replaced",
+            size: 4,
+            usage: BufferUsage::UNIFORM | BufferUsage::COPY_DST,
+        })?;
+        if let Some(old) = self.current.replace(buffer) {
+            self.retired.lock().expect("mutex").push(old);
+            ctx.release_later(old);
+        }
+        if self.loses_device.load(Ordering::SeqCst) {
+            let pass = ctx
+                .graph()
+                .add_pass(PassDesc::new("loses device", Stage::PostProcess).side_effect());
+            pass.record(|_| Err(RhiError::DeviceLost));
+        }
+        Ok(())
+    }
+}
+
+struct ReplacingBuffers {
+    renderer: Renderer,
+    input: FrameInput,
+    retired_buffers: Arc<Mutex<Vec<BufferId>>>,
+    loses_device: Arc<AtomicBool>,
+}
+
+impl ReplacingBuffers {
+    fn new() -> Self {
+        let retired_buffers = Arc::new(Mutex::new(Vec::new()));
+        let loses_device = Arc::new(AtomicBool::new(false));
+        let mut renderer = null_builder()
+            .with_feature(ReplacesBuffer {
+                current: None,
+                retired: Arc::clone(&retired_buffers),
+                loses_device: Arc::clone(&loses_device),
+            })
+            .build()
+            .expect("renderer");
+        let input = one_view(&mut renderer, Format::Rgba8Unorm);
+        Self {
+            renderer,
+            input,
+            retired_buffers,
+            loses_device,
+        }
+    }
+
+    fn oldest_retired_buffer_is_alive(&self) -> bool {
+        let first = self.retired_buffers.lock().expect("mutex")[0];
+        self.renderer.device().write_buffer(first, 0, &[0; 4]).is_ok()
+    }
+}
+
+#[test]
+fn a_released_later_resource_is_destroyed_after_frames_in_flight_committed_frames() {
+    let mut scene = ReplacingBuffers::new();
+
+    for _ in 0..3 {
+        scene.renderer.render_frame(&scene.input).expect("frame");
+    }
+    assert!(scene.oldest_retired_buffer_is_alive());
+    scene.renderer.render_frame(&scene.input).expect("frame");
+
+    assert!(!scene.oldest_retired_buffer_is_alive());
+}
+
+#[test]
+fn a_resource_released_later_in_a_frame_that_then_failed_is_still_released() {
+    let mut scene = ReplacingBuffers::new();
+    scene.renderer.render_frame(&scene.input).expect("first frame");
+
+    scene.loses_device.store(true, Ordering::SeqCst);
+    assert!(matches!(
+        scene.renderer.render_frame(&scene.input),
+        Err(RenderError::DeviceLost)
+    ));
+    scene.loses_device.store(false, Ordering::SeqCst);
+
+    for _ in 0..2 {
+        scene.renderer.render_frame(&scene.input).expect("frame");
+    }
+    assert!(scene.oldest_retired_buffer_is_alive());
+    scene.renderer.render_frame(&scene.input).expect("frame");
+    assert!(!scene.oldest_retired_buffer_is_alive());
+}
+
+// `UnlitMeshPack` takes one uniform slot per record; its ring holds 64 KiB.
+fn unlit_ring_capacity(renderer: &Renderer) -> usize {
+    let alignment = u64::from(renderer.device().caps().limits.min_uniform_buffer_offset_alignment);
+    usize::try_from((64 << 10) / alignment).expect("ring capacity fits usize")
+}
+
+#[test]
+fn a_pack_with_a_per_frame_ring_survives_a_host_that_never_numbers_its_frames() {
+    let mut renderer = null_builder()
+        .with_feature(UnlitMeshPack::new())
+        .build()
+        .expect("renderer");
+    let input = one_view(&mut renderer, Format::Rgba8Unorm);
+
+    for _ in 0..unlit_ring_capacity(&renderer) * 2 {
+        renderer.render_frame(&input).expect("frame");
+    }
+
+    assert_eq!(renderer.features(), [("unlit mesh", FeatureStatus::Active)]);
+}
+
+#[test]
+fn a_pack_with_a_per_frame_ring_survives_unnumbered_frames_in_mode_a() {
+    let mut renderer = null_builder()
+        .with_feature(UnlitMeshPack::new())
+        .build()
+        .expect("renderer");
+    let input = one_view(&mut renderer, Format::Rgba8Unorm);
+
+    for _ in 0..unlit_ring_capacity(&renderer) * 2 {
+        let list = renderer.record_frame(&input).expect("frame");
+        renderer.device().submit(list).expect("host submit");
+    }
+
+    assert_eq!(renderer.features(), [("unlit mesh", FeatureStatus::Active)]);
+}
+
+#[test]
+fn retrying_an_abandoned_frame_does_not_exhaust_a_per_frame_ring() {
+    let mut renderer = null_builder()
+        .with_feature(UnlitMeshPack::new())
+        .build()
+        .expect("renderer");
+    let healthy = one_view(&mut renderer, Format::Rgba8Unorm);
+    let failing = failing_second_view(&mut renderer, &healthy);
+
+    for _ in 0..unlit_ring_capacity(&renderer) * 2 {
+        assert!(renderer.render_frame(&failing).is_err());
+    }
+
+    renderer.render_frame(&healthy).expect("frame after the retries");
+    assert_eq!(renderer.features(), [("unlit mesh", FeatureStatus::Active)]);
 }

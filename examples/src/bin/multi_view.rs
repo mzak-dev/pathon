@@ -145,7 +145,6 @@ impl MultiView {
             camera: pathon_examples::orbit_camera(time_seconds + 4.0, 1.0),
         });
         let input = FrameInput {
-            frame_index: self.frame_index,
             time_seconds,
             delta_seconds: 0.0,
             views,

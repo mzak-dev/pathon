@@ -85,7 +85,7 @@ pub struct UnlitMeshPack {
     objects: Option<GpuObjects>,
     pipelines: HashMap<Format, RenderPipelineId>,
     uniforms: Option<UniformRing>,
-    ring_frame: Option<u64>,
+    ring_epoch: Option<u64>,
 }
 
 impl UnlitMeshPack {
@@ -188,7 +188,7 @@ impl RenderFeature for UnlitMeshPack {
         });
         self.pipelines.clear();
         self.uniforms = Some(UniformRing::new(device, "unlit mesh uniforms", 64 << 10)?);
-        self.ring_frame = None;
+        self.ring_epoch = None;
         Ok(())
     }
 
@@ -216,14 +216,14 @@ impl RenderFeature for UnlitMeshPack {
         let mut uniform_data = [0.0_f32; 32];
         uniform_data[..16].copy_from_slice(&camera.view_projection().to_cols_array());
         uniform_data[16..].copy_from_slice(&model.to_cols_array());
-        let frame_index = view.frame_index;
+        let record_epoch = view.record_epoch;
         let ring = self
             .uniforms
             .as_mut()
             .ok_or(RhiError::Unsupported("unlit mesh used before setup"))?;
-        if self.ring_frame != Some(frame_index) {
+        if self.ring_epoch != Some(record_epoch) {
             ring.begin_frame();
-            self.ring_frame = Some(frame_index);
+            self.ring_epoch = Some(record_epoch);
         }
         let uniform = ring.write(ctx.device(), bytemuck::cast_slice(&uniform_data))?;
 

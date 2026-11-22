@@ -36,12 +36,9 @@ fn record_frame(bencher: Bencher<'_, '_>, views: usize) {
             }
         })
         .collect();
-    let mut input = FrameInput {
+    let input = FrameInput {
         views,
         ..FrameInput::default()
     };
-    bencher.bench_local(|| {
-        input.frame_index += 1;
-        renderer.record_frame(&input).expect("frame").commands().len()
-    });
+    bencher.bench_local(|| renderer.record_frame(&input).expect("frame").commands().len());
 }

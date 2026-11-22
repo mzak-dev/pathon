@@ -228,7 +228,6 @@ impl<Scene: FnMut(&FrameContext<'_>) -> Vec<ViewInput>> RunnerApp<Scene> {
             windows: &windows,
         };
         let input = FrameInput {
-            frame_index: frame.frame_index,
             time_seconds: frame.time_seconds,
             delta_seconds: frame.delta_seconds,
             views: (self.scene)(&frame),

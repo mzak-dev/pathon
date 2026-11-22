@@ -13,7 +13,6 @@ pub struct ViewInput {
 // The host owns time: core never reads a clock (ADR-0005).
 #[derive(Clone, PartialEq, Debug, Default)]
 pub struct FrameInput {
-    pub frame_index: u64,
     pub time_seconds: f64,
     pub delta_seconds: f32,
     pub views: Vec<ViewInput>,

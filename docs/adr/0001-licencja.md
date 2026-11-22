@@ -7,7 +7,7 @@
 
 pathon będzie publikowany na crates.io i używany wewnątrz Bevy (MIT OR Apache-2.0), Godota (MIT) i własnego silnika. Część kodu przychodzi z zewnątrz:
 - porty shaderów (FSR 1 EASU / RCAS od AMD, MIT),
-- zależności Rust (wgpu, naga_oil, sp-fidelity-wgpu: MIT / Apache-2.0),
+- zależności Rust (wgpu, wesl, sp-fidelity-wgpu: MIT / Apache-2.0),
 - gdext w rozszerzeniu Godota (MPL-2.0),
 - SDK producentów w paczkach vendorowych (FSR SDK: MIT; DLSS SDK: licencja NVIDIA, poza planem).
 

@@ -249,7 +249,7 @@ Hosty (M6, M7) nie są na ścieżce minimalnej, ale ich szew jest: M2-19 i M4-20
 
 ## M3 — Shadery
 
-- [x] **M3-01 · `pathon-shader` + importy** ★ — WGSL z naga_oil 0.23 (ADR-0021; dokłada 12 crate'ów na Windows, wesl ~50): `ShaderComposer` składa moduły i oddaje WGSL zapisany przez naga; zależność wpięta w `pathon-shader` przez xtask. **Gotowe gdy:** moduł z importami kompiluje się i trafia do RHI.
+- [x] **M3-01 · `pathon-shader` + importy** ★ — WGSL z wesl 0.6 (ADR-0021; dokłada 50 crate'ów na Windows): `ShaderComposer` składa moduły `package::…` i oddaje źródło WGSL; zależność wpięta w `pathon-shader` przez xtask. **Gotowe gdy:** moduł z importami kompiluje się i trafia do RHI.
 - [ ] **M3-02 · Refleksja** ★ — layouty bind groupów z naga. **Gotowe gdy:** layout z refleksji równa się ręcznie zapisanemu w teście.
 - [ ] **M3-03 · Permutacje** ★
   - Klucz shadera (flagi materiału, hooki paczek, profil) oddzielony od **klucza pipeline'u** (layout wierzchołków, formaty celów, MSAA, rodzaj widoku).
@@ -437,7 +437,7 @@ Zmierzone `cargo tree -e normal,build` (unikalne crate'y), 20.11.2026:
 | Konfiguracja | Windows | Linux | macOS | Web |
 | --- | --- | --- | --- | --- |
 | pathon dziś (wgpu + winit + bitflags + bytemuck + glam) | 88 | 119 | 81 | 55 |
-| + naga_oil (`pathon-shader`, zmierzone 21.11.2026) | +12 | | | |
+| + wesl (`pathon-shader`, zmierzone 22.11.2026) | +50 | | | |
 | + sp-fidelity-wgpu (FSR 3, opcjonalne) | +2 | +2 | +2 | |
 | + narzędzia dev (miette, notify) | +42 | +48 | +49 | +49 |
 | + `pathon-bevy` (Bevy 0.20 z wybranymi features) | mierzymy w M6-00 | | | |

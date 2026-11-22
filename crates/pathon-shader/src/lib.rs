@@ -1,22 +1,23 @@
 #![doc = include_str!("../../../docs/crates/pathon-shader.md")]
 
-use naga::back::wgsl::WriterFlags;
-use naga::valid::{Capabilities, ValidationFlags, Validator};
-use naga_oil::compose::{ComposableModuleDescriptor, Composer, NagaModuleDescriptor};
+use std::collections::BTreeMap;
+
+use wesl::Compiler;
+use wesl::resolver::VirtualResolver;
+use wesl::syntax::ModulePath;
 
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum ShaderError {
-    /// Message comes from `naga_oil` and already carries the file name and line.
-    #[error("{message}")]
-    Compose { message: String },
-    #[error("cannot write composed WGSL of {file_path}: {message}")]
-    WriteWgsl { file_path: String, message: String },
+    #[error("invalid module path `{path}`: {message}")]
+    InvalidModulePath { path: String, message: String },
+    #[error("{file_path}: {message}")]
+    Compose { file_path: String, message: String },
 }
 
 #[derive(Debug, Default)]
 pub struct ShaderComposer {
-    composer: Composer,
+    modules: BTreeMap<String, String>,
 }
 
 impl ShaderComposer {
@@ -25,45 +26,51 @@ impl ShaderComposer {
         Self::default()
     }
 
-    /// Registers a module declaring `#define_import_path`. Everything it imports must already be added.
-    /// A module added again under the same import path replaces the earlier one for later compositions.
-    pub fn add_module(&mut self, source: &str, file_path: &str) -> Result<(), ShaderError> {
-        self.composer
-            .add_composable_module(ComposableModuleDescriptor {
-                source,
-                file_path,
-                ..Default::default()
-            })
-            .map(|_| ())
-            .map_err(|error| ShaderError::Compose {
-                message: error.emit_to_string(&self.composer),
-            })
+    /// Registers `source` as `package::<path>`; a module added again under the same path replaces the earlier one.
+    pub fn add_module(&mut self, path: &str, source: &str) -> Result<(), ShaderError> {
+        module_path(path)?;
+        self.modules.insert(path.to_owned(), source.to_owned());
+        Ok(())
     }
 
-    /// Resolves the imports of `source` and returns self-contained WGSL.
-    pub fn compose(&mut self, source: &str, file_path: &str) -> Result<String, ShaderError> {
-        let module = self
-            .composer
-            .make_naga_module(NagaModuleDescriptor {
-                source,
-                file_path,
-                ..Default::default()
-            })
-            .map_err(|error| ShaderError::Compose {
-                message: error.emit_to_string(&self.composer),
-            })?;
-        write_wgsl(&module, file_path)
+    /// Resolves the imports of `source` against the current modules; `file_path` only labels errors.
+    pub fn compose(&self, source: &str, file_path: &str) -> Result<String, ShaderError> {
+        let compose_error = |message: String| ShaderError::Compose {
+            file_path: file_path.to_owned(),
+            message,
+        };
+        let mut resolver = VirtualResolver::new();
+        resolver.add_module(ModulePath::new_root(), source.into());
+        for (path, module_source) in &self.modules {
+            resolver.add_module(module_path(path)?, module_source.as_str().into());
+        }
+        let mut compiler = Compiler::default().with_resolver(resolver);
+        // Stripping would drop overrides the main shader declares but does not read, which pipelines address by name.
+        compiler.options.strip = false;
+        compiler
+            .compile_root()
+            .map(|result| result.to_string())
+            .map_err(|error| compose_error(error.to_string()))
     }
 }
 
-fn write_wgsl(module: &naga::Module, file_path: &str) -> Result<String, ShaderError> {
-    let write_error = |message: String| ShaderError::WriteWgsl {
-        file_path: file_path.to_owned(),
+fn is_identifier(segment: &str) -> bool {
+    let mut characters = segment.chars();
+    characters
+        .next()
+        .is_some_and(|first| first.is_ascii_alphabetic() || first == '_')
+        && characters.all(|character| character.is_ascii_alphanumeric() || character == '_')
+}
+
+fn module_path(path: &str) -> Result<ModulePath, ShaderError> {
+    let invalid = |message: String| ShaderError::InvalidModulePath {
+        path: path.to_owned(),
         message,
     };
-    // The writer needs validation info; the composer's own validation does not expose it.
-    let info = Validator::new(ValidationFlags::all(), Capabilities::all())
-        .validate(module)
-        .map_err(|error| write_error(error.to_string()))?;
-    naga::back::wgsl::write_string(module, &info, WriterFlags::empty()).map_err(|error| write_error(error.to_string()))
+    if !path.split("::").all(is_identifier) {
+        return Err(invalid("expected identifiers separated by `::`".to_owned()));
+    }
+    format!("package::{path}")
+        .parse::<ModulePath>()
+        .map_err(|error| invalid(error.to_string()))
 }

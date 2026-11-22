@@ -47,3 +47,8 @@ harness = false
 name = "window_events"
 harness = false
 required-features = ["window-tests"]
+
+[[test]]
+name = "surface_reconfigure"
+harness = false
+required-features = ["window-tests"]

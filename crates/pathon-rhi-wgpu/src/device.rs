@@ -27,6 +27,29 @@ struct AcquiredFrame {
     surface_texture: wgpu::SurfaceTexture,
     texture: TextureId,
     view: TextureViewId,
+    // Views made from `texture` after the acquire; they die with the frame (see `Objects::end_frame`).
+    derived_views: Vec<TextureViewId>,
+}
+
+impl Objects {
+    fn surface_showing(&self, texture: TextureId) -> Option<SurfaceId> {
+        self.surfaces
+            .iter()
+            .find(|(_, entry)| entry.frame.as_ref().is_some_and(|frame| frame.texture == texture))
+            .map(|(id, _)| id)
+    }
+
+    // Every wgpu handle to the back buffer must be gone before the surface is configured again (DX12 `ResizeBuffers`
+    // fails while one is alive, and the deferred release of pathon's views would keep them for frames). Handles the
+    // caller still holds go stale; destroying them later is harmless.
+    fn end_frame(&mut self, frame: AcquiredFrame) -> wgpu::SurfaceTexture {
+        for view in frame.derived_views {
+            self.views.remove(view);
+        }
+        self.views.remove(frame.view);
+        self.textures.remove(frame.texture);
+        frame.surface_texture
+    }
 }
 
 struct SurfaceEntry {
@@ -485,7 +508,14 @@ impl DeviceApi for WgpuDevice {
                 })
             })
         })??;
-        Ok(self.lock().views.insert(view))
+        let mut objects = self.lock();
+        let id = objects.views.insert(view);
+        if let Some(surface) = objects.surface_showing(texture)
+            && let Some(frame) = objects.surfaces.get_mut(surface).and_then(|entry| entry.frame.as_mut())
+        {
+            frame.derived_views.push(id);
+        }
+        Ok(id)
     }
 
     fn create_sampler(&self, desc: &SamplerDesc) -> Result<SamplerId, RhiError> {
@@ -922,6 +952,7 @@ impl DeviceApi for WgpuDevice {
             surface_texture,
             texture,
             view,
+            derived_views: Vec::new(),
         });
         Ok(SurfaceFrame {
             texture,
@@ -942,10 +973,9 @@ impl DeviceApi for WgpuDevice {
             .frame
             .take()
             .ok_or_else(|| RhiError::validation("R0111", "present without acquire"))?;
-        objects.views.remove(frame.view);
-        objects.textures.remove(frame.texture);
+        let surface_texture = objects.end_frame(frame);
         drop(guard);
-        self.queue.present(frame.surface_texture);
+        self.queue.present(surface_texture);
         Ok(())
     }
 
@@ -954,8 +984,7 @@ impl DeviceApi for WgpuDevice {
         let mut guard = self.lock();
         let objects = &mut *guard;
         if let Some(frame) = objects.surfaces.get_mut(surface).and_then(|entry| entry.frame.take()) {
-            objects.views.remove(frame.view);
-            objects.textures.remove(frame.texture);
+            drop(objects.end_frame(frame));
         }
     }
 
@@ -965,8 +994,7 @@ impl DeviceApi for WgpuDevice {
         if let Some(entry) = objects.surfaces.remove(surface)
             && let Some(frame) = entry.frame
         {
-            objects.views.remove(frame.view);
-            objects.textures.remove(frame.texture);
+            drop(objects.end_frame(frame));
         }
     }
 

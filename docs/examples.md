@@ -59,3 +59,11 @@ cargo test -p pathon-examples --features gpu-tests
 ```sh
 cargo test -p pathon-examples --features window-tests --test window_events
 ```
+
+## Test rekonfiguracji powierzchni
+
+`examples/tests/surface_reconfigure.rs` (też `window-tests` i bez harnessu) renderuje klatki do prawdziwego okna i po nich rekonfiguruje powierzchnię: te same parametry, kilka zmian rozmiaru okna, kolejne przestrzenie barw. Każda klatka ma się wyrenderować (bez R0009). Pilnuje błędu DX12, w którym `ResizeBuffers` padał, bo widoki poprzedniej klatki jeszcze żyły ([ADR-0034](adr/0034-wyjscie-hdr.md)). `PATHON_BACKEND=dx12|vulkan|metal` wybiera backend; bez wyświetlacza lub adaptera test się pomija, chyba że ustawiono `PATHON_REQUIRE_GPU=1`.
+
+```sh
+PATHON_BACKEND=dx12 PATHON_REQUIRE_GPU=1 cargo test -p pathon-examples --features window-tests --test surface_reconfigure
+```

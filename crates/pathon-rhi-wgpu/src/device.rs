@@ -494,17 +494,23 @@ impl DeviceApi for WgpuDevice {
             let described_format = convert::format_to_wgpu(entry.desc.format)
                 .ok()
                 .filter(|format| *format != entry.texture.format());
+            let format = view_format.or(described_format);
+            // A view that reinterprets the format (sRGB over UNORM) cannot be a storage binding, and wgpu rejects it
+            // when the view inherits `STORAGE_BINDING` from a texture that compute writes mips into.
+            let usage = format
+                .filter(|format| *format != entry.texture.format())
+                .map(|_| entry.texture.usage() - wgpu::TextureUsages::STORAGE_BINDING);
             self.scoped(|| {
                 entry.texture.create_view(&wgpu::TextureViewDescriptor {
                     label: Some(entry.desc.label),
-                    format: view_format.or(described_format),
+                    format,
+                    usage,
                     dimension: desc.dimension.map(convert::view_dimension_to_wgpu),
                     aspect: convert::aspect_to_wgpu(desc.aspect),
                     base_mip_level: desc.base_mip,
                     mip_level_count: desc.mip_count,
                     base_array_layer: desc.base_layer,
                     array_layer_count: desc.layer_count,
-                    ..Default::default()
                 })
             })
         })??;

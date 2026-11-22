@@ -8,8 +8,9 @@ const fn code(code: &'static str, title: &'static str) -> CodeInfo {
     CodeInfo { code, title }
 }
 
-// G: frame graph, P: platform, M: meshes and geometry pool, S: shaders, T: profiling, N: scene, X: textures, Y:
-// materials. Every entry needs docs/diag/<code>.md.
+// R: RHI, G: frame graph, F: render features (packs), P: platform, M: meshes and geometry pool, S: shaders,
+// T: profiling, N: scene, X: textures, Y: materials, H: HDR output, Q: post, B: bindless textures. Every entry needs
+// docs/diag/<code>.md.
 pub const CODES: &[CodeInfo] = &[
     code("R0001", "no adapter or device could be created"),
     code("R0002", "adapter lacks required features"),
@@ -92,6 +93,15 @@ pub const CODES: &[CodeInfo] = &[
     code("Q0001", "post-processing setting outside its range was repaired"),
     code("Q0002", "output transfer is not implemented yet, sRGB used"),
     code("Q0003", "tonemapping skipped because the exposure slot is missing"),
+    code(
+        "B0001",
+        "binding arrays unavailable, textures use a bind group per material",
+    ),
+    code("B0002", "bindless textures requested but unavailable on this device"),
+    code("B0003", "texture table is full"),
+    code("B0004", "texture handle is stale or unknown"),
+    code("B0005", "material uses more textures than a bind group holds"),
+    code("B0006", "invalid texture table configuration"),
 ];
 
 pub fn is_registered(code: &str) -> bool {

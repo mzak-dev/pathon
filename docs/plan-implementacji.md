@@ -250,7 +250,8 @@ Hosty (M6, M7) nie są na ścieżce minimalnej, ale ich szew jest: M2-19 i M4-20
 ## M3 — Shadery
 
 - [x] **M3-01 · `pathon-shader` + importy** ★ — WGSL z wesl 0.6 (ADR-0021; dokłada 50 crate'ów na Windows): `ShaderComposer` składa moduły `package::…` i oddaje źródło WGSL; zależność wpięta w `pathon-shader` przez xtask. **Gotowe gdy:** moduł z importami kompiluje się i trafia do RHI.
-- [ ] **M3-02 · Refleksja** ★ — layouty bind groupów z naga. **Gotowe gdy:** layout z refleksji równa się ręcznie zapisanemu w teście.
+- [x] **M3-02 · Refleksja** ★ — layouty bind groupów z naga. **Gotowe gdy:** layout z refleksji równa się ręcznie zapisanemu w teście.
+  - **Stan 22.11.2026:** `reflect_bind_groups` w `pathon-shader` (naga 30, tylko `wgsl-in`, wpięta w `pathon-shader` przez xtask) zwraca layouty grup z `visibility` z podanych entry pointów; test porównuje wynik z ręcznie zapisanym layoutem shadera render, a test GPU tworzy z niego potok compute.
 - [ ] **M3-03 · Permutacje** ★
   - Klucz shadera (flagi materiału, hooki paczek, profil) oddzielony od **klucza pipeline'u** (layout wierzchołków, formaty celów, MSAA, rodzaj widoku).
   - **Gotowe gdy:** testy kolizji kluczy.

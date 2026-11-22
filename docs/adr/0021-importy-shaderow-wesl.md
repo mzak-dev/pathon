@@ -18,7 +18,7 @@ Spike wesl 0.6.0 (22.11.2026) na tych samych przypadkach: wszystkie składają s
 - **Nazwy:** deklaracje modułów dostają nazwy z prefiksem ścieżki (`package_colors_pack`); shader główny zachowuje swoje. Override adresowany nazwą (`ShaderStage::constants`, ADR-0018) musi być zadeklarowany w shaderze głównym; override z modułu jest adresowany przez `@id(n)`, a identyfikatory `@id` muszą być unikalne w shaderze głównym i we wszystkich modułach naraz (naga odrzuca duplikat dopiero po złożeniu).
 - **Usuwanie nieużywanego kodu:** `strip = true` z `keep_main = true`. Shader główny zachowuje wszystkie deklaracje, także nieużywane overrides, żeby klucz potoku (M3-03) nie zależał od tego, co optymalizator wyrzucił; z modułów zostaje tylko to, do czego prowadzi shader główny, więc nieużywane bindingi, overrides i entry pointy modułu nie trafiają do wyniku (refleksja M3-02 widzi tylko to, co shader używa). Override z modułu, którego żadna funkcja nie czyta, znika razem z modułem.
 - Ponowne dodanie modułu pod tą samą ścieżką zastępuje go (pod hot-reload, M3-06).
-- `pathon-shader` nie zależy od RHI, wgpu ani naga; łączy go z RHI kod wołający (dziś testy, w M3-03 rejestr shaderów w rdzeniu udostępniony paczkom przez `pathon-api`). Refleksja (M3-02) parsuje złożony WGSL przez naga.
+- `pathon-shader` zależy od `pathon-rhi-types` i naga (refleksja, ADR-0006), nie od backendów RHI ani wgpu; z RHI łączy go kod wołający (dziś testy, w M3-03 rejestr shaderów w rdzeniu udostępniony paczkom przez `pathon-api`). Refleksja (M3-02) parsuje złożony WGSL przez naga.
 - Błędy składania to `ShaderError` z komunikatem wesl i ścieżką składanego shadera; kody S z lokalizacją są w M3-07.
 - wesl jest wpinany przez `PINNED_DEPENDENCIES` w xtask tylko w `pathon-shader`.
 

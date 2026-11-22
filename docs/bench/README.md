@@ -10,6 +10,8 @@ cargo bench -p pathon-core --bench frame
 cargo bench -p pathon-examples --bench recording   # wymaga GPU
 ```
 
+Inne pomiary mają własne noty: [cache potoków na dysku (M3-05)](pipeline-cache.md) — test GPU, nie divan.
+
 ## Kompilacja grafu klatki (M2-07)
 
 Łańcuch passów postprocessu kończący się w celu renderu (`crates/pathon-graph/benches/compile.rs`).

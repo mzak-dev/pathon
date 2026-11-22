@@ -68,6 +68,8 @@ pub const CODES: &[CodeInfo] = &[
     code("S0109", "invalid shader resource or binding"),
     code("S0110", "pipeline constant names no override of the shader"),
     code("S0111", "shader composition error"),
+    code("S0201", "stored pipeline cache not used"),
+    code("S0202", "pipeline cache could not be saved"),
 ];
 
 pub fn is_registered(code: &str) -> bool {

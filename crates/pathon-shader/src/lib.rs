@@ -2,6 +2,7 @@
 
 mod background;
 mod diagnostic;
+mod disk_cache;
 mod features;
 mod issues;
 mod library;
@@ -16,6 +17,9 @@ use std::sync::Arc;
 
 pub use background::{BackgroundCompiler, BackgroundConfig, BuildError, BuildFailure, Lookup, MissPolicy, PumpReport};
 pub use diagnostic::{ShaderDiagnostic, SourceLocation};
+#[cfg(all(feature = "fs", not(target_arch = "wasm32")))]
+pub use disk_cache::FileCacheStore;
+pub use disk_cache::{CacheError, CacheSeed, CacheStore, FnCacheStore, PersistentPipelineCache, SaveOutcome};
 pub use features::ShaderFeatures;
 pub use library::{ShaderKey, ShaderLibrary};
 pub use overrides::check_pipeline_constants;

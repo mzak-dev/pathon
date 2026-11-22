@@ -49,3 +49,13 @@ Pola `f32` porównują i hashują bity (jak `OverrideValue`), żeby opis zachowa
 - Nowe pole w `DeviceRequest` i nowa metoda w `DeviceApi` — zmiana łamiąca dla implementacji `DeviceApi` przed M5-07.
 - Kod hosta wczytujący blob z dysku ma jeden blok `unsafe`; to świadome przeniesienie ryzyka, które wgpu też zostawia aplikacji.
 - Bez SPIR-V w API nie da się podać shadera skompilowanego poza naga (np. z DXC); to nie jest dziś potrzebne.
+
+## Uzupełnienie (M3-05, 22.11.2026): gdzie host zapisuje blob
+
+Pierwotna decyzja zostawiła M3-05 pytanie „gdzie i pod jakim kluczem”. Rozstrzygnięcie, bez zmian w `rhi-types`:
+
+- **Rdzeń nie zna systemu plików.** `pathon-shader` ma trait `CacheStore` (`load` i `store` jednego bloba; `store` podmienia atomowo), `FnCacheStore` z dwóch closure i `FileCacheStore` za cechą `fs` (nie na wasm: plik tymczasowy obok i `rename`). Ścieżkę podaje host.
+- **`PersistentPipelineCache`** opakowuje blob w nagłówek (magic, wersja formatu, wersja pathon, adapter, długość i suma FNV-1a) i **jedyny `unsafe` w `pathon-shader`**, wywołanie `PipelineCacheData::from_bytes`: payload po przejściu nagłówka, wersji i sumy kontrolnej to bajty, które zwrócił `pipeline_cache_data`, a backend sprawdza jeszcze swój nagłówek (adapter, sterownik, wersja wgpu). Pusty, ucięty, uszkodzony albo obcy plik to ostrzeżenie S0201 i pusty cache, nigdy błąd.
+- **Klucz** to ścieżka (jeden plik = jeden blob), nie nazwa adaptera: adapter jest znany dopiero po utworzeniu urządzenia, a blob trzeba podać w `DeviceRequest`. Zamiast tego plik zapamiętuje adapter, który go zapisał, a `CacheSeed::adapter_mismatch` wyjaśnia po utworzeniu urządzenia, dlaczego backend go zignorował; host z kilkoma adapterami podaje ścieżkę na adapter.
+- **Zapis:** `save` przy zamknięciu, `save_if_due(device, now)` okresowo (zegar podaje host, bo `Instant::now` panikuje na wasm), pomijany dla pustego bloba (sterowniki software) i dla takiego samego jak w store. Zapis robi I/O, więc host woła go z wątku pomocniczego.
+- **Pomiar** ([docs/bench/pipeline-cache.md](../bench/pipeline-cache.md)): z wyłączonym cache sterownika drugi start 8 potoków jest 3,5–5,7× szybszy od pierwszego i 3–7× szybszy od startu bez cache; z włączonym cache sterownika AMD (domyślnie) drugi start jest równie szybki bez naszego bloba, więc zysk w tej konfiguracji daje sterownik. Własny blob ma sens tam, gdzie cache sterownika nie działa.

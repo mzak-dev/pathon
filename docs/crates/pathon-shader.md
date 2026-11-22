@@ -1,6 +1,6 @@
 # pathon-shader
 
-Składanie shaderów WGSL z modułów (M3-01, [ADR-0021](../adr/0021-importy-shaderow-wesl.md)), permutacje i kesze (M3-03, [ADR-0023](../adr/0023-permutacje-shaderow.md)), kompilacja w tle (M3-04, [ADR-0024](../adr/0024-kompilacja-w-tle.md)). Crate zależy od `pathon-rhi-types`, `pathon-api` (`TaskPool`, `Diagnostic`) i naga, nie od backendów RHI ani wgpu: bierze tekst, oddaje tekst, który trafia do `create_shader_module`, oraz layouty bind groupów z refleksji ([ADR-0006](../adr/0006-wejscie-shaderow.md)).
+Składanie shaderów WGSL z modułów (M3-01, [ADR-0021](../adr/0021-importy-shaderow-wesl.md)), permutacje i kesze (M3-03, [ADR-0023](../adr/0023-permutacje-shaderow.md)), kompilacja w tle (M3-04, [ADR-0024](../adr/0024-kompilacja-w-tle.md)), błędy z lokalizacją (M3-07, [ADR-0032](../adr/0032-bledy-shaderow-z-lokalizacja.md)) i cache potoków na dysku (M3-05, [ADR-0019](../adr/0019-pipeline-cache-i-zrodlo-shaderow.md)). Crate zależy od `pathon-rhi-types`, `pathon-api` (`TaskPool`, `Diagnostic`) i naga, nie od backendów RHI ani wgpu: bierze tekst, oddaje tekst, który trafia do `create_shader_module`, oraz layouty bind groupów z refleksji ([ADR-0006](../adr/0006-wejscie-shaderow.md)).
 
 - **`ShaderComposer::add_module(path, source)`** — rejestruje moduł pod ścieżką `path` (identyfikatory rozdzielone `::`, np. `colors` albo `lighting::pbr`); shader importuje go jako `package::<path>`. Dodanie modułu pod tą samą ścieżką zastępuje poprzedni, a moduły zależne od niego widzą nową treść. Moduł jest parsowany dopiero przy składaniu.
 - **`ShaderComposer::compose(source, file_path)`** — składa shader od zera z aktualnych modułów i zwraca samodzielne źródło WGSL. `file_path` służy tylko do komunikatów błędów.
@@ -60,6 +60,27 @@ if let Lookup::Ready(module) = module {
 - **Drop i zasoby** — drop kompilatora niczego nie joinuje: ustawia flagę anulowania, kolejka przepada, a zasób, który zadanie dokończy po dropie albo który leży nieodebrany w kanale, jest niszczony przez przesyłkę na uchwycie urządzenia. Zasoby odebrane i keszowane oddaje `release_all()` (do `RecordCtx::release_later`, ADR-0022). `finish_all(max_wait)` kończy wszystko do końca (rozgrzewka, testy).
 
 Testy: `tests/background.rs` (urządzenie `rhi-null` z opóźnieniem kompilacji 40 ms na build i bramką sterowaną z testu) sprawdza deduplikację, politykę, błędy i panikę, limit równoległości, brak joinu przy dropie bez wycieków, unieważnienie przy zmianie źródła oraz p99 kosztu klatki dla 40 nowych permutacji (budżet 10 ms przy buildzie 40 ms; test kontrolny pokazuje, że ścieżka blokująca budżet łamie); bez wątków liczy buildy na klatkę, a czas tylko wypisuje. `tests/background_gpu.rs` (`--features gpu-tests`) kompiluje 16 permutacji compute na realnym wgpu na wątkach puli, sprawdza ten sam budżet i wyniki obliczeń.
+
+## Cache na dysku (M3-05)
+
+`PersistentPipelineCache` zapisuje blob cache potoków urządzenia (ADR-0019: `DeviceRequest::pipeline_cache`, `DeviceApi::pipeline_cache_data`) między uruchomieniami. Rdzeń nie zna systemu plików: miejsce wskazuje host przez `CacheStore`.
+
+```rust,ignore
+let cache = PersistentPipelineCache::new(Arc::new(FileCacheStore::new(app_cache_dir.join("pipelines.bin"))));
+let seed = cache.load();                                   // przed urządzeniem; problemy to ostrzeżenia w seed.warnings()
+let device = Device::build(&DeviceRequest { pipeline_cache: seed.data().cloned(), ..request })?;
+if let Some(warning) = seed.adapter_mismatch(device.caps()) { /* log */ }
+// co klatkę (tanie) albo z wątku pomocniczego:
+if let Some(Err(error)) = cache.save_if_due(&device, Instant::now()) { log(error.diagnostic()) }
+// przy zamknięciu:
+cache.save(&device)?;
+```
+
+- **`CacheStore`** — `load() -> io::Result<Option<Vec<u8>>>` i `store(&[u8]) -> io::Result<()>` dla jednego bloba; `store` musi podmieniać atomowo. `FnCacheStore::new(load, store)` składa go z dwóch closure, `FileCacheStore::new(ścieżka)` (cecha `fs`, nie na wasm) tworzy katalogi, zapisuje do pliku tymczasowego obok i zmienia nazwę (crash w trakcie zapisu zostawia poprzedni plik). Ścieżkę podaje host (katalog cache aplikacji); jeden plik na adapter, jeśli host przełącza adaptery.
+- **Plik** to nagłówek (magic, wersja formatu, wersja pathon, adapter, który go zapisał, długość i suma kontrolna FNV-1a payloadu) i blob backendu. `load` nigdy nie zwraca błędu: pusty, ucięty, uszkodzony, obcy albo zapisany przez inną wersję pathon plik, a także błąd odczytu, to **ostrzeżenie [S0201](../diag/S0201.md)** w `seed.warnings()` i pusty seed. Blob jest przy tym walidowany przez backend (adapter, sterownik, wersja wgpu: ADR-0019) i odrzucany bez błędu. `adapter_mismatch(caps)` wyjaśnia po utworzeniu urządzenia, że blob pochodzi z innego adaptera lub sterownika.
+- **`save(device)`** zapisuje bieżący blob: `Saved`, `Unchanged` (taki sam jak w store), `Empty` (sterownik nic nie trzyma, np. software; plik zostaje) albo `Unsupported` (brak `Features::PIPELINE_CACHE`, backend null). Błąd zapisu to `CacheError::Io` z `diagnostic()` ([S0202](../diag/S0202.md), ostrzeżenie). `save_if_due(device, now)` zapisuje co `with_save_interval` (domyślnie 60 s); pierwsze wywołanie tylko uruchamia zegar, a `now` podaje host, więc moduł nie czyta zegara (`Instant::now` panikuje na `wasm32-unknown-unknown`).
+- **Wątki:** `PersistentPipelineCache` jest `Send + Sync`; `save` robi I/O, więc host woła je z wątku pomocniczego (przez `TaskPool::try_spawn`), nie z wątku klatki.
+- Test: `tests/disk_cache.rs` (format, uszkodzenia, ostrzeżenia, atomowość, okresowy zapis, plik) i `tests/disk_cache_gpu.rs` (`--features gpu-tests`): trzy starty w osobnych procesach, drugi start 3,5–5,7× szybszy od pierwszego; wynik i uwagi o cache sterownika w [docs/bench/pipeline-cache.md](../bench/pipeline-cache.md).
 
 ## Błędy shaderów (M3-07)
 
@@ -123,4 +144,4 @@ Testy GPU (`--features gpu-tests`) składają cztery permutacje compute z `@if` 
 - Flaga, której nikt nie włączył, jest wyłączona, więc literówka w nazwie po cichu wybiera `@else` albo pomija deklarację; ostrzeżenie S0106 łapie włączoną flagę, której nic nie czyta, a test paczki musi sprawdzać permutacje, których używa.
 - Źródło z BOM jest przyjmowane (BOM jest obcinany).
 - **Głębokość:** patologicznie głębokie wyrażenia lub długie łańcuchy importów mogą przepełnić stos (wesl przechodzi AST rekurencją), a nie zwrócić `Err`; limity są niższe w buildzie debug. To limit parsera wesl: źródła shaderów to kod deweloperski, a stacker ani wątek nie wchodzą w grę (ADR-0004, wasm). Szczegóły w ADR-0021.
-- **Koszt:** składanie rośnie mniej więcej kwadratowo z liczbą deklaracji (kilkaset deklaracji to dziesiąte części sekundy); wynik jest keszowany (`ShaderLibrary::wgsl`), a składanie nowej permutacji idzie w tle (`BackgroundCompiler`). Cache na dysku to M3-05.
+- **Koszt:** składanie rośnie mniej więcej kwadratowo z liczbą deklaracji (kilkaset deklaracji to dziesiąte części sekundy); wynik jest keszowany (`ShaderLibrary::wgsl`), a składanie nowej permutacji idzie w tle (`BackgroundCompiler`). Cache potoków (nie złożonego WGSL) idzie na dysk przez `PersistentPipelineCache`; złożony WGSL nie jest zapisywany.

@@ -13,6 +13,8 @@ pub(crate) const INVALID_SHADER: &str = "S0108";
 pub(crate) const INVALID_BINDING: &str = "S0109";
 pub(crate) const UNKNOWN_OVERRIDE: &str = "S0110";
 pub(crate) const COMPOSITION_ERROR: &str = "S0111";
+pub(crate) const CACHE_REJECTED: &str = "S0201";
+pub(crate) const CACHE_NOT_SAVED: &str = "S0202";
 
 /// A place in the source a developer wrote: the module's own file and line, not the composed text.
 #[derive(Clone, PartialEq, Eq, Debug)]

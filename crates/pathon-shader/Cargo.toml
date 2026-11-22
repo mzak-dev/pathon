@@ -17,7 +17,9 @@ wesl.workspace = true
 pathon-rhi.workspace = true
 
 [features]
-gpu-tests = []
+# `FileCacheStore`, the file behind `PersistentPipelineCache` (not on wasm).
+fs = []
+gpu-tests = ["fs"]
 
 [lints]
 workspace = true

@@ -282,10 +282,11 @@ Hosty (M6, M7) nie są na ścieżce minimalnej, ale ich szew jest: M2-19 i M4-20
   - Wspólna dla forward, visibility buffer i RT.
   - **Gotowe gdy:** scena testowa z wieloma meshami w jednym buforze.
   - **Stan 22.11.2026:** `GeometryPool` (chunki mega-buforów per strumień, alokacja w jednostkach, odroczone zwalnianie, reuse, diagnostyki `M0001`…`M0006`), `VertexLayout` (mapowanie na `pathon-rhi-types`), `TransformHistory` i `DeformedPositions` (layout dla M4-12) w [pathon-mesh](crates/pathon-mesh.md), [ADR-0027](adr/0027-pula-geometrii-i-dane-poprzedniej-klatki.md). Testy na `rhi-null` (alokacje, nakładanie, reuse, granice, wyczerpanie) oraz test GPU rysujący 3 meshe z jednego chunka z odczytem pikseli; przykład `mesh_pool`. Defragmentacja i budowa BLAS (`BLAS_INPUT`) czekają na użytkownika (M8).
-- [ ] **M4-02 · `pathon-scene`** ★
+- [x] **M4-02 · `pathon-scene`** ★
   - Render world w SoA, kamery, światła, API extract, podwójny bufor.
   - Bez systemu assetów i I/O plików: dane z pamięci przez handle'y; adaptery hostów mapują na nie swoje assety.
   - **Gotowe gdy:** extract 10 000 instancji mieści się w budżecie z M4-17.
+  - **Stan 22.11.2026:** [pathon-scene](crates/pathon-scene.md), [ADR-0029](adr/0029-render-world-i-extract.md): instancje w SoA z generacyjnymi uchwytami, kamery (perspektywa i ortho, reverse-Z, jitter z `ViewCtx`), światła w lux i lumenach, `Scene::extract` z podwójnym buforem (migawki `Arc`, catch-up zmienionych slotów, dirty flags, `previous_model`), diagnostyki `N0001`…`N0004`. `pathon-scene` nie zależy od `pathon-mesh` (`pack-boundary` bez zmian): mesh i materiał to `MeshHandle`/`MaterialHandle` mapowane przez `Id::raw`. **Budżet tymczasowy** (do przeniesienia w M4-17): 10 000 instancji < 2 ms CPU w release (spawn ≈ 1,2 ms, ruch ≈ 0,19 ms); testy: model losowy 300 extractów, zero alokacji w stanie ustalonym, 100 000 instancji; przykład `scene_extract`. Przypisanie do klastrów, culling i wgrywanie na GPU to M4-05 / M4-11.
 - [ ] **M4-03 · `pathon-material`** ★
   - Materiał jako funkcja WGSL „wejścia powierzchni → BSDF”, oddzielona od entry pointu; ta sama funkcja dla forward, visibility buffer i punktu trafienia RT (bez pochodnych ekranowych).
   - Materiał standardowy: model glTF metallic-roughness + rozszerzenia KHR — wspólny mianownik `StandardMaterial` z Bevy i `StandardMaterial3D` z Godota.

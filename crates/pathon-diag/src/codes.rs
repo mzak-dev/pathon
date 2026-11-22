@@ -8,8 +8,8 @@ const fn code(code: &'static str, title: &'static str) -> CodeInfo {
     CodeInfo { code, title }
 }
 
-// R: RHI, G: frame graph, F: render features (packs), P: platform, M: meshes and geometry pool, S: shaders. Every
-// entry needs docs/diag/<code>.md.
+// R: RHI, G: frame graph, F: render features (packs), P: platform, M: meshes and geometry pool, S: shaders, N: scene.
+// Every entry needs docs/diag/<code>.md.
 pub const CODES: &[CodeInfo] = &[
     code("R0001", "no adapter or device could be created"),
     code("R0002", "adapter lacks required features"),
@@ -57,6 +57,10 @@ pub const CODES: &[CodeInfo] = &[
     code("M0006", "unknown or removed mesh"),
     code("S0001", "shader permutation failed to compile in the background"),
     code("S0002", "pipeline failed to compile in the background"),
+    code("N0001", "scene handle is stale or unknown"),
+    code("N0002", "invalid camera"),
+    code("N0003", "invalid light"),
+    code("N0004", "scene value is not finite"),
 ];
 
 pub fn is_registered(code: &str) -> bool {

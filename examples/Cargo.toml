@@ -15,6 +15,7 @@ pathon.workspace = true
 pathon-devtools.workspace = true
 pathon-mesh.workspace = true
 pathon-rhi-wgpu.workspace = true
+pathon-scene.workspace = true
 pathon-test.workspace = true
 wgpu.workspace = true
 winit.workspace = true

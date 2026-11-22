@@ -1,0 +1,25 @@
+[package]
+name = "pathon-scene"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[package.metadata.pathon]
+kind = "pack"
+
+[dependencies]
+bitflags.workspace = true
+pathon-api.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+divan.workspace = true
+
+[[bench]]
+name = "extract"
+harness = false
+
+[lints]
+workspace = true

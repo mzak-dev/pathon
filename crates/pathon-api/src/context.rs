@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use glam::Vec2;
 use pathon_diag::Diagnostic;
 use pathon_graph::{FrameGraph, GraphTextureDesc, TextureHandle};
@@ -10,8 +12,8 @@ use crate::task_pool::TaskPool;
 use crate::view::ViewCtx;
 
 pub struct SetupCtx<'frame> {
-    device: &'frame dyn DeviceApi,
-    task_pool: &'frame dyn TaskPool,
+    device: &'frame Arc<dyn DeviceApi>,
+    task_pool: &'frame Arc<dyn TaskPool>,
     shared: &'frame mut Shared,
 }
 
@@ -25,7 +27,11 @@ impl std::fmt::Debug for SetupCtx<'_> {
 
 impl<'frame> SetupCtx<'frame> {
     #[doc(hidden)]
-    pub fn new(device: &'frame dyn DeviceApi, task_pool: &'frame dyn TaskPool, shared: &'frame mut Shared) -> Self {
+    pub fn new(
+        device: &'frame Arc<dyn DeviceApi>,
+        task_pool: &'frame Arc<dyn TaskPool>,
+        shared: &'frame mut Shared,
+    ) -> Self {
         Self {
             device,
             task_pool,
@@ -34,7 +40,7 @@ impl<'frame> SetupCtx<'frame> {
     }
 
     pub fn device(&self) -> &'frame dyn DeviceApi {
-        self.device
+        self.device.as_ref()
     }
 
     pub fn caps(&self) -> &'frame Caps {
@@ -42,7 +48,16 @@ impl<'frame> SetupCtx<'frame> {
     }
 
     pub fn task_pool(&self) -> &'frame dyn TaskPool {
-        self.task_pool
+        self.task_pool.as_ref()
+    }
+
+    // Owned handles for work that outlives the frame, such as background compilation (ADR-0024).
+    pub fn device_handle(&self) -> Arc<dyn DeviceApi> {
+        Arc::clone(self.device)
+    }
+
+    pub fn task_pool_handle(&self) -> Arc<dyn TaskPool> {
+        Arc::clone(self.task_pool)
     }
 
     pub fn shared(&mut self) -> &mut Shared {
@@ -206,6 +221,20 @@ mod tests {
 
     use super::*;
     use crate::view::{Camera, ViewId};
+
+    #[test]
+    fn setup_hands_out_owned_handles_to_the_same_device_and_pool() {
+        let device: Arc<dyn DeviceApi> = Arc::new(NullDevice::new());
+        let pool: Arc<dyn TaskPool> = Arc::new(crate::SerialTaskPool);
+        let mut shared = Shared::new();
+        let ctx = SetupCtx::new(&device, &pool, &mut shared);
+
+        let (device_handle, pool_handle) = (ctx.device_handle(), ctx.task_pool_handle());
+
+        assert!(Arc::ptr_eq(&device_handle, &device));
+        assert!(Arc::ptr_eq(&pool_handle, &pool));
+        assert_eq!(ctx.task_pool().thread_count(), 1);
+    }
 
     #[test]
     fn every_slot_but_output_has_a_contract_format() {

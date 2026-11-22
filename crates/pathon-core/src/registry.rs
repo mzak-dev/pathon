@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use pathon_api::{
     Negotiation, PrepareCtx, RecordCtx, RenderFeature, Requirements, Role, SetupCtx, Shared, TaskPool, ViewCtx,
 };
@@ -141,7 +143,7 @@ impl Registry {
     }
 
     // Phase 2, on the real capabilities, then order, roles and setup.
-    pub(crate) fn activate(&mut self, device: &dyn DeviceApi, task_pool: &dyn TaskPool, shared: &mut Shared) {
+    pub(crate) fn activate(&mut self, device: &Arc<dyn DeviceApi>, task_pool: &Arc<dyn TaskPool>, shared: &mut Shared) {
         let all: Vec<usize> = (0..self.entries.len()).collect();
         self.negotiate(&all, device.caps());
         self.sort();
@@ -150,7 +152,7 @@ impl Registry {
 
     // Features that kept working get `on_device_reset`; those switched off by F0105 on the old device are given a
     // fresh start (negotiation, order, role, setup) because the failure may have belonged to that device.
-    pub(crate) fn reset(&mut self, device: &dyn DeviceApi, task_pool: &dyn TaskPool, shared: &mut Shared) {
+    pub(crate) fn reset(&mut self, device: &Arc<dyn DeviceApi>, task_pool: &Arc<dyn TaskPool>, shared: &mut Shared) {
         let mut ctx = SetupCtx::new(device, task_pool, shared);
         let mut kept = Vec::new();
         for index in self.order.clone() {

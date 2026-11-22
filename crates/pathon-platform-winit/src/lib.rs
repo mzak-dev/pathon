@@ -55,6 +55,13 @@ impl PlatformWindow for WinitWindow {
     fn request_redraw(&self) {
         self.0.request_redraw();
     }
+
+    fn request_inner_size(&self, size: PhysicalSize) {
+        // Platforms that resize at once report it as `Resized` too, so the returned size is not needed.
+        let _ = self
+            .0
+            .request_inner_size(winit::dpi::PhysicalSize::new(size.width, size.height));
+    }
 }
 
 #[derive(Debug, Default)]

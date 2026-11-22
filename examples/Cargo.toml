@@ -20,6 +20,7 @@ winit.workspace = true
 
 [features]
 gpu-tests = []
+window-tests = []
 
 [lints]
 workspace = true
@@ -30,3 +31,8 @@ divan.workspace = true
 [[bench]]
 name = "recording"
 harness = false
+
+[[test]]
+name = "window_events"
+harness = false
+required-features = ["window-tests"]

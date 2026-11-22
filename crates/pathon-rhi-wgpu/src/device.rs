@@ -455,10 +455,15 @@ impl DeviceApi for WgpuDevice {
     fn create_texture_view(&self, texture: TextureId, desc: &TextureViewDesc) -> Result<TextureViewId, RhiError> {
         let view_format = desc.format.map(convert::format_to_wgpu).transpose()?;
         let view = self.texture_entry(texture, |entry| {
+            // Web surfaces are configured as Unorm but described as sRGB (`choose_surface_format`): the default view
+            // must use the described format, or the sRGB encoding is lost and web colours differ from native.
+            let described_format = convert::format_to_wgpu(entry.desc.format)
+                .ok()
+                .filter(|format| *format != entry.texture.format());
             self.scoped(|| {
                 entry.texture.create_view(&wgpu::TextureViewDescriptor {
                     label: Some(entry.desc.label),
-                    format: view_format,
+                    format: view_format.or(described_format),
                     dimension: desc.dimension.map(convert::view_dimension_to_wgpu),
                     aspect: convert::aspect_to_wgpu(desc.aspect),
                     base_mip_level: desc.base_mip,

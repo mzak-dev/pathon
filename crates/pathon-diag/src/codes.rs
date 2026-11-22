@@ -8,8 +8,8 @@ const fn code(code: &'static str, title: &'static str) -> CodeInfo {
     CodeInfo { code, title }
 }
 
-// R: RHI, G: frame graph, F: render features (packs), P: platform, M: meshes and geometry pool, S: shaders,
-// T: profiling, N: scene, X: textures, Y: materials, H: HDR output. Every entry needs docs/diag/<code>.md.
+// G: frame graph, P: platform, M: meshes and geometry pool, S: shaders, T: profiling, N: scene, X: textures, Y:
+// materials. Every entry needs docs/diag/<code>.md.
 pub const CODES: &[CodeInfo] = &[
     code("R0001", "no adapter or device could be created"),
     code("R0002", "adapter lacks required features"),
@@ -89,6 +89,9 @@ pub const CODES: &[CodeInfo] = &[
     code("S0111", "shader composition error"),
     code("S0201", "stored pipeline cache not used"),
     code("S0202", "pipeline cache could not be saved"),
+    code("Q0001", "post-processing setting outside its range was repaired"),
+    code("Q0002", "output transfer is not implemented yet, sRGB used"),
+    code("Q0003", "tonemapping skipped because the exposure slot is missing"),
 ];
 
 pub fn is_registered(code: &str) -> bool {

@@ -15,6 +15,7 @@ Crate `examples/` gra rolę hosta, więc wolno mu używać wgpu i winit wprost (
 | `texture_load` | M4-13 | — | tekstura sRGB przez `TextureLoader`: wybór formatu według `Caps` i mipmapy w compute; szachownica pokazuje uśrednianie w świetle liniowym (każdy mip 188, nie 128), wynik jako log ([pathon-texture](crates/pathon-texture.md)); bez rendera i okna, na samym `Device` |
 | `material_sphere` | M4-03 | — | siatka 5 × 3 kul z materiałem standardowym (dielektryk, metal, lakier z clearcoatem; chropowatość rośnie w kolumnach), jedno światło kierunkowe i stały ambient zamiast IBL; wynik do pliku PNG (argument, domyślnie `material_sphere.png`), `cargo run -p pathon-examples --bin material_sphere` ([pathon-material](crates/pathon-material.md)); bez rendera i okna, na samym `Device` |
 | `hdr_output` | M4-16 | C | raport, jakie przestrzenie barw oferuje powierzchnia okna i co wyświetla (`PATHON_COLOR_SPACE`, `PATHON_BACKEND`); bez tonemappingu, tylko możliwości ([ADR-0034](adr/0034-wyjscie-hdr.md)) |
+| `post_chain` | M4-09 | — | syntetyczna klatka HDR (rampa 16 stopni, kolorowe paski, dwie jasne plamki) przez `PostPack`: auto-ekspozycja adaptuje się przez 90 klatek, bloom i tonemapping (`aces` albo `neutral`) do PNG, `cargo run -p pathon-examples --bin post_chain -- aces wynik.png` ([pathon-post](crates/pathon-post.md)); offscreen, bez okna |
 | `host_foreign_device` | M2-19 | B | host tworzy urządzenie i swapchain; pathon przyjmuje urządzenie, renderuje do tekstury hosta, host kopiuje ją na ekran |
 
 ```sh

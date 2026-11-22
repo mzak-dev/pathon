@@ -23,6 +23,7 @@ pathon-material = { path = "crates/pathon-material" }
 pathon-mesh = { path = "crates/pathon-mesh" }
 pathon-platform = { path = "crates/pathon-platform" }
 pathon-platform-winit = { path = "crates/pathon-platform-winit" }
+pathon-post = { path = "crates/pathon-post" }
 pathon-profile = { path = "crates/pathon-profile" }
 pathon-resources = { path = "crates/pathon-resources" }
 pathon-rhi = { path = "crates/pathon-rhi" }

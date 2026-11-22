@@ -7,8 +7,9 @@ use pathon_rhi::{
 use pathon_rhi_types::{
     BindGroupDesc, BindGroupId, BindGroupLayoutDesc, BindGroupLayoutId, BufferDesc, BufferId, Caps, CommandList,
     ComputePipelineId, DeviceApi, Extent3d, PipelineCacheData, QuerySetDesc, QuerySetId, RenderPipelineId, Resource,
-    RhiError, SamplerDesc, SamplerId, ShaderModuleDesc, ShaderModuleId, SurfaceConfig, SurfaceFrame, SurfaceId,
-    SurfaceTarget, TexelLayout, TextureCopy, TextureDesc, TextureId, TextureViewDesc, TextureViewId,
+    RhiError, SamplerDesc, SamplerId, ShaderModuleDesc, ShaderModuleId, SurfaceCaps, SurfaceConfig, SurfaceFrame,
+    SurfaceId, SurfaceOutput, SurfaceTarget, TexelLayout, TextureCopy, TextureDesc, TextureId, TextureViewDesc,
+    TextureViewId,
 };
 use pathon_shader::{PipelineCache, ShaderComposer, ShaderError, ShaderFeatures, ShaderKey, ShaderLibrary};
 
@@ -119,7 +120,10 @@ impl DeviceApi for FlakyDevice {
     fn create_surface(&self, target: &SurfaceTarget) -> Result<SurfaceId, RhiError> {
         self.inner.create_surface(target)
     }
-    fn configure_surface(&self, surface: SurfaceId, config: &SurfaceConfig) -> Result<Format, RhiError> {
+    fn surface_caps(&self, surface: SurfaceId) -> Result<SurfaceCaps, RhiError> {
+        self.inner.surface_caps(surface)
+    }
+    fn configure_surface(&self, surface: SurfaceId, config: &SurfaceConfig) -> Result<SurfaceOutput, RhiError> {
         self.inner.configure_surface(surface, config)
     }
     fn acquire_surface(&self, surface: SurfaceId) -> Result<SurfaceFrame, RhiError> {

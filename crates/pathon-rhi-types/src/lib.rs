@@ -3,6 +3,7 @@
 mod access;
 mod binding;
 mod caps;
+mod color_space;
 mod command;
 mod desc;
 mod device;
@@ -19,6 +20,9 @@ pub use binding::{
     SamplerBindingType, ShaderStages, StorageAccess, TextureSampleType,
 };
 pub use caps::{AdapterInfo, Backend, Caps, DeviceType, Features, FormatCaps, Limits, Profile};
+pub use color_space::{
+    DisplayHdr, SurfaceCaps, SurfaceChoice, SurfaceColorSpace, SurfaceColorSpaces, SurfaceFormatCaps, SurfaceOutput,
+};
 pub use command::{
     Color, ColorAttachment, Command, CommandList, ComputePassDesc, ComputePassEncoder, DeclaredAccess, DepthAccess,
     DepthAttachment, ExternalCallback, ExternalCommand, LoadOp, PassTimestamps, RenderPassDesc, RenderPassEncoder,

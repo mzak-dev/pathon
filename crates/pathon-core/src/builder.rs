@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use pathon_api::graph::FrameObserver;
 use pathon_api::{Pack, PackRegistrar, RenderFeature, SerialTaskPool, Shared, TaskPool};
-use pathon_rhi::{Color, Device, DeviceApi, DeviceRequest, MaybeSend};
+use pathon_rhi::{Color, Device, DeviceApi, DeviceRequest, MaybeSend, SurfaceColorSpace};
 
 use crate::error::RenderError;
 use crate::registry::Registry;
@@ -17,6 +17,7 @@ pub struct RendererBuilder {
     device: Option<Arc<Device>>,
     frames_in_flight: u64,
     clear_color: Color,
+    color_space: SurfaceColorSpace,
     observer: Option<Arc<dyn FrameObserver>>,
 }
 
@@ -43,6 +44,7 @@ impl Default for RendererBuilder {
             device: None,
             frames_in_flight: 2,
             clear_color: Color::BLACK,
+            color_space: SurfaceColorSpace::Auto,
             observer: None,
         }
     }
@@ -56,6 +58,7 @@ struct Prepared {
     task_pool: Arc<dyn TaskPool>,
     frames_in_flight: u64,
     clear_color: Color,
+    color_space: SurfaceColorSpace,
     observer: Option<Arc<dyn FrameObserver>>,
 }
 
@@ -73,6 +76,7 @@ impl Prepared {
             self.shared,
         );
         renderer.set_frame_observer(self.observer);
+        renderer.set_default_color_space(self.color_space);
         renderer
     }
 }
@@ -158,6 +162,12 @@ impl RendererBuilder {
         Self { clear_color, ..self }
     }
 
+    // The output colour space of windows the renderer adds without naming one (`Renderer::add_window`, the runner).
+    #[must_use]
+    pub fn with_color_space(self, color_space: SurfaceColorSpace) -> Self {
+        Self { color_space, ..self }
+    }
+
     fn prepare(self) -> Prepared {
         let mut registry = Registry::new(self.features);
         let mut request = self.request;
@@ -170,6 +180,7 @@ impl RendererBuilder {
             task_pool: self.task_pool,
             frames_in_flight: self.frames_in_flight,
             clear_color: self.clear_color,
+            color_space: self.color_space,
             observer: self.observer,
         }
     }

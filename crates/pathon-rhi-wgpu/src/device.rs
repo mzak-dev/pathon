@@ -9,8 +9,8 @@ use pathon_rhi_types::{
     BufferDesc, BufferId, Caps, CommandList, Compression, ComputePipelineDesc, ComputePipelineId, DeviceApi,
     DeviceRequest, Extent3d, Features, Format, FormatCaps, PipelineCacheData, Pool, PowerPreference, QuerySetDesc,
     QuerySetId, RenderPipelineDesc, RenderPipelineId, Resource, RhiError, SamplerDesc, SamplerId, ShaderModuleDesc,
-    ShaderModuleId, ShaderStage, SurfaceConfig, SurfaceFrame, SurfaceId, SurfaceTarget, TexelLayout, TextureCopy,
-    TextureDesc, TextureId, TextureViewDesc, TextureViewId, WindowSource,
+    ShaderModuleId, ShaderStage, SurfaceCaps, SurfaceColorSpace, SurfaceConfig, SurfaceFrame, SurfaceId, SurfaceOutput,
+    SurfaceTarget, TexelLayout, TextureCopy, TextureDesc, TextureId, TextureViewDesc, TextureViewId, WindowSource,
 };
 use raw_window_handle::{DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, WindowHandle};
 
@@ -243,6 +243,12 @@ impl WgpuDevice {
         });
         self.device
             .on_uncaptured_error(Arc::new(|error: wgpu::Error| log::error!("wgpu: {error}")));
+    }
+
+    // The display is asked on every call: it changes when the window moves or the OS toggles HDR.
+    fn surface_caps_of(&self, surface: &wgpu::Surface<'_>, capabilities: &wgpu::SurfaceCapabilities) -> SurfaceCaps {
+        let display = convert::display_hdr_from_wgpu(&surface.display_hdr_info(&self.adapter));
+        convert::surface_caps_from_wgpu(capabilities, display)
     }
 
     pub(crate) fn lock(&self) -> MutexGuard<'_, Objects> {
@@ -794,7 +800,17 @@ impl DeviceApi for WgpuDevice {
         }))
     }
 
-    fn configure_surface(&self, surface: SurfaceId, config: &SurfaceConfig) -> Result<Format, RhiError> {
+    fn surface_caps(&self, surface: SurfaceId) -> Result<SurfaceCaps, RhiError> {
+        let objects = self.lock();
+        let entry = objects
+            .surfaces
+            .get(surface)
+            .ok_or(RhiError::InvalidHandle("surface"))?;
+        let capabilities = entry.surface.get_capabilities(&self.adapter);
+        Ok(self.surface_caps_of(&entry.surface, &capabilities))
+    }
+
+    fn configure_surface(&self, surface: SurfaceId, config: &SurfaceConfig) -> Result<SurfaceOutput, RhiError> {
         if config.size.is_empty() {
             return Err(RhiError::SurfaceUnavailable);
         }
@@ -804,15 +820,33 @@ impl DeviceApi for WgpuDevice {
             .get_mut(surface)
             .ok_or(RhiError::InvalidHandle("surface"))?;
         let capabilities = entry.surface.get_capabilities(&self.adapter);
-        let wanted = config.format.and_then(|format| convert::format_to_wgpu(format).ok());
-        let chosen = choose_surface_format(wanted, &capabilities.formats)
+        let caps = self.surface_caps_of(&entry.surface, &capabilities);
+        let choice = caps
+            .resolve(config.format, config.color_space)
             .ok_or(RhiError::Unsupported("surface offers no format pathon understands"))?;
+        let chosen = if choice.color_space == SurfaceColorSpace::Srgb {
+            let wanted = config.format.and_then(|format| convert::format_to_wgpu(format).ok());
+            let srgb_formats: Vec<wgpu::TextureFormat> = caps
+                .formats_with(SurfaceColorSpace::Srgb)
+                .filter_map(|format| convert::format_to_wgpu(format).ok())
+                .collect();
+            choose_surface_format(wanted, &srgb_formats)
+                .ok_or(RhiError::Unsupported("surface offers no format pathon understands"))?
+        } else {
+            let format = convert::format_to_wgpu(choice.format)?;
+            ChosenSurfaceFormat {
+                configured: format,
+                view: format,
+            }
+        };
         let format = convert::format_from_wgpu(chosen.view).ok_or(RhiError::Unsupported("surface format"))?;
         let mut wgpu_config = entry
             .surface
             .get_default_config(&self.adapter, config.size.width, config.size.height)
             .ok_or(RhiError::Unsupported("surface is not supported by this adapter"))?;
         wgpu_config.format = chosen.configured;
+        // Always explicit: wgpu's own `Auto` would pick scRGB for a float format, i.e. HDR nobody asked for.
+        wgpu_config.color_space = convert::color_space_to_wgpu(choice.color_space)?;
         wgpu_config.view_formats = chosen.view_formats();
         wgpu_config.present_mode = convert::present_mode_to_wgpu(config.present_mode, &capabilities.present_modes);
         wgpu_config.usage = wgpu::TextureUsages::RENDER_ATTACHMENT
@@ -820,7 +854,11 @@ impl DeviceApi for WgpuDevice {
         wgpu_config.desired_maximum_frame_latency = 2;
         entry.surface.configure(&self.device, &wgpu_config);
         entry.config = Some(wgpu_config);
-        Ok(format)
+        Ok(SurfaceOutput {
+            format,
+            color_space: choice.color_space,
+            display: caps.display,
+        })
     }
 
     fn acquire_surface(&self, surface: SurfaceId) -> Result<SurfaceFrame, RhiError> {

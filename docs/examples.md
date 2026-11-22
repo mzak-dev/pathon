@@ -11,13 +11,14 @@ Crate `examples/` gra rolę hosta, więc wolno mu używać wgpu i winit wprost (
 | `vertical_slice` | M2-18 | C | sześcian unlit przez cały stos w dwóch oknach; `--devtools` udostępnia klatkę dla [devtools](devtools.md) |
 | `mesh_pool` | M4-01 | — | trzy meshe z jednej puli mega-buforów rysowane offscreen (wynik jako tekst), potem usunięcie jednego i reuse jego zakresu ([pathon-mesh](crates/pathon-mesh.md)); bez rendera i okna, na samym `Device` |
 | `profile` | M2-12 | C | wycinek pionowy offscreen pod okiem `pathon-profile`: tabela czasów GPU passów na stderr; `--features tracy` / `puffin` strumieniuje do profilera ([pathon-profile](crates/pathon-profile.md)) |
+| `hdr_output` | M4-16 | C | raport, jakie przestrzenie barw oferuje powierzchnia okna i co wyświetla (`PATHON_COLOR_SPACE`, `PATHON_BACKEND`); bez tonemappingu, tylko możliwości ([ADR-0034](adr/0034-wyjscie-hdr.md)) |
 | `host_foreign_device` | M2-19 | B | host tworzy urządzenie i swapchain; pathon przyjmuje urządzenie, renderuje do tekstury hosta, host kopiuje ją na ekran |
 
 ```sh
 cargo run -p pathon-examples --bin vertical_slice
 ```
 
-Przykłady okienkowe zatrzymują się same, gdy ustawisz `PATHON_EXIT_AFTER_FRAMES=N`: po N wyrenderowanych klatkach proces kończy się kodem 0, a log zawiera raport `Caps` (tak CI uruchamia `clear` bez człowieka). Dziś obsługuje to `clear`.
+Przykłady okienkowe zatrzymują się same, gdy ustawisz `PATHON_EXIT_AFTER_FRAMES=N`: po N wyrenderowanych klatkach proces kończy się kodem 0, a log zawiera raport `Caps` (tak CI uruchamia `clear` bez człowieka). Dziś obsługują to `clear` i `hdr_output`.
 
 ```sh
 PATHON_EXIT_AFTER_FRAMES=120 cargo run -p pathon-examples --bin clear

@@ -1,9 +1,9 @@
 use pathon_rhi_types::{
     AddressMode, Backend, BindingType, BlendComponent, BlendFactor, BlendOperation, BlendState, BufferUsage,
-    ColorWrites, CompareFunction, CullMode, DeviceType, Features, FilterMode, Format, FormatCaps, FrontFace,
-    IndexFormat, Limits, PresentMode, PrimitiveTopology, RhiError, SamplerBindingType, ShaderStages, StorageAccess,
-    TextureAspect, TextureDimension, TextureSampleType, TextureUsage, TextureViewDimension, VertexFormat,
-    VertexStepMode,
+    ColorWrites, CompareFunction, CullMode, DeviceType, DisplayHdr, Features, FilterMode, Format, FormatCaps,
+    FrontFace, IndexFormat, Limits, PresentMode, PrimitiveTopology, RhiError, SamplerBindingType, ShaderStages,
+    StorageAccess, SurfaceCaps, SurfaceColorSpace, SurfaceColorSpaces, SurfaceFormatCaps, TextureAspect,
+    TextureDimension, TextureSampleType, TextureUsage, TextureViewDimension, VertexFormat, VertexStepMode,
 };
 use wgpu::{AstcBlock, AstcChannel};
 
@@ -532,6 +532,60 @@ pub(crate) fn color_writes_to_wgpu(writes: ColorWrites) -> wgpu::ColorWrites {
     wgpu::ColorWrites::from_bits_truncate(writes.bits())
 }
 
+pub(crate) fn color_space_to_wgpu(space: SurfaceColorSpace) -> Result<wgpu::SurfaceColorSpace, RhiError> {
+    Ok(match space {
+        SurfaceColorSpace::Auto => wgpu::SurfaceColorSpace::Auto,
+        SurfaceColorSpace::Srgb => wgpu::SurfaceColorSpace::Srgb,
+        SurfaceColorSpace::DisplayP3 => wgpu::SurfaceColorSpace::DisplayP3,
+        SurfaceColorSpace::ExtendedSrgbLinear => wgpu::SurfaceColorSpace::ExtendedSrgbLinear,
+        SurfaceColorSpace::ExtendedSrgb => wgpu::SurfaceColorSpace::ExtendedSrgb,
+        SurfaceColorSpace::ExtendedDisplayP3 => wgpu::SurfaceColorSpace::ExtendedDisplayP3,
+        SurfaceColorSpace::Hdr10St2084 => wgpu::SurfaceColorSpace::Bt2100Pq,
+        SurfaceColorSpace::Hlg => wgpu::SurfaceColorSpace::Bt2100Hlg,
+        _ => {
+            return Err(RhiError::Unsupported(
+                "no wgpu mapping for this SurfaceColorSpace variant",
+            ));
+        }
+    })
+}
+
+pub(crate) fn color_spaces_from_wgpu(spaces: wgpu::SurfaceColorSpaces) -> SurfaceColorSpaces {
+    SurfaceColorSpace::ALL
+        .iter()
+        .copied()
+        .filter_map(|space| {
+            let wgpu_flag = color_space_to_wgpu(space).ok()?.to_color_spaces()?;
+            spaces.contains(wgpu_flag).then(|| space.flag()).flatten()
+        })
+        .fold(SurfaceColorSpaces::empty(), |all, flag| all | flag)
+}
+
+pub(crate) fn display_hdr_from_wgpu(info: &wgpu::DisplayHdrInfo) -> DisplayHdr {
+    let luminance = info.luminance.unwrap_or_default();
+    DisplayHdr {
+        peak_nits: luminance.max_nits,
+        full_frame_nits: luminance.max_full_frame_nits,
+        sdr_white_nits: luminance.sdr_white_nits,
+        headroom: info.tone_map_headroom(),
+    }
+}
+
+// Formats pathon does not know are left out, so everything the caps name can be configured.
+pub(crate) fn surface_caps_from_wgpu(capabilities: &wgpu::SurfaceCapabilities, display: DisplayHdr) -> SurfaceCaps {
+    let formats = capabilities
+        .format_capabilities
+        .iter()
+        .filter_map(|caps| {
+            Some(SurfaceFormatCaps {
+                format: format_from_wgpu(caps.format)?,
+                color_spaces: color_spaces_from_wgpu(caps.color_spaces),
+            })
+        })
+        .collect();
+    SurfaceCaps { formats, display }
+}
+
 pub(crate) fn present_mode_to_wgpu(mode: PresentMode, supported: &[wgpu::PresentMode]) -> wgpu::PresentMode {
     let wanted = match mode {
         PresentMode::Vsync => wgpu::PresentMode::Fifo,
@@ -548,6 +602,48 @@ pub(crate) fn present_mode_to_wgpu(mode: PresentMode, supported: &[wgpu::Present
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_color_space_maps_to_the_wgpu_one_with_the_same_flag() {
+        for space in SurfaceColorSpace::ALL
+            .iter()
+            .copied()
+            .filter(|space| *space != SurfaceColorSpace::Auto)
+        {
+            let wgpu_flags = color_space_to_wgpu(space).unwrap().to_color_spaces().unwrap();
+            assert_eq!(
+                color_spaces_from_wgpu(wgpu_flags).spaces().collect::<Vec<_>>(),
+                vec![space],
+                "{space:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_set_of_wgpu_color_spaces_converts_as_a_set() {
+        let wgpu_set = wgpu::SurfaceColorSpaces::SRGB | wgpu::SurfaceColorSpaces::BT2100_PQ;
+        let ours = color_spaces_from_wgpu(wgpu_set);
+        assert_eq!(ours, SurfaceColorSpaces::SRGB | SurfaceColorSpaces::HDR10_ST2084);
+    }
+
+    #[test]
+    fn windows_style_display_info_gives_nits_and_a_headroom() {
+        let info = wgpu::DisplayHdrInfo {
+            luminance: Some(wgpu::DisplayLuminance {
+                max_nits: Some(800.0),
+                sdr_white_nits: Some(200.0),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let display = display_hdr_from_wgpu(&info);
+        assert_eq!(display.peak_nits, Some(800.0));
+        assert_eq!(display.headroom, Some(4.0));
+        assert_eq!(
+            display_hdr_from_wgpu(&wgpu::DisplayHdrInfo::default()),
+            DisplayHdr::default()
+        );
+    }
 
     #[test]
     fn every_format_round_trips_through_wgpu() {

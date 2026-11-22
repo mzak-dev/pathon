@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 
+use crate::color_space::SurfaceColorSpace;
 use crate::format::Format;
 use crate::id::{TextureId, TextureViewId};
 use crate::maybe_send::MaybeSendSync;
@@ -70,6 +71,7 @@ pub struct SurfaceConfig {
     pub size: PhysicalSize,
     pub present_mode: PresentMode,
     pub format: Option<Format>,
+    pub color_space: SurfaceColorSpace,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]

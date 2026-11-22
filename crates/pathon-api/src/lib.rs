@@ -17,7 +17,7 @@ pub use pathon_diag::{Diagnostic, Severity};
 pub use shared::Shared;
 pub use slot::{Slot, Slots};
 pub use task_pool::{BackgroundJob, SerialTaskPool, TaskPool};
-pub use view::{Camera, ViewCtx, ViewId};
+pub use view::{Camera, OutputInfo, ViewCtx, ViewId};
 
 // Everything a regular pack needs, so packs depend on `pathon-api` alone.
 pub mod rhi {

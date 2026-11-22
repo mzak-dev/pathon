@@ -1,5 +1,5 @@
 use glam::{Mat4, Vec2, Vec3};
-use pathon_rhi_types::PhysicalSize;
+use pathon_rhi_types::{DisplayHdr, PhysicalSize, SurfaceColorSpace};
 
 use crate::slot::Slot;
 
@@ -35,12 +35,49 @@ impl Default for Camera {
     }
 }
 
+// What the target the view ends in presents (ADR-0034). `Output` holds values in `color_space`'s encoding; the
+// tonemapper picks its curve from it and scales highlights by `display.headroom`.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct OutputInfo {
+    // Never `Auto`.
+    pub color_space: SurfaceColorSpace,
+    pub display: DisplayHdr,
+}
+
+impl OutputInfo {
+    // Offscreen and imported targets, and surfaces that fell back: plain sRGB, nothing known about the display.
+    pub const SDR: Self = Self {
+        color_space: SurfaceColorSpace::Srgb,
+        display: DisplayHdr {
+            peak_nits: None,
+            full_frame_nits: None,
+            sdr_white_nits: None,
+            headroom: None,
+        },
+    };
+
+    pub fn is_hdr(&self) -> bool {
+        self.color_space.is_hdr()
+    }
+
+    pub fn peak_nits(&self) -> Option<f32> {
+        self.display.peak_nits
+    }
+}
+
+impl Default for OutputInfo {
+    fn default() -> Self {
+        Self::SDR
+    }
+}
+
 // Per-view, per-frame state. The host supplies time (core never reads a clock); core owns `frame` and `record_epoch`.
 // The TemporalResolve role sets render size, jitter and mip bias in `prepare_view`, everyone else only reads them.
 #[derive(Clone, PartialEq, Debug)]
 pub struct ViewCtx {
     pub view: ViewId,
     pub output_size: PhysicalSize,
+    pub output: OutputInfo,
     pub render_size: PhysicalSize,
     pub jitter: Vec2,
     pub mip_bias: f32,
@@ -59,6 +96,7 @@ impl ViewCtx {
         Self {
             view,
             output_size,
+            output: OutputInfo::SDR,
             render_size: output_size,
             jitter: Vec2::ZERO,
             mip_bias: 0.0,

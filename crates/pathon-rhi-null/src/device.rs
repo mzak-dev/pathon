@@ -4,11 +4,12 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use pathon_rhi_types::{
     Access, AdapterInfo, Backend, BindGroupDesc, BindGroupId, BindGroupLayoutDesc, BindGroupLayoutEntry,
     BindGroupLayoutId, BindingResource, BindingType, BufferDesc, BufferId, BufferUsage, Caps, CommandList,
-    ComputePipelineDesc, ComputePipelineId, DeviceApi, DeviceType, Extent3d, Features, Format, FormatCaps, FormatKind,
-    Limits, PipelineCacheData, Pool, Profile, QuerySetDesc, QuerySetId, RenderPipelineDesc, RenderPipelineId, Resource,
-    RhiError, SamplerDesc, SamplerId, ShaderModuleDesc, ShaderModuleId, ShaderStages, StorageAccess, SubresourceRange,
-    SurfaceConfig, SurfaceFrame, SurfaceId, SurfaceTarget, TexelLayout, TextureCopy, TextureDesc, TextureDimension,
-    TextureId, TextureUsage, TextureViewDesc, TextureViewId,
+    ComputePipelineDesc, ComputePipelineId, DeviceApi, DeviceType, DisplayHdr, Extent3d, Features, Format, FormatCaps,
+    FormatKind, Limits, PipelineCacheData, Pool, Profile, QuerySetDesc, QuerySetId, RenderPipelineDesc,
+    RenderPipelineId, Resource, RhiError, SamplerDesc, SamplerId, ShaderModuleDesc, ShaderModuleId, ShaderStages,
+    StorageAccess, SubresourceRange, SurfaceCaps, SurfaceColorSpace, SurfaceColorSpaces, SurfaceConfig,
+    SurfaceFormatCaps, SurfaceFrame, SurfaceId, SurfaceOutput, SurfaceTarget, TexelLayout, TextureCopy, TextureDesc,
+    TextureDimension, TextureId, TextureUsage, TextureViewDesc, TextureViewId,
 };
 
 use crate::texel_layout::{RowAlignment, check_texel_layout};
@@ -169,11 +170,28 @@ impl State {
     }
 }
 
+fn sdr_surface_caps() -> SurfaceCaps {
+    let srgb = |format| SurfaceFormatCaps {
+        format,
+        color_spaces: SurfaceColorSpaces::SRGB,
+    };
+    SurfaceCaps {
+        formats: vec![
+            srgb(Format::Bgra8UnormSrgb),
+            srgb(Format::Rgba8UnormSrgb),
+            srgb(Format::Bgra8Unorm),
+            srgb(Format::Rgba8Unorm),
+        ],
+        display: DisplayHdr::default(),
+    }
+}
+
 #[derive(Debug)]
 pub struct NullDevice {
     caps: Caps,
     state: Mutex<State>,
     lost: AtomicBool,
+    surface_caps: SurfaceCaps,
 }
 
 impl NullDevice {
@@ -202,7 +220,15 @@ impl NullDevice {
             caps,
             state: Mutex::new(State::default()),
             lost: AtomicBool::new(false),
+            surface_caps: sdr_surface_caps(),
         }
+    }
+
+    // Stands in for a display: tests give the surface HDR formats and a peak luminance to see them reach the packs.
+    #[must_use]
+    pub fn with_surface_caps(mut self, surface_caps: SurfaceCaps) -> Self {
+        self.surface_caps = surface_caps;
+        self
     }
 
     pub fn simulate_device_loss(&self) {
@@ -598,17 +624,42 @@ impl DeviceApi for NullDevice {
         }))
     }
 
-    fn configure_surface(&self, surface: SurfaceId, config: &SurfaceConfig) -> Result<Format, RhiError> {
+    fn surface_caps(&self, surface: SurfaceId) -> Result<SurfaceCaps, RhiError> {
+        self.lock()
+            .surfaces
+            .get(surface)
+            .ok_or(RhiError::InvalidHandle("surface"))?;
+        Ok(self.surface_caps.clone())
+    }
+
+    fn configure_surface(&self, surface: SurfaceId, config: &SurfaceConfig) -> Result<SurfaceOutput, RhiError> {
         if config.size.is_empty() {
             return Err(RhiError::SurfaceUnavailable);
         }
+        let choice = self
+            .surface_caps
+            .resolve(config.format, config.color_space)
+            .ok_or(RhiError::Unsupported("surface offers no format"))?;
+        // Like the SDR path of a real surface, any format the application names is accepted without HDR.
+        let format = match choice.color_space {
+            SurfaceColorSpace::Srgb => config.format.unwrap_or(choice.format),
+            _ => choice.format,
+        };
         let mut state = self.lock();
         let target = state
             .surfaces
             .get_mut(surface)
             .ok_or(RhiError::InvalidHandle("surface"))?;
-        target.config = Some(*config);
-        Ok(config.format.unwrap_or(Format::Bgra8UnormSrgb))
+        target.config = Some(SurfaceConfig {
+            format: Some(format),
+            color_space: choice.color_space,
+            ..*config
+        });
+        Ok(SurfaceOutput {
+            format,
+            color_space: choice.color_space,
+            display: self.surface_caps.display,
+        })
     }
 
     fn acquire_surface(&self, surface: SurfaceId) -> Result<SurfaceFrame, RhiError> {

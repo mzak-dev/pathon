@@ -311,6 +311,7 @@ Hosty (M6, M7) nie są na ścieżce minimalnej, ale ich szew jest: M2-19 i M4-20
 - [ ] **M4-14 · `pathon-debug`** — linie, gizmo, AABB, wireframe, podgląd slotów. **Gotowe gdy:** podgląd każdego slotu bazowego w przykładzie.
 - [ ] **M4-15 · Obiekty przezroczyste i transmission** — sortowanie od tyłu; kopia koloru opaque dla materiałów z `transmission`; OIT jako przyszła paczka. **Gotowe gdy:** golden image ze szkłem.
 - [ ] **M4-16 · Wyjście HDR** — `get_capabilities` decyduje o dostępnych `SurfaceColorSpace` (`Auto` nigdy nie wybiera HDR, wgpu nie robi tone mappingu); tonemapping pod HDR w `pathon-post`, fallback SDR. **Gotowe gdy:** obraz HDR na monitorze HDR i poprawny SDR bez niego.
+  - **Stan 22.11.2026:** część RHI i rdzenia gotowa ([ADR-0034](adr/0034-wyjscie-hdr.md)): `SurfaceColorSpace`, `SurfaceCaps`, wybór z fallbackiem do SDR (H0001), `Auto` bez HDR, `ViewCtx::output` z nitami, przykład `hdr_output`; na RX 9070 XT DX12 oferuje HDR10 i scRGB przy wyłączonym HDR w systemie, Vulkan tylko sRGB. Zostaje tonemapping w `pathon-post` (M4-09) i obraz na monitorze HDR; nie odhaczać przed nimi.
 - [ ] **M4-17 · Budżety**
   - Lokalny `xtask bench`: scena testowa w 1440p na RX 9070 XT i MacBooku Air M5, baseline w repo, alarm przy regresji w PR (uruchamiany ręcznie).
   - W CI: rozmiar release WASM i czasy CPU na `rhi-null`.

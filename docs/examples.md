@@ -15,6 +15,12 @@ Crate `examples/` gra rolę hosta, więc wolno mu używać wgpu i winit wprost (
 cargo run -p pathon-examples --bin vertical_slice
 ```
 
+Przykłady okienkowe zatrzymują się same, gdy ustawisz `PATHON_EXIT_AFTER_FRAMES=N`: po N wyrenderowanych klatkach proces kończy się kodem 0, a log zawiera raport `Caps` (tak CI uruchamia `clear` bez człowieka). Dziś obsługuje to `clear`.
+
+```sh
+PATHON_EXIT_AFTER_FRAMES=120 cargo run -p pathon-examples --bin clear
+```
+
 ## Przykład webowy
 
 Wymaga `wasm-pack` i celu `wasm32-unknown-unknown`. Bez WebGPU strona pokazuje komunikat zamiast obrazu.
@@ -24,6 +30,8 @@ examples/web/build.sh        # albo examples/web/build.ps1
 cd examples/web && python -m http.server 8000
 # otwórz http://127.0.0.1:8000/index.html
 ```
+
+`examples/web/verify.cjs` sprawdza zbudowany przykład w Chromium (adapter, klatki, kolor canvasu, `Caps` kontra `navigator.gpu`); opis i kody wyjścia w [weryfikacji platform](weryfikacja-platform.md).
 
 Wyjście (`examples/web/pkg/`) nie jest w repozytorium. CI buduje przykład w release i wypisuje rozmiar `.wasm` (surowy i po gzip) w podsumowaniu zadania `wasm`.
 
@@ -36,4 +44,12 @@ Wyjście (`examples/web/pkg/`) nie jest w repozytorium. CI buduje przykład w re
 
 ```sh
 cargo test -p pathon-examples --features gpu-tests
+```
+
+## Test zdarzeń okna
+
+`examples/tests/window_events.rs` (feature `window-tests`, bez harnessu testowego, bo macOS wymaga wątku głównego) otwiera prawdziwe okno przez `WinitPlatform`, zmienia jego rozmiar z kodu i czeka na `PlatformEvent::Resized`. Bez wyświetlacza (Linux bez `DISPLAY` i `WAYLAND_DISPLAY`) test się pomija, chyba że ustawiono `PATHON_REQUIRE_WINDOW=1`. `PATHON_EXPECT_SCALE` (z `WINIT_X11_SCALE_FACTOR` na X11) dodatkowo sprawdza skalę okna.
+
+```sh
+cargo test -p pathon-examples --features window-tests --test window_events
 ```

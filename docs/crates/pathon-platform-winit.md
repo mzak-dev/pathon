@@ -6,7 +6,7 @@
 - `resumed` → `SurfacesAvailable`, `suspended` → `SurfacesLost`; zdarzenia okien tłumaczone na `PlatformEvent`, `about_to_wait` → `App::on_frame`.
 - Okna (`WinitWindow`) implementują `PlatformWindow` i `raw-window-handle`, więc trafiają wprost do `SurfaceTarget`.
 
-Ręczny test M0-05: przykład `clear` reaguje na resize i zmianę skali na Windows, Linux (X11 i Wayland) i macOS.
+Test M0-05 (`examples/tests/window_events.rs`, [opis](../examples.md)) zmienia rozmiar prawdziwego okna z kodu przez `PlatformWindow::request_inner_size` i czeka na `PlatformEvent::Resized`; CI robi to na Windows, macOS i Linuksie (X11 pod Xvfb, Wayland pod headless westonem). Zmiany skali (`ScaleChanged`) nie da się wymusić w CI, więc zostaje do ręcznego sprawdzenia ([weryfikacja platform](../weryfikacja-platform.md)).
 
 ## Web (ADR-0014)
 

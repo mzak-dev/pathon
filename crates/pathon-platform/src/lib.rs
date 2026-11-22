@@ -90,6 +90,8 @@ pub trait PlatformWindow: HasWindowHandle + HasDisplayHandle + Send + Sync {
     fn inner_size(&self) -> PhysicalSize;
     fn scale_factor(&self) -> f64;
     fn request_redraw(&self);
+    // A request: the platform answers with `PlatformEvent::Resized` when (and if) the size changes.
+    fn request_inner_size(&self, size: PhysicalSize);
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -98,6 +100,8 @@ pub trait PlatformWindow: HasWindowHandle + HasDisplayHandle {
     fn inner_size(&self) -> PhysicalSize;
     fn scale_factor(&self) -> f64;
     fn request_redraw(&self);
+    // A request: the platform answers with `PlatformEvent::Resized` when (and if) the size changes.
+    fn request_inner_size(&self, size: PhysicalSize);
 }
 
 #[derive(Debug, thiserror::Error)]

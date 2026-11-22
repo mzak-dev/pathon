@@ -20,4 +20,4 @@ crates.io nie ma przestrzeni nazw: kto pierwszy opublikuje crate o danej nazwie,
 
 ## Do zrobienia
 
-1. [ ] Autor: `cargo publish` fasady `pathon` 0.0.1 po M0-01.
+1. [ ] Autor: opublikować pusty crate `pathon` 0.0.1 (README wskazujące repo). Fasada z workspace'u nie nadaje się do tego, dopóki jej zależności nie są na crates.io (`cargo publish --dry-run -p pathon`: „dependency `pathon-api` does not specify a version”); kroki w [weryfikacji platform](../weryfikacja-platform.md). Stan 22.11.2026: nazwa nadal wolna.

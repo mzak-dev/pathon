@@ -2,6 +2,7 @@
 
 **Status:** Przyjęta
 **Data:** 2026-11-22
+**Dotyczy:** [ADR-0012](0012-kontrakt-paczki-w-pathon-api.md) (kontrakt paczki: `ViewCtx`, `RecordCtx`), [ADR-0020](0020-kontrakty-rhi-types.md) (zatwierdzenie stanu przy `submit`)
 
 ## Kontekst
 
@@ -33,6 +34,8 @@ Rdzeń pożycza `DeferredRelease` runnerowi na czas `run_view`, a domknięcie `f
 ### Tryb A
 
 Bez nowego API. Host zgłasza listę z `record_frame` po jakimś czasie, a `frame` rośnie przy nagraniu, nie przy zgłoszeniu. Host musi więc ustawić `with_frames_in_flight` na co najmniej tyle, ile klatek nagrania mija między `record_frame` a zakończeniem jego `submit` na GPU; inaczej obiekt oddany przez `release_later` może zostać zniszczony, zanim lista go użyje.
+
+To chroni tylko `release_later`. Scratch restartowany na `record_epoch` (pierścień) pisze przez `write_buffer`, a ten jest uporządkowany względem następnego `submit` (ADR-0020), więc lista *N* musi zostać zgłoszona, zanim host zacznie `record_frame` *N + 1*; inaczej lista *N* narysuje uniformami z *N + 1*, niezależnie od `frames_in_flight`.
 
 ### `GpuArray::sync`
 

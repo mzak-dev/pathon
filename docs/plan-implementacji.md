@@ -252,9 +252,10 @@ Hosty (M6, M7) nie są na ścieżce minimalnej, ale ich szew jest: M2-19 i M4-20
 - [x] **M3-01 · `pathon-shader` + importy** ★ — WGSL z wesl 0.6 (ADR-0021; dokłada 50 crate'ów na Windows): `ShaderComposer` składa moduły `package::…` i oddaje źródło WGSL; zależność wpięta w `pathon-shader` przez xtask. **Gotowe gdy:** moduł z importami kompiluje się i trafia do RHI.
 - [x] **M3-02 · Refleksja** ★ — layouty bind groupów z naga. **Gotowe gdy:** layout z refleksji równa się ręcznie zapisanemu w teście.
   - **Stan 22.11.2026:** `reflect_bind_groups` w `pathon-shader` (naga 30, tylko `wgsl-in`, wpięta w `pathon-shader` przez xtask) zwraca layouty grup z `visibility` z podanych entry pointów; test porównuje wynik z ręcznie zapisanym layoutem shadera render, a test GPU tworzy z niego potok compute.
-- [ ] **M3-03 · Permutacje** ★
+- [x] **M3-03 · Permutacje** ★
   - Klucz shadera (flagi materiału, hooki paczek, profil) oddzielony od **klucza pipeline'u** (layout wierzchołków, formaty celów, MSAA, rodzaj widoku).
   - **Gotowe gdy:** testy kolizji kluczy.
+  - **Stan 22.11.2026:** flagi WESL `@if` (`ShaderFeatures`, `compose_with`), `ShaderKey` i `ShaderLibrary` (kesz modułów) oraz `PipelineCache` (kesz potoków po normalizacji `constants`) w `pathon-shader` ([ADR-0023](adr/0023-permutacje-shaderow.md)); xtask dopuszcza `pathon-shader` w paczkach; testy kolizji na `rhi-null`, test GPU z czterema permutacjami.
 - [ ] **M3-04 · Kompilacja w tle** ★ — placeholder albo pominięcie draw. **Gotowe gdy:** test wstrzykujący N nowych permutacji trzyma p99 czasu klatki w budżecie (natywnie; na wasm tylko pomiar).
 - [ ] **M3-05 · Cache na dysku** — `PipelineCache` na Vulkanie. **Gotowe gdy:** drugi start skraca czas kompilacji (pomiar).
 - [ ] **M3-06 · `pathon-hot`** — notify, podmiana modułu. **Gotowe gdy:** zmiana `.wgsl` widoczna bez restartu.

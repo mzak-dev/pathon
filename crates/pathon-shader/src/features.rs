@@ -1,8 +1,9 @@
 use std::collections::BTreeSet;
 
-use crate::{ShaderError, is_identifier};
+use crate::{RESERVED_SEGMENTS, ShaderError, is_identifier};
 
-/// The set of enabled WESL flags; a disabled flag is simply absent, so equal permutations compare equal.
+/// The set of enabled WESL flags (ASCII identifiers that are not WGSL/WESL reserved words); a disabled flag is simply
+/// absent, so equal permutations compare equal.
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Default)]
 pub struct ShaderFeatures {
     enabled: BTreeSet<String>,
@@ -15,7 +16,7 @@ impl ShaderFeatures {
     }
 
     pub fn set(&mut self, name: &str, enabled: bool) -> Result<(), ShaderError> {
-        if !is_identifier(name) {
+        if !is_identifier(name) || RESERVED_SEGMENTS.contains(&name) {
             return Err(ShaderError::InvalidFeatureName { name: name.to_owned() });
         }
         if enabled {

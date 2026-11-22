@@ -11,10 +11,14 @@ pub struct ShaderKey {
 }
 
 /// Composes and creates each permutation once; one library serves one device.
-/// Registering a module or root drops the cached modules, so the next request sees the new source.
+///
+/// Registering a new module path or root name leaves every cached module alone. Replacing a module or root with
+/// different source evicts all cached modules (any root may import the module) and hands their ids back, because the
+/// library has no device to destroy them with; pipelines in `PipelineCache` built from them stay until M3-06.
 #[derive(Debug, Default)]
 pub struct ShaderLibrary {
     composer: ShaderComposer,
+    module_sources: BTreeMap<String, String>,
     roots: BTreeMap<String, String>,
     modules: HashMap<ShaderKey, ShaderModuleId>,
 }
@@ -25,15 +29,15 @@ impl ShaderLibrary {
         Self::default()
     }
 
-    pub fn add_module(&mut self, path: &str, source: &str) -> Result<(), ShaderError> {
+    pub fn add_module(&mut self, path: &str, source: &str) -> Result<Vec<ShaderModuleId>, ShaderError> {
         self.composer.add_module(path, source)?;
-        self.modules.clear();
-        Ok(())
+        let previous = self.module_sources.insert(path.to_owned(), source.to_owned());
+        Ok(self.evict_if_changed(previous.as_deref(), source))
     }
 
-    pub fn add_root(&mut self, name: &str, source: &str) {
-        self.roots.insert(name.to_owned(), source.to_owned());
-        self.modules.clear();
+    pub fn add_root(&mut self, name: &str, source: &str) -> Vec<ShaderModuleId> {
+        let previous = self.roots.insert(name.to_owned(), source.to_owned());
+        self.evict_if_changed(previous.as_deref(), source)
     }
 
     pub fn module(&mut self, device: &dyn DeviceApi, key: &ShaderKey) -> Result<ShaderModuleId, ShaderError> {
@@ -53,5 +57,14 @@ impl ShaderLibrary {
             .map_err(ShaderError::Rhi)?;
         self.modules.insert(key.clone(), id);
         Ok(id)
+    }
+}
+
+impl ShaderLibrary {
+    fn evict_if_changed(&mut self, previous: Option<&str>, source: &str) -> Vec<ShaderModuleId> {
+        match previous {
+            Some(previous) if previous != source => self.modules.drain().map(|(_, id)| id).collect(),
+            _ => Vec::new(),
+        }
     }
 }

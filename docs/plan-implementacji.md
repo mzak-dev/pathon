@@ -11,7 +11,7 @@
 - **Core nie wie, kto jest hostem.** `pathon-core` nie ma pętli, okna, wątku, ECS ani systemu assetów. Host (własny silnik, Bevy, Godot) woła klatkę, dostarcza dane przez API extract i może być właścicielem urządzenia oraz celów renderu.
 - Nowy host nie może wymagać zmian w `pathon-core`. Jeśli wymaga, poprawiamy API — tak samo jak przy paczkach.
 - winit importuje wyłącznie `pathon-platform-winit`. Aplikacja widzi własne typy (`App`, `PlatformEvent`, `WindowId`).
-- **Dwa rodzaje paczek.** Zwykła zależy tylko od `pathon-api`. Vendorowa (np. FSR 3 przez sp-fidelity, FSR 4, DLSS) może dodatkowo użyć modułu `interop` konkretnego backendu; deklaruje to w `Cargo.toml` (`[package.metadata.pathon] kind = "vendor"`) i w `requirements()`, a deps-check dopuszcza tylko taki wyjątek.
+- **Dwa rodzaje paczek.** Zwykła zależy tylko od `pathon-api` i `pathon-shader`. Vendorowa (np. FSR 3 przez sp-fidelity, FSR 4, DLSS) może dodatkowo użyć modułu `interop` konkretnego backendu; deklaruje to w `Cargo.toml` (`[package.metadata.pathon] kind = "vendor"`) i w `requirements()`, a deps-check dopuszcza tylko taki wyjątek.
 - Wymagania paczek są znane **przed** utworzeniem urządzenia (backend, funkcje, rozszerzenia), a decyzja pełna ścieżka / fallback / wyłączenie zapada **po** (na prawdziwych `Caps`).
 - Nowa paczka zwykła nie może wymagać zmian w `pathon-core`. Jeśli wymaga, poprawiamy `pathon-api`.
 - **Źródłem prawdy są bity `Caps`**, nie numer tieru. Profile (Web, Desktop, High) to tylko nazwane zestawy bitów do komunikacji i testów.

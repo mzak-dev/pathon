@@ -38,7 +38,7 @@ flowchart LR
 
 **Rdzeń** składa klatkę z tego, co zadeklarują paczki: ustala kolejność, usuwa zbędną pracę, przydziela pamięć i wstawia bariery. Nie zna żadnej techniki renderowania.
 
-**Paczka** to zwykły crate zależny tylko od `pathon-api`. Deklaruje, czego potrzebuje od GPU, i dokłada passy do grafu klatki. Nowa paczka nie wymaga zmiany w rdzeniu — to reguła projektu, pilnowana przez [paczki testowe](docs/crates/pathon-test.md) i `cargo xtask deps-check`.
+**Paczka** to zwykły crate zależny tylko od `pathon-api` i `pathon-shader`. Deklaruje, czego potrzebuje od GPU, i dokłada passy do grafu klatki. Nowa paczka nie wymaga zmiany w rdzeniu — to reguła projektu, pilnowana przez [paczki testowe](docs/crates/pathon-test.md) i `cargo xtask deps-check`.
 
 ## Modularność
 

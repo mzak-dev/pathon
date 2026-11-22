@@ -1,6 +1,14 @@
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use pathon_rhi::{
-    ColorTargetState, ComputePipelineDesc, Device, DeviceApi, Format, PrimitiveState, RenderPipelineDesc, ShaderStage,
+    ColorTargetState, ComputePipelineDesc, Device, Format, PrimitiveState, RenderPipelineDesc, ShaderStage,
     VertexAttribute, VertexBufferLayout, VertexFormat, VertexStepMode,
+};
+use pathon_rhi_types::{
+    BindGroupDesc, BindGroupId, BindGroupLayoutDesc, BindGroupLayoutId, BufferDesc, BufferId, Caps, CommandList,
+    ComputePipelineId, DeviceApi, Extent3d, PipelineCacheData, QuerySetDesc, QuerySetId, RenderPipelineId, Resource,
+    RhiError, SamplerDesc, SamplerId, ShaderModuleDesc, ShaderModuleId, SurfaceConfig, SurfaceFrame, SurfaceId,
+    SurfaceTarget, TexelLayout, TextureCopy, TextureDesc, TextureId, TextureViewDesc, TextureViewId,
 };
 use pathon_shader::{PipelineCache, ShaderComposer, ShaderError, ShaderFeatures, ShaderKey, ShaderLibrary};
 
@@ -23,6 +31,122 @@ const RENDER: &str = "
 }
 @fragment fn fs() -> @location(0) vec4<f32> { return vec4<f32>(1.0); }
 ";
+
+struct FlakyDevice {
+    inner: Device,
+    fail_next_module: AtomicBool,
+    fail_next_pipeline: AtomicBool,
+}
+
+impl FlakyDevice {
+    fn new() -> Self {
+        Self {
+            inner: Device::null(),
+            fail_next_module: AtomicBool::new(false),
+            fail_next_pipeline: AtomicBool::new(false),
+        }
+    }
+}
+
+fn injected_failure() -> RhiError {
+    RhiError::Backend("injected".to_owned())
+}
+
+impl DeviceApi for FlakyDevice {
+    fn caps(&self) -> &Caps {
+        self.inner.caps()
+    }
+    fn is_lost(&self) -> bool {
+        self.inner.is_lost()
+    }
+    fn create_buffer(&self, desc: &BufferDesc) -> Result<BufferId, RhiError> {
+        self.inner.create_buffer(desc)
+    }
+    fn write_buffer(&self, buffer: BufferId, offset: u64, data: &[u8]) -> Result<(), RhiError> {
+        self.inner.write_buffer(buffer, offset, data)
+    }
+    fn create_texture(&self, desc: &TextureDesc) -> Result<TextureId, RhiError> {
+        self.inner.create_texture(desc)
+    }
+    fn texture_desc(&self, texture: TextureId) -> Result<TextureDesc, RhiError> {
+        self.inner.texture_desc(texture)
+    }
+    fn write_texture(
+        &self,
+        dst: &TextureCopy,
+        data: &[u8],
+        layout: TexelLayout,
+        size: Extent3d,
+    ) -> Result<(), RhiError> {
+        self.inner.write_texture(dst, data, layout, size)
+    }
+    fn create_texture_view(&self, texture: TextureId, desc: &TextureViewDesc) -> Result<TextureViewId, RhiError> {
+        self.inner.create_texture_view(texture, desc)
+    }
+    fn create_sampler(&self, desc: &SamplerDesc) -> Result<SamplerId, RhiError> {
+        self.inner.create_sampler(desc)
+    }
+    fn create_shader_module(&self, desc: &ShaderModuleDesc<'_>) -> Result<ShaderModuleId, RhiError> {
+        if self.fail_next_module.swap(false, Ordering::SeqCst) {
+            return Err(injected_failure());
+        }
+        self.inner.create_shader_module(desc)
+    }
+    fn create_bind_group_layout(&self, desc: &BindGroupLayoutDesc) -> Result<BindGroupLayoutId, RhiError> {
+        self.inner.create_bind_group_layout(desc)
+    }
+    fn create_bind_group(&self, desc: &BindGroupDesc) -> Result<BindGroupId, RhiError> {
+        self.inner.create_bind_group(desc)
+    }
+    fn create_render_pipeline(&self, desc: &RenderPipelineDesc) -> Result<RenderPipelineId, RhiError> {
+        if self.fail_next_pipeline.swap(false, Ordering::SeqCst) {
+            return Err(injected_failure());
+        }
+        self.inner.create_render_pipeline(desc)
+    }
+    fn create_compute_pipeline(&self, desc: &ComputePipelineDesc) -> Result<ComputePipelineId, RhiError> {
+        if self.fail_next_pipeline.swap(false, Ordering::SeqCst) {
+            return Err(injected_failure());
+        }
+        self.inner.create_compute_pipeline(desc)
+    }
+    fn create_query_set(&self, desc: &QuerySetDesc) -> Result<QuerySetId, RhiError> {
+        self.inner.create_query_set(desc)
+    }
+    fn destroy(&self, resource: Resource) {
+        self.inner.destroy(resource);
+    }
+    fn create_surface(&self, target: &SurfaceTarget) -> Result<SurfaceId, RhiError> {
+        self.inner.create_surface(target)
+    }
+    fn configure_surface(&self, surface: SurfaceId, config: &SurfaceConfig) -> Result<Format, RhiError> {
+        self.inner.configure_surface(surface, config)
+    }
+    fn acquire_surface(&self, surface: SurfaceId) -> Result<SurfaceFrame, RhiError> {
+        self.inner.acquire_surface(surface)
+    }
+    fn present_surface(&self, surface: SurfaceId) -> Result<(), RhiError> {
+        self.inner.present_surface(surface)
+    }
+    fn discard_surface(&self, surface: SurfaceId) {
+        self.inner.discard_surface(surface);
+    }
+    fn destroy_surface(&self, surface: SurfaceId) {
+        self.inner.destroy_surface(surface);
+    }
+    fn submit(&self, commands: CommandList) -> Result<(), RhiError> {
+        self.inner.submit(commands)
+    }
+    fn read_buffer(&self, buffer: BufferId) -> Result<Vec<u8>, RhiError> {
+        self.inner.read_buffer(buffer)
+    }
+    fn wait_idle(&self) -> Result<(), RhiError> {
+        self.inner.wait_idle()
+    }
+    fn pipeline_cache_data(&self) -> Option<PipelineCacheData> {
+        self.inner.pipeline_cache_data()
+    }
+}
 
 fn features(names: &[&str]) -> ShaderFeatures {
     names.iter().fold(ShaderFeatures::default(), |features, name| {
@@ -103,7 +227,7 @@ mod features_and_composing {
 
     #[test]
     fn flag_names_must_be_wgsl_identifiers() {
-        for name in ["", "two words", "1abc", "a::b", "a-b"] {
+        for name in ["", "two words", "1abc", "a::b", "a-b", "_", "fn", "if", "true", "false"] {
             let error = ShaderFeatures::default().with(name).expect_err(name);
             assert!(
                 matches!(error, ShaderError::InvalidFeatureName { .. }),
@@ -187,22 +311,11 @@ mod shader_library {
         library.module(&device, &key("broken", &[])).expect("fixed module");
     }
 
-    #[test]
-    fn a_module_creation_error_is_wrapped_and_never_cached() {
-        let device = Device::null();
-        let mut library = ShaderLibrary::new();
-        library.add_root("empty", "");
-        for _ in 0..2 {
-            let error = library.module(&device, &key("empty", &[])).expect_err("empty");
-            assert!(matches!(error, ShaderError::Rhi(_)), "{error:?}");
-        }
-        library.add_root("empty", RENDER);
-        library.module(&device, &key("empty", &[])).expect("replaced module");
+    fn no_evictions() -> Vec<pathon_rhi::ShaderModuleId> {
+        Vec::new()
     }
 
-    #[test]
-    fn replacing_a_module_gives_the_next_request_the_new_source() {
-        let device = Device::null();
+    fn library_with_answer_module(device: &Device) -> (ShaderLibrary, pathon_rhi::ShaderModuleId) {
         let mut library = ShaderLibrary::new();
         library
             .add_module("answer", "fn answer() -> u32 { return 1u; }")
@@ -211,12 +324,59 @@ mod shader_library {
             "main",
             "import package::answer::answer;\n@compute @workgroup_size(1) fn main() { _ = answer(); }",
         );
-        let old = library.module(&device, &key("main", &[])).expect("old");
-        library
+        let id = library.module(device, &key("main", &[])).expect("module");
+        (library, id)
+    }
+
+    #[test]
+    fn registering_a_new_module_or_root_keeps_the_cached_module() {
+        let device = Device::null();
+        let (mut library, id) = library_with_answer_module(&device);
+        assert_eq!(
+            library.add_module("unrelated", "fn f() {}").expect("module"),
+            no_evictions()
+        );
+        assert_eq!(library.add_root("other", RENDER), no_evictions());
+        assert_eq!(library.module(&device, &key("main", &[])).expect("again"), id);
+    }
+
+    #[test]
+    fn registering_the_same_source_again_keeps_the_cached_module() {
+        let device = Device::null();
+        let (mut library, id) = library_with_answer_module(&device);
+        let same = "fn answer() -> u32 { return 1u; }";
+        assert_eq!(library.add_module("answer", same).expect("module"), no_evictions());
+        assert_eq!(library.module(&device, &key("main", &[])).expect("again"), id);
+    }
+
+    #[test]
+    fn replacing_a_module_returns_the_evicted_ids_and_builds_a_new_module() {
+        let device = Device::null();
+        let (mut library, old) = library_with_answer_module(&device);
+        let evicted = library
             .add_module("answer", "fn answer() -> u32 { return 2u; }")
             .expect("replaced");
-        let new = library.module(&device, &key("main", &[])).expect("new");
-        assert_ne!(old, new);
+        assert_eq!(evicted, [old]);
+        assert_ne!(library.module(&device, &key("main", &[])).expect("new"), old);
+    }
+
+    #[test]
+    fn replacing_a_root_returns_the_evicted_ids_and_builds_a_new_module() {
+        let device = Device::null();
+        let (mut library, old) = library_with_answer_module(&device);
+        let evicted = library.add_root("main", "@compute @workgroup_size(1) fn main() {}");
+        assert_eq!(evicted, [old]);
+        assert_ne!(library.module(&device, &key("main", &[])).expect("new"), old);
+    }
+
+    #[test]
+    fn a_module_creation_error_is_wrapped_and_the_same_key_succeeds_afterwards() {
+        let device = FlakyDevice::new();
+        device.fail_next_module.store(true, Ordering::SeqCst);
+        let mut library = library();
+        let error = library.module(&device, &key("render", &[])).expect_err("flaky");
+        assert!(matches!(error, ShaderError::Rhi(_)), "{error:?}");
+        library.module(&device, &key("render", &[])).expect("same key succeeds");
     }
 
     #[test]
@@ -354,16 +514,56 @@ mod pipeline_cache {
     }
 
     #[test]
-    fn a_failed_creation_is_an_error_every_time_and_is_not_remembered() {
-        let device = Device::null();
+    fn a_failed_creation_is_not_remembered_for_the_same_description() {
+        let device = FlakyDevice::new();
+        let module = library().module(&device, &key("compute", &[])).expect("module");
+        let desc = compute_desc(module, vec![("a", 1.0.into())]);
         let mut cache = PipelineCache::new();
+        device.fail_next_pipeline.store(true, Ordering::SeqCst);
+        assert!(cache.compute(&device, &desc).is_err());
+        cache.compute(&device, &desc).expect("same description succeeds");
+    }
+
+    #[test]
+    fn duplicate_override_names_are_an_error_every_time() {
+        let device = Device::null();
         let module = library().module(&device, &key("compute", &[])).expect("module");
         let duplicated = compute_desc(module, vec![("a", 1.0.into()), ("a", 2.0.into())]);
+        let mut cache = PipelineCache::new();
         for _ in 0..2 {
             assert!(cache.compute(&device, &duplicated).is_err());
         }
-        let valid = compute_desc(module, vec![("a", 1.0.into())]);
-        cache.compute(&device, &valid).expect("valid after failures");
+    }
+
+    #[test]
+    fn render_constants_in_another_order_are_the_same_pipeline() {
+        let device = Device::null();
+        let module = library().module(&device, &key("render", &[])).expect("module");
+        let mut ordered = render_desc(module);
+        ordered.vertex.constants = vec![("a", 1.0.into()), ("b", 2.0.into())];
+        ordered.fragment.as_mut().expect("fragment").constants = vec![("c", 1.0.into()), ("d", 2.0.into())];
+        let mut swapped = ordered.clone();
+        swapped.vertex.constants.reverse();
+        swapped.fragment.as_mut().expect("fragment").constants.reverse();
+        let mut cache = PipelineCache::new();
+        assert_eq!(
+            cache.render(&device, &ordered).expect("ordered"),
+            cache.render(&device, &swapped).expect("swapped")
+        );
+    }
+
+    #[test]
+    fn the_label_is_part_of_the_pipeline_key() {
+        let device = Device::null();
+        let module = library().module(&device, &key("compute", &[])).expect("module");
+        let first = compute_desc(module, vec![]);
+        let mut relabelled = first.clone();
+        relabelled.label = "other";
+        let mut cache = PipelineCache::new();
+        assert_ne!(
+            cache.compute(&device, &first).expect("first"),
+            cache.compute(&device, &relabelled).expect("relabelled")
+        );
     }
 }
 
@@ -371,7 +571,7 @@ mod pipeline_cache {
 mod gpu {
     use pathon_rhi::{
         BindGroupDesc, BindGroupEntry, BindGroupLayoutDesc, BindGroupLayoutEntry, BindingResource, BindingType,
-        BufferDesc, BufferUsage, CommandList, ComputePassDesc, DeviceRequest, ShaderStages, StorageAccess,
+        BufferDesc, BufferUsage, CommandList, ComputePassDesc, DeviceApi, DeviceRequest, ShaderStages, StorageAccess,
     };
     use pathon_shader::reflect_bind_groups;
 

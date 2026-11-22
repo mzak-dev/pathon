@@ -1969,6 +1969,7 @@ dependencies = [
  "pathon",
  "pathon-bindless",
  "pathon-devtools",
+ "pathon-ibl",
  "pathon-material",
  "pathon-mesh",
  "pathon-post",
@@ -2001,6 +2002,20 @@ dependencies = [
  "pathon-resources",
  "pathon-rhi-null",
  "pathon-rhi-types",
+]
+
+[[package]]
+name = "pathon-ibl"
+version = "0.0.1"
+dependencies = [
+ "bytemuck",
+ "pathon-api",
+ "pathon-core",
+ "pathon-golden",
+ "pathon-material",
+ "pathon-rhi",
+ "pathon-shader",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

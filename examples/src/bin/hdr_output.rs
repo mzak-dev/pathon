@@ -1,7 +1,8 @@
 // M4-16 (RHI and core part): reports which colour spaces the window's surface offers and what it presents.
 // PATHON_COLOR_SPACE=auto|srgb|display-p3|scrgb|extended-srgb|extended-display-p3|hdr10|hlg asks for a space;
 // the default `auto` never gives HDR (ADR-0034). PATHON_RECONFIGURE=1 asks for it on the live window instead of at
-// creation. PATHON_BACKEND=dx12|vulkan|metal picks the backend to compare them. Nothing is tonemapped yet: this checks capabilities, not pictures.
+// creation. PATHON_BACKEND=dx12|vulkan|metal picks the backend to compare them. Nothing is tonemapped yet: this checks
+// capabilities, not pictures.
 
 use pathon::platform::WindowDesc;
 use pathon::rhi::{Backend, Color, DeviceRequest, SurfaceColorSpace};

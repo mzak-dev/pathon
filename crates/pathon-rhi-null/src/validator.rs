@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use pathon_rhi_types::{
     Access, BindGroupId, BufferId, BufferUsage, Command, CommandList, DepthAccess, Extent3d, FormatKind, LoadOp,
-    ResourceRef, RhiError, StoreOp, SubresourceRange, TexelLayout, TextureCopy, TextureDimension, TextureId,
-    TextureUsage, TextureViewId, Transfer,
+    PassTimestamps, ResourceRef, RhiError, StoreOp, SubresourceRange, TexelLayout, TextureCopy, TextureDimension,
+    TextureId, TextureUsage, TextureViewId, Transfer,
 };
 
 use crate::device::{BindingUse, State};
@@ -101,6 +101,7 @@ impl<'state> Validator<'state> {
             }
             Command::BeginRenderPass(desc) => {
                 self.require_pass(PassKind::None, "render pass begin")?;
+                self.check_pass_timestamps(desc.timestamps)?;
                 for attachment in &desc.color {
                     let reads = attachment.load == LoadOp::Load;
                     self.attachment(attachment.view, Access::COLOR_ATTACHMENT, reads, attachment.store)?;
@@ -123,8 +124,9 @@ impl<'state> Validator<'state> {
                 }
                 self.enter_pass(PassKind::Render);
             }
-            Command::BeginComputePass(_) => {
+            Command::BeginComputePass(desc) => {
                 self.require_pass(PassKind::None, "compute pass begin")?;
+                self.check_pass_timestamps(desc.timestamps)?;
                 self.enter_pass(PassKind::Compute);
             }
             Command::EndRenderPass => {
@@ -255,6 +257,29 @@ impl<'state> Validator<'state> {
                 self.buffer_usage(dst, BufferUsage::QUERY_RESOLVE)?;
             }
             _ => return Err(RhiError::Unsupported("transfer not handled by the null validator")),
+        }
+        Ok(())
+    }
+
+    fn check_pass_timestamps(&self, timestamps: Option<PassTimestamps>) -> Result<(), RhiError> {
+        let Some(timestamps) = timestamps else {
+            return Ok(());
+        };
+        let count = *self
+            .state
+            .query_sets
+            .get(timestamps.query_set)
+            .ok_or(RhiError::InvalidHandle("query set"))?;
+        if timestamps.begin_index == timestamps.end_index {
+            return Err(structure_error(
+                "pass timestamps write the begin and end to the same query",
+            ));
+        }
+        if timestamps.begin_index.max(timestamps.end_index) >= count {
+            return Err(structure_error(format!(
+                "pass timestamps write query {} of a set with {count}",
+                timestamps.begin_index.max(timestamps.end_index)
+            )));
         }
         Ok(())
     }

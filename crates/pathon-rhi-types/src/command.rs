@@ -303,6 +303,11 @@ impl CommandList {
         &self.commands
     }
 
+    // Lets a graph executor patch recorded commands (pass timestamps); the list cannot grow or shrink through it.
+    pub fn commands_mut(&mut self) -> &mut [Command] {
+        &mut self.commands
+    }
+
     pub fn into_commands(self) -> Vec<Command> {
         self.commands
     }

@@ -7,6 +7,7 @@ mod dot;
 mod execute;
 mod graph;
 mod history;
+mod observer;
 mod order;
 mod pool;
 
@@ -22,5 +23,6 @@ pub use graph::{
     RecordFn, Stage, TextureHandle,
 };
 pub use history::{HistoryStore, HistoryTexture};
+pub use observer::FrameObserver;
 pub use order::{OrderNode, sort_nodes};
 pub use pool::ResourcePool;

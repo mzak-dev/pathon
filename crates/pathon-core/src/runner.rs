@@ -1,9 +1,10 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use pathon_diag::Diagnostic;
 use pathon_graph::{
-    FrameGraph, FrameSizes, GraphCache, GraphCapture, GraphStats, HistoryStore, PassDesc, ResourcePool, Stage,
-    TextureHandle,
+    FrameGraph, FrameObserver, FrameSizes, GraphCache, GraphCapture, GraphStats, HistoryStore, PassDesc, ResourcePool,
+    Stage, TextureHandle,
 };
 use pathon_resources::DeferredRelease;
 use pathon_rhi::{
@@ -45,6 +46,7 @@ pub(crate) struct GraphRunner {
     // Targets whose history this frame wrote: their next frame may read it only once the frame is committed.
     written_this_frame: Vec<TargetId>,
     capture: bool,
+    observer: Option<Arc<dyn FrameObserver>>,
     clear_color: Color,
 }
 
@@ -56,12 +58,17 @@ impl GraphRunner {
             histories: HashMap::new(),
             written_this_frame: Vec::new(),
             capture: false,
+            observer: None,
             clear_color,
         }
     }
 
     pub(crate) fn set_capture(&mut self, enabled: bool) {
         self.capture = enabled;
+    }
+
+    pub(crate) fn set_observer(&mut self, observer: Option<Arc<dyn FrameObserver>>) {
+        self.observer = observer;
     }
 
     pub(crate) fn forget_target(&mut self, target: TargetId, release: &mut DeferredRelease, frame: u64) {
@@ -111,6 +118,7 @@ impl GraphRunner {
         let output_handle = self.import_output(&mut graph, output);
         diagnostics.extend(fill(&mut graph, output_handle));
         graph.set_capture(self.capture);
+        graph.set_observer(self.observer.clone());
 
         let cache = self.caches.entry(target).or_default();
         let (compiled, fresh) = match cache.compile(&graph, sizes) {

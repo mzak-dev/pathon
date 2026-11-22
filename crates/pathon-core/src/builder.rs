@@ -1,6 +1,7 @@
 use std::any::Any;
 use std::sync::Arc;
 
+use pathon_api::graph::FrameObserver;
 use pathon_api::{Pack, PackRegistrar, RenderFeature, SerialTaskPool, Shared, TaskPool};
 use pathon_rhi::{Color, Device, DeviceRequest, MaybeSend};
 
@@ -16,6 +17,7 @@ pub struct RendererBuilder {
     device: Option<Arc<Device>>,
     frames_in_flight: u64,
     clear_color: Color,
+    observer: Option<Arc<dyn FrameObserver>>,
 }
 
 impl std::fmt::Debug for RendererBuilder {
@@ -41,6 +43,7 @@ impl Default for RendererBuilder {
             device: None,
             frames_in_flight: 2,
             clear_color: Color::BLACK,
+            observer: None,
         }
     }
 }
@@ -53,13 +56,14 @@ struct Prepared {
     task_pool: Arc<dyn TaskPool>,
     frames_in_flight: u64,
     clear_color: Color,
+    observer: Option<Arc<dyn FrameObserver>>,
 }
 
 impl Prepared {
     fn finish(mut self, device: Arc<Device>, ownership: DeviceOwnership) -> Renderer {
         self.registry
             .activate(device.as_ref(), self.task_pool.as_ref(), &mut self.shared);
-        Renderer::new(
+        let mut renderer = Renderer::new(
             device,
             ownership,
             self.registry,
@@ -67,7 +71,9 @@ impl Prepared {
             self.frames_in_flight,
             self.clear_color,
             self.shared,
-        )
+        );
+        renderer.set_frame_observer(self.observer);
+        renderer
     }
 }
 
@@ -138,6 +144,15 @@ impl RendererBuilder {
         }
     }
 
+    // Profilers (ADR-0026); `Renderer::set_frame_observer` changes it later.
+    #[must_use]
+    pub fn with_frame_observer(self, observer: Arc<dyn FrameObserver>) -> Self {
+        Self {
+            observer: Some(observer),
+            ..self
+        }
+    }
+
     #[must_use]
     pub fn with_clear_color(self, clear_color: Color) -> Self {
         Self { clear_color, ..self }
@@ -155,6 +170,7 @@ impl RendererBuilder {
             task_pool: self.task_pool,
             frames_in_flight: self.frames_in_flight,
             clear_color: self.clear_color,
+            observer: self.observer,
         }
     }
 

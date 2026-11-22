@@ -10,7 +10,7 @@ const fn code(code: &'static str, title: &'static str) -> CodeInfo {
 
 // G: frame graph, P: platform, M: meshes and geometry pool, S: shaders, T: profiling, N: scene, X: textures. Every
 // R: RHI, G: frame graph, F: render features (packs), P: platform, M: meshes and geometry pool, S: shaders, Y:
-// materials. Every entry needs docs/diag/<code>.md.
+// materials, B: bindless textures. Every entry needs docs/diag/<code>.md.
 pub const CODES: &[CodeInfo] = &[
     code("R0001", "no adapter or device could be created"),
     code("R0002", "adapter lacks required features"),
@@ -73,6 +73,15 @@ pub const CODES: &[CodeInfo] = &[
     code("Y0001", "material parameter out of range"),
     code("Y0002", "unknown or removed material"),
     code("Y0003", "material shader hook does not compile"),
+    code(
+        "B0001",
+        "binding arrays unavailable, textures use a bind group per material",
+    ),
+    code("B0002", "bindless textures requested but unavailable on this device"),
+    code("B0003", "texture table is full"),
+    code("B0004", "texture handle is stale or unknown"),
+    code("B0005", "material uses more textures than a bind group holds"),
+    code("B0006", "invalid texture table configuration"),
 ];
 
 pub fn is_registered(code: &str) -> bool {

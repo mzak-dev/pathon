@@ -1884,6 +1884,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "pathon-bindless"
+version = "0.0.1"
+dependencies = [
+ "bytemuck",
+ "pathon-api",
+ "pathon-golden",
+ "pathon-material",
+ "pathon-mesh",
+ "pathon-rhi",
+ "pathon-shader",
+ "pathon-texture",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "pathon-core"
 version = "0.0.1"
 dependencies = [
@@ -1944,6 +1959,7 @@ dependencies = [
  "divan",
  "log",
  "pathon",
+ "pathon-bindless",
  "pathon-devtools",
  "pathon-material",
  "pathon-mesh",

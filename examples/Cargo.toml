@@ -12,6 +12,7 @@ publish = false
 bytemuck.workspace = true
 log.workspace = true
 pathon.workspace = true
+pathon-bindless.workspace = true
 pathon-devtools.workspace = true
 pathon-material.workspace = true
 pathon-mesh.workspace = true

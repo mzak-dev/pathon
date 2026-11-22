@@ -1,7 +1,6 @@
-use naga::valid::{Capabilities, ValidationFlags, Validator};
 use naga::{AddressSpace, TypeInner};
 
-use crate::ShaderError;
+use crate::{ShaderError, issues};
 
 /// One field of a struct held by a buffer binding, as the shader lays it out.
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -25,13 +24,7 @@ pub struct BufferLayout {
 
 /// Layout of the buffer bound at `@group(group) @binding(binding)`, so a CPU struct can be checked against the shader.
 pub fn reflect_buffer_layout(wgsl: &str, group: u32, binding: u32) -> Result<BufferLayout, ShaderError> {
-    let invalid = |message: &str| ShaderError::InvalidWgsl {
-        message: message.trim_end().to_owned(),
-    };
-    let module = naga::front::wgsl::parse_str(wgsl).map_err(|error| invalid(&error.emit_to_string(wgsl)))?;
-    Validator::new(ValidationFlags::all(), Capabilities::all())
-        .validate(&module)
-        .map_err(|error| invalid(&error.emit_to_string(wgsl)))?;
+    let (module, _) = issues::parse_and_validate(wgsl).map_err(|issue| crate::reflect::invalid_wgsl(&issue, wgsl))?;
 
     let variable = module
         .global_variables

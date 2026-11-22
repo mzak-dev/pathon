@@ -149,7 +149,8 @@ impl ShaderComposer {
         self.insert_module(path, source, None)
     }
 
-    /// Like [`Self::add_module`], with the file the source came from, which diagnostics show instead of the module path.
+    /// Like [`Self::add_module`], with the file the source came from, which diagnostics show instead of the module
+    /// path.
     pub fn add_module_file(&mut self, path: &str, source: &str, file: &str) -> Result<(), ShaderError> {
         self.insert_module(path, source, Some(file))
     }

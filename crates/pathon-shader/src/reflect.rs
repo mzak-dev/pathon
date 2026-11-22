@@ -60,7 +60,7 @@ pub fn reflect_bind_groups(wgsl: &str, entry_points: &[&str]) -> Result<Vec<Bind
     Ok(group_layouts(slots))
 }
 
-fn invalid_wgsl(issue: &issues::NagaIssue, wgsl: &str) -> ShaderError {
+pub(crate) fn invalid_wgsl(issue: &issues::NagaIssue, wgsl: &str) -> ShaderError {
     let diagnostic = issues::naga_diagnostic(issue, wgsl, None);
     ShaderError::InvalidWgsl {
         message: diagnostic.message.clone(),

@@ -8,8 +8,8 @@ const fn code(code: &'static str, title: &'static str) -> CodeInfo {
     CodeInfo { code, title }
 }
 
-// R: RHI, G: frame graph, F: render features (packs), P: platform, M: meshes and geometry pool, S: shaders, T:
-// profiling, N: scene. Every entry needs docs/diag/<code>.md.
+// G: frame graph, P: platform, M: meshes and geometry pool, S: shaders, T: profiling, N: scene, X: textures. Every
+// entry needs docs/diag/<code>.md.
 pub const CODES: &[CodeInfo] = &[
     code("R0001", "no adapter or device could be created"),
     code("R0002", "adapter lacks required features"),
@@ -63,6 +63,12 @@ pub const CODES: &[CodeInfo] = &[
     code("N0002", "invalid camera"),
     code("N0003", "invalid light"),
     code("N0004", "scene value is not finite"),
+    code("X0001", "no texture variant the device can sample"),
+    code("X0002", "invalid texture source"),
+    code("X0003", "texture larger than the device allows"),
+    code("X0004", "unsupported or broken KTX2 container"),
+    code("X0005", "mip chain cannot be generated for this format"),
+    code("X0006", "texture uses a fallback format"),
 ];
 
 pub fn is_registered(code: &str) -> bool {

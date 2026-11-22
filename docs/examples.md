@@ -12,6 +12,7 @@ Crate `examples/` gra rolę hosta, więc wolno mu używać wgpu i winit wprost (
 | `mesh_pool` | M4-01 | — | trzy meshe z jednej puli mega-buforów rysowane offscreen (wynik jako tekst), potem usunięcie jednego i reuse jego zakresu ([pathon-mesh](crates/pathon-mesh.md)); bez rendera i okna, na samym `Device` |
 | `profile` | M2-12 | C | wycinek pionowy offscreen pod okiem `pathon-profile`: tabela czasów GPU passów na stderr; `--features tracy` / `puffin` strumieniuje do profilera ([pathon-profile](crates/pathon-profile.md)) |
 | `scene_extract` | M4-02 | — | host z własnym `Vec` obiektów kopiuje je do render worlda (`Scene::extract`): spawn, ruch części obiektów, despawn; log pokazuje listę zmian do wgrania, `previous_model`, mapowanie `MeshId` ↔ `MeshHandle` i odrzucony stary uchwyt ([pathon-scene](crates/pathon-scene.md)); bez GPU i okna |
+| `texture_load` | M4-13 | — | tekstura sRGB przez `TextureLoader`: wybór formatu według `Caps` i mipmapy w compute; szachownica pokazuje uśrednianie w świetle liniowym (każdy mip 188, nie 128), wynik jako log ([pathon-texture](crates/pathon-texture.md)); bez rendera i okna, na samym `Device` |
 | `host_foreign_device` | M2-19 | B | host tworzy urządzenie i swapchain; pathon przyjmuje urządzenie, renderuje do tekstury hosta, host kopiuje ją na ekran |
 
 ```sh

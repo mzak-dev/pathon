@@ -1,0 +1,28 @@
+[package]
+name = "pathon-texture"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[package.metadata.pathon]
+kind = "pack"
+
+[dependencies]
+pathon-api.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+bytemuck.workspace = true
+pathon-golden.workspace = true
+pathon-rhi.workspace = true
+
+[features]
+default = ["ktx2"]
+# The container parser has no dependencies; the feature only lets a build without containers drop the code.
+ktx2 = []
+gpu-tests = []
+
+[lints]
+workspace = true

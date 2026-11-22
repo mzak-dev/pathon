@@ -1950,6 +1950,7 @@ dependencies = [
  "pathon-rhi-wgpu",
  "pathon-scene",
  "pathon-test",
+ "pathon-texture",
  "wgpu",
  "winit",
 ]
@@ -2090,6 +2091,17 @@ version = "0.0.1"
 dependencies = [
  "bytemuck",
  "pathon-api",
+]
+
+[[package]]
+name = "pathon-texture"
+version = "0.0.1"
+dependencies = [
+ "bytemuck",
+ "pathon-api",
+ "pathon-golden",
+ "pathon-rhi",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

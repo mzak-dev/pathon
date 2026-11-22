@@ -1,14 +1,14 @@
 use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 
-use naga::valid::{Capabilities, GlobalUse, ModuleInfo, ValidationFlags, Validator};
+use naga::valid::{GlobalUse, ModuleInfo};
 use naga::{AddressSpace, ArraySize, Handle, ImageClass, ImageDimension, Module, ScalarKind, TypeInner};
 use pathon_rhi_types::{
     BindGroupLayoutDesc, BindGroupLayoutEntry, BindingType, Format, SamplerBindingType, ShaderStages, StorageAccess,
     TextureSampleType, TextureViewDimension,
 };
 
-use crate::ShaderError;
+use crate::{ShaderError, issues};
 
 const REFLECTED_LABEL: &str = "reflected";
 // Bounds the layout list; far above the groups a pipeline layout can hold, far below an overflowing index.
@@ -29,10 +29,7 @@ struct SlotUse {
 
 /// Bind group layouts of the resources the given entry points use, indexed by group number.
 pub fn reflect_bind_groups(wgsl: &str, entry_points: &[&str]) -> Result<Vec<BindGroupLayoutDesc>, ShaderError> {
-    let module = naga::front::wgsl::parse_str(wgsl).map_err(|error| invalid_wgsl(&error.emit_to_string(wgsl)))?;
-    let info = Validator::new(ValidationFlags::all(), Capabilities::all())
-        .validate(&module)
-        .map_err(|error| invalid_wgsl(&error.emit_to_string(wgsl)))?;
+    let (module, info) = issues::parse_and_validate(wgsl).map_err(|issue| invalid_wgsl(&issue, wgsl))?;
     let selected = select_entry_points(&module, entry_points)?;
 
     let mut slots = BTreeMap::new();
@@ -63,9 +60,11 @@ pub fn reflect_bind_groups(wgsl: &str, entry_points: &[&str]) -> Result<Vec<Bind
     Ok(group_layouts(slots))
 }
 
-fn invalid_wgsl(message: &str) -> ShaderError {
+fn invalid_wgsl(issue: &issues::NagaIssue, wgsl: &str) -> ShaderError {
+    let diagnostic = issues::naga_diagnostic(issue, wgsl, None);
     ShaderError::InvalidWgsl {
-        message: message.trim_end().to_owned(),
+        message: diagnostic.message.clone(),
+        diagnostic: Box::new(diagnostic),
     }
 }
 

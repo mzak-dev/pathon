@@ -76,6 +76,19 @@ pub const CODES: &[CodeInfo] = &[
     code("Y0001", "material parameter out of range"),
     code("Y0002", "unknown or removed material"),
     code("Y0003", "material shader hook does not compile"),
+    code("S0101", "shader syntax error"),
+    code("S0102", "shader imports a module that is not registered"),
+    code("S0103", "shader imports a name its module does not declare"),
+    code("S0104", "shader declarations depend on each other in a cycle"),
+    code("S0105", "invalid @if, @elif or @else"),
+    code("S0106", "shader flag is enabled but nothing reads it"),
+    code("S0107", "unknown name in shader"),
+    code("S0108", "shader rejected by validation"),
+    code("S0109", "invalid shader resource or binding"),
+    code("S0110", "pipeline constant names no override of the shader"),
+    code("S0111", "shader composition error"),
+    code("S0201", "stored pipeline cache not used"),
+    code("S0202", "pipeline cache could not be saved"),
 ];
 
 pub fn is_registered(code: &str) -> bool {

@@ -18,6 +18,8 @@ use pathon_shader::{
 const ROOT: &str = "
 @if(wide) const FACTOR: u32 = 4u;
 @if(!wide) const FACTOR: u32 = 1u;
+override a: f32 = 0.0;
+override b: f32 = 0.0;
 @vertex fn vs(@location(0) position: vec2<f32>) -> @builtin(position) vec4<f32> {
     return vec4<f32>(position * f32(FACTOR), 0.0, 1.0);
 }

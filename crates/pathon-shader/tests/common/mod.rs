@@ -110,6 +110,8 @@ pub struct TestDevice {
     pub fail_label: Option<&'static str>,
     pub panic_label: Option<&'static str>,
     pub stats: Arc<Stats>,
+    // What `pipeline_cache_data` returns, so a test decides what the "driver" holds.
+    pub cache_blob: Mutex<Option<Vec<u8>>>,
 }
 
 impl TestDevice {
@@ -121,6 +123,7 @@ impl TestDevice {
             fail_label: None,
             panic_label: None,
             stats: Arc::new(Stats::default()),
+            cache_blob: Mutex::new(None),
         }
     }
 
@@ -239,7 +242,9 @@ impl DeviceApi for TestDevice {
         self.inner.wait_idle()
     }
     fn pipeline_cache_data(&self) -> Option<PipelineCacheData> {
-        self.inner.pipeline_cache_data()
+        let blob = lock(&self.cache_blob).clone()?;
+        // SAFETY: the bytes only travel to a test store and back; no driver ever receives them.
+        Some(unsafe { PipelineCacheData::from_bytes(blob) })
     }
 }
 

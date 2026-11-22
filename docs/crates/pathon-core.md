@@ -55,3 +55,7 @@ Przy budowie: faza 1 (`requirements` → `DeviceRequest`, konflikt backendów F0
 ## Wątki
 
 `Renderer: Send`. Core nie tworzy wątków (`xtask deps-check` to sprawdza); runner z wątkiem renderu jest w fasadzie `pathon` (feature `runtime`).
+
+## Obserwator klatki (M2-12, ADR-0026)
+
+`RendererBuilder::with_frame_observer` / `Renderer::set_frame_observer` podpina `FrameObserver` (trait z `pathon-graph`, re-eksportowany przez `pathon-api::graph` i `pathon-core`): renderer woła `begin_frame` na początku `render_frame` / `record_frame`, `end_frame` z gotową listą (obserwator może dopisać komendy, np. `resolve_queries`), `frame_committed` po udanym `submit` (w trybie A przy zwrocie listy), `frame_abandoned` przy porzuceniu klatki i `device_reset` w `reset`; executor grafu woła `begin_pass` / `end_pass` wokół nagrywania passu i `gpu_pass` dla każdego GPU-passu bez własnych timestampów. Rdzeń nie zna żadnej implementacji — profiler to [`pathon-profile`](pathon-profile.md). Bez obserwatora koszt to jedno sprawdzenie `Option` na pass i na klatkę.

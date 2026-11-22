@@ -432,7 +432,7 @@ Godot 4 renderuje przez `RenderingDevice` (Vulkan, D3D12, Metal), a GDExtension 
 
 ## Budżet zależności
 
-Zmierzone `cargo tree -e normal,build` (unikalne crate'y), 20.11.2026:
+Zmierzone `cargo tree -e normal,build` (unikalne crate'y), 20.11.2026 (wiersz wesl: Windows, 22.11.2026, wtedy `pathon` miał 95 crate'ów, bez `pathon-shader`):
 
 | Konfiguracja | Windows | Linux | macOS | Web |
 | --- | --- | --- | --- | --- |

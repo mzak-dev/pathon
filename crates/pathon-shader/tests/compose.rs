@@ -404,3 +404,86 @@ mod gpu {
         assert_eq!(values, [0xff03_0201, 0xff00_00ff, 6.0f32.to_bits()]);
     }
 }
+
+#[test]
+fn unused_module_declarations_are_stripped_but_unused_main_overrides_stay() {
+    let mut composer = ShaderComposer::new();
+    composer
+        .add_module(
+            "cam",
+            "@group(0) @binding(0) var<uniform> unused_uniform: vec4<f32>;\n\
+             @id(7) override unused_module_override: f32 = 1.0;\n\
+             fn unused_helper() {}\n\
+             @compute @workgroup_size(1) fn module_entry() {}\n\
+             fn used() -> u32 { return 1u; }",
+        )
+        .expect("module");
+    let composed = compose_valid(
+        &composer,
+        "import package::cam::used;\n\
+         override unused_main_override: f32 = 1.0;\n\
+         @compute @workgroup_size(1) fn main() { _ = used(); }",
+    );
+    assert!(composed.contains("override unused_main_override"), "{composed}");
+    for stripped in [
+        "unused_uniform",
+        "unused_module_override",
+        "unused_helper",
+        "module_entry",
+    ] {
+        assert!(
+            !composed.contains(stripped),
+            "`{stripped}` should be stripped:\n{composed}"
+        );
+    }
+}
+
+#[test]
+fn module_override_reached_through_a_function_keeps_its_id() {
+    let mut composer = ShaderComposer::new();
+    composer
+        .add_module(
+            "cfg",
+            "@id(7) override bias: f32 = 1.0;\nfn biased() -> f32 { return bias; }",
+        )
+        .expect("module");
+    let composed = compose_valid(
+        &composer,
+        "import package::cfg::biased;\n@compute @workgroup_size(1) fn main() { _ = biased(); }",
+    );
+    assert!(composed.contains("@id(7)"), "{composed}");
+}
+
+#[test]
+fn unknown_item_through_an_inline_path_is_an_error() {
+    let error = compose_error(
+        &composer_with_modules(),
+        "@compute @workgroup_size(1) fn main() { package::colors::nope(); }",
+    );
+    assert!(error.to_string().contains("shader.wgsl"), "{error}");
+}
+
+#[test]
+fn sources_with_a_byte_order_mark_compose() {
+    let mut composer = ShaderComposer::new();
+    composer
+        .add_module("bom", "\u{feff}fn from_bom() -> u32 { return 1u; }")
+        .expect("module");
+    compose_valid(
+        &composer,
+        "\u{feff}import package::bom::from_bom;\n@compute @workgroup_size(1) fn main() { _ = from_bom(); }",
+    );
+}
+
+#[test]
+fn keywords_are_not_module_path_segments() {
+    for path in ["fn", "colors::import", "_", "package", "super"] {
+        let error = ShaderComposer::new()
+            .add_module(path, "fn f() {}")
+            .expect_err("keyword");
+        assert!(
+            matches!(error, ShaderError::InvalidModulePath { .. }),
+            "{path:?}: {error:?}"
+        );
+    }
+}

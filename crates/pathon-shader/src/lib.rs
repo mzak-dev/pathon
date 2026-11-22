@@ -2,9 +2,44 @@
 
 use std::collections::BTreeMap;
 
-use wesl::Compiler;
 use wesl::resolver::VirtualResolver;
 use wesl::syntax::ModulePath;
+use wesl::{Compiler, Error as WeslError};
+
+const RESERVED_SEGMENTS: &[&str] = &[
+    "_",
+    "alias",
+    "as",
+    "break",
+    "case",
+    "const",
+    "const_assert",
+    "continue",
+    "continuing",
+    "default",
+    "diagnostic",
+    "discard",
+    "else",
+    "enable",
+    "false",
+    "fn",
+    "for",
+    "if",
+    "import",
+    "let",
+    "loop",
+    "override",
+    "package",
+    "requires",
+    "return",
+    "self",
+    "struct",
+    "super",
+    "switch",
+    "true",
+    "var",
+    "while",
+];
 
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
@@ -15,9 +50,15 @@ pub enum ShaderError {
     Compose { file_path: String, message: String },
 }
 
+#[derive(Debug)]
+struct Module {
+    path: ModulePath,
+    source: String,
+}
+
 #[derive(Debug, Default)]
 pub struct ShaderComposer {
-    modules: BTreeMap<String, String>,
+    modules: BTreeMap<String, Module>,
 }
 
 impl ShaderComposer {
@@ -28,30 +69,46 @@ impl ShaderComposer {
 
     /// Registers `source` as `package::<path>`; a module added again under the same path replaces the earlier one.
     pub fn add_module(&mut self, path: &str, source: &str) -> Result<(), ShaderError> {
-        module_path(path)?;
-        self.modules.insert(path.to_owned(), source.to_owned());
+        let module = Module {
+            path: module_path(path)?,
+            source: without_byte_order_mark(source).to_owned(),
+        };
+        self.modules.insert(path.to_owned(), module);
         Ok(())
     }
 
     /// Resolves the imports of `source` against the current modules; `file_path` only labels errors.
     pub fn compose(&self, source: &str, file_path: &str) -> Result<String, ShaderError> {
-        let compose_error = |message: String| ShaderError::Compose {
-            file_path: file_path.to_owned(),
-            message,
-        };
         let mut resolver = VirtualResolver::new();
-        resolver.add_module(ModulePath::new_root(), source.into());
-        for (path, module_source) in &self.modules {
-            resolver.add_module(module_path(path)?, module_source.as_str().into());
+        resolver.add_module(ModulePath::new_root(), without_byte_order_mark(source).into());
+        for module in self.modules.values() {
+            resolver.add_module(module.path.clone(), module.source.as_str().into());
         }
         let mut compiler = Compiler::default().with_resolver(resolver);
-        // Stripping would drop overrides the main shader declares but does not read, which pipelines address by name.
-        compiler.options.strip = false;
+        // Imported declarations nothing reaches are dropped; the main shader is kept whole, because
+        // pipelines address its overrides by name even when no entry point reads them.
+        compiler.options.strip = true;
+        compiler.options.keep_main = true;
         compiler
             .compile_root()
             .map(|result| result.to_string())
-            .map_err(|error| compose_error(error.to_string()))
+            .map_err(|error| ShaderError::Compose {
+                file_path: file_path.to_owned(),
+                message: plain_message(error),
+            })
     }
+}
+
+// wesl decides on ANSI colours from the terminal and the environment, which must not leak into messages.
+fn plain_message(error: WeslError) -> String {
+    match error {
+        WeslError::Error(diagnostic) => diagnostic.colored(false).to_string(),
+        other => other.to_string(),
+    }
+}
+
+fn without_byte_order_mark(source: &str) -> &str {
+    source.strip_prefix('\u{feff}').unwrap_or(source)
 }
 
 fn is_identifier(segment: &str) -> bool {
@@ -69,6 +126,9 @@ fn module_path(path: &str) -> Result<ModulePath, ShaderError> {
     };
     if !path.split("::").all(is_identifier) {
         return Err(invalid("expected identifiers separated by `::`".to_owned()));
+    }
+    if let Some(keyword) = path.split("::").find(|segment| RESERVED_SEGMENTS.contains(segment)) {
+        return Err(invalid(format!("`{keyword}` is a reserved word")));
     }
     format!("package::{path}")
         .parse::<ModulePath>()

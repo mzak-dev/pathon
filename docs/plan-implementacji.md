@@ -278,8 +278,10 @@ Hosty (M6, M7) nie są na ścieżce minimalnej, ale ich szew jest: M2-19 i M4-20
   - Flagi: opaque, masked, transparent, subsurface, transmission; hook podziału `diffuse` / `specular`; tablica materiałów w `GpuArray`.
   - **Gotowe gdy:** ten sam materiał renderuje się w forward i w testowym compute ewaluującym punkt.
 - [ ] **M4-04 · Bindless** ★ — profil Desktop: `binding_array`; profil Web: bind group per materiał, ten sam indeks logiczny. **Gotowe gdy:** ta sama scena na obu profilach.
+  - **Stan 22.11.2026:** warunek wstępny RHI spełniony (PAT-119): `Features::NON_UNIFORM_INDEXING` z `TEXTURE_BINDING_ARRAY` (profil Desktop) ma test GPU, w którym każdy wątek compute i każdy piksel czyta inny element `binding_array`.
 - [ ] **M4-05 · `pathon-pbr`** ★ — prepass (`depth`, `normals`, `motion`, `material_id`, na żądanie `roughness`, `albedo`, `depth_pyramid`), clustered forward+ (przypisanie świateł w compute, także na Web). **Gotowe gdy:** golden image sceny testowej.
 - [ ] **M4-06 · `pathon-ibl`** ★ — environment map, prefiltrowanie, LUT BRDF; bez tego metale są czarne. Przed startem: `view_formats` i zgodność z cube w `TextureDesc` ([spike-ash.md](spike-ash.md) #4; termin twardy M5-07). **Gotowe gdy:** golden image z metalami.
+  - **Stan 22.11.2026:** warunek wstępny RHI spełniony: `TextureDesc::view_formats` (bliźniak sRGB) i widoki cube / tablic z walidacją w `rhi-null` oraz testem GPU (sześć ścian renderowanych osobno, odczyt `texture_cube`; widok sRGB nad teksturą UNORM); aneks w [ADR-0020](adr/0020-kontrakty-rhi-types.md). `GraphTextureDesc` dalej nie ma cube'a.
 - [ ] **M4-07 · `pathon-shadow`** — CSM + PCF, rola Shadows. **Gotowe gdy:** golden image z cieniami.
 - [ ] **M4-08 · `pathon-sky`** — atmosfera; jako źródło dla IBL. **Gotowe gdy:** golden image.
 - [ ] **M4-09 · `pathon-post`** ★ — ekspozycja (slot `exposure`), bloom, tonemapping SDR. **Gotowe gdy:** golden image.

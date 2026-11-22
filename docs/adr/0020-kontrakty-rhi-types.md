@@ -48,6 +48,15 @@ Bind groupy nie mają dynamicznych offsetów uniformów; dane per draw idą prze
 - `Limits`, `Caps` i `AdapterInfo` buduje tylko backend: `#[non_exhaustive]` przed M5-07.
 - `DeviceApi` implementują tylko backendy w repo: trait nie należy do zamrożonej powierzchni paczek, nowe metody są dozwolone po M5-07.
 
+### Aneks (22.11.2026): widoki cube i `view_formats`
+
+Warunek wstępny M4-06 (spike-ash #4), bez nowego ADR:
+
+- `TextureDesc::view_formats: &'static [Format]` zamiast `Vec<Format>`, żeby opis został `Copy + Hash` (pooling grafu porównuje opisy przez `same_allocation`, więc tekstury o różnych `view_formats` się nie mieszają). Dozwolony jest tylko bliźniak sRGB / non-sRGB formatu tekstury; to wspólna część wgpu, Vulkana (`VK_KHR_image_format_list`) i WebGPU.
+- Cube to nie flaga tekstury: wgpu-hal i Vulkan wnioskują zgodność z cube z kwadratowej tekstury 2D o co najmniej 6 warstwach. Kontrakt siedzi w widoku (`TextureViewDesc::dimension` `Cube` / `CubeArray`), a backend natywny ustawi `CUBE_COMPATIBLE` z `TextureDesc::is_cube_compatible`.
+- Bez `layer_count` widok `D1`/`D2`/`D3` obejmuje jedną warstwę, `Cube` sześć, a `D2Array`/`CubeArray` resztę (jak w wgpu); `rhi-null` waliduje to ściśle (R0109 wymiar i format, R0112 zakres).
+- Dalej odłożone: `GraphTextureDesc` nie ma cube'a ani `view_formats` (transient w grafie to zawsze 2D z jednym formatem); IBL trzyma mapę środowiska jako trwały zasób (ADR-0011). Import tekstury hosta (`import_texture`) zawsze ma puste `view_formats`.
+
 ## Konsekwencje
 
 - Zmiana łamiąca w każdym miejscu, które buduje `TextureAccess` (graf, testy, przykłady); paczki jej nie widzą, bo bariery planuje graf.

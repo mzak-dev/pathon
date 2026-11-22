@@ -13,7 +13,7 @@ use pathon_rhi_types::{
 
 use crate::library::ShaderLibrary;
 use crate::pipeline_cache::{PipelineCache, normalized_compute, normalized_render};
-use crate::{ShaderError, ShaderKey};
+use crate::{Composed, ShaderDiagnostic, ShaderError, ShaderKey, check_pipeline_constants};
 
 /// What a pack gets back for something it asked the compiler to build.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -112,19 +112,44 @@ pub struct BuildFailure {
     code: &'static str,
 }
 
+const SKIPPED_UNTIL_FIXED: &str =
+    "the draw is skipped or uses its placeholder; fix the source, or call `retry_failed` if the cause was external";
+
 impl BuildFailure {
+    /// The code of the located shader problem when there is one (S0101 to S0111), else S0001 or S0002.
     #[must_use]
     pub fn code(&self) -> &'static str {
-        self.code
+        self.located().map_or(self.code, |located| located.code)
+    }
+
+    /// The problem in the source, with file, line and hint, when the failure is one.
+    #[must_use]
+    pub fn located(&self) -> Option<&ShaderDiagnostic> {
+        match &self.error {
+            BuildError::Shader(error) => error.diagnostic(),
+            BuildError::Rhi(_) | BuildError::Panicked { .. } => None,
+        }
     }
 
     #[must_use]
     pub fn diagnostic(&self) -> Diagnostic {
-        Diagnostic::error(
-            self.code,
-            format!("{} failed to compile in the background: {}", self.subject, self.error),
-        )
-        .with_hint("the draw is skipped or uses its placeholder; fix the source, or call `retry_failed` if the cause was external")
+        let Some(located) = self.located() else {
+            return Diagnostic::error(
+                self.code,
+                format!("{} failed to compile in the background: {}", self.subject, self.error),
+            )
+            .with_hint(SKIPPED_UNTIL_FIXED);
+        };
+        let diagnostic = located.to_diagnostic();
+        let hint = match &located.hint {
+            Some(hint) => format!("{hint} ({SKIPPED_UNTIL_FIXED})"),
+            None => SKIPPED_UNTIL_FIXED.to_owned(),
+        };
+        Diagnostic {
+            message: format!("{} failed to compile: {}", self.subject, diagnostic.message),
+            ..diagnostic
+        }
+        .with_hint(hint)
     }
 }
 
@@ -164,7 +189,7 @@ impl Target {
 enum Built {
     Module {
         key: ShaderKey,
-        wgsl: Arc<str>,
+        composed: Composed,
         id: ShaderModuleId,
     },
     Render {
@@ -353,6 +378,48 @@ impl BackgroundCompiler {
         evicted
     }
 
+    /// Like [`Self::add_module`], with the file the source came from, which diagnostics show.
+    pub fn add_module_file(
+        &mut self,
+        path: &str,
+        source: &str,
+        file: &str,
+    ) -> Result<Vec<ShaderModuleId>, ShaderError> {
+        let generation = self.library.generation();
+        let evicted = self.library.add_module_file(path, source, file)?;
+        self.forget_module_failures_if_evicted(generation);
+        Ok(evicted)
+    }
+
+    /// Like [`Self::add_root`], with the file the source came from, which diagnostics show.
+    pub fn add_root_file(&mut self, name: &str, source: &str, file: &str) -> Vec<ShaderModuleId> {
+        let generation = self.library.generation();
+        let evicted = self.library.add_root_file(name, source, file);
+        self.forget_module_failures_if_evicted(generation);
+        evicted
+    }
+
+    /// Forgets a module whose file was deleted; builds started against it are discarded when they finish.
+    pub fn remove_module(&mut self, path: &str) -> Vec<ShaderModuleId> {
+        let generation = self.library.generation();
+        let evicted = self.library.remove_module(path);
+        self.forget_module_failures_if_evicted(generation);
+        evicted
+    }
+
+    /// Forgets a shader root whose file was deleted.
+    pub fn remove_root(&mut self, name: &str) -> Vec<ShaderModuleId> {
+        let generation = self.library.generation();
+        let evicted = self.library.remove_root(name);
+        self.forget_module_failures_if_evicted(generation);
+        evicted
+    }
+
+    /// Warnings (S0106) of finished permutations since the last call; each is reported once.
+    pub fn take_warnings(&mut self) -> Vec<ShaderDiagnostic> {
+        self.library.take_warnings()
+    }
+
     pub fn shader_module(&mut self, key: &ShaderKey) -> Lookup<ShaderModuleId> {
         match self.library.cached_module(key) {
             Some(id) => Lookup::Ready(id),
@@ -464,17 +531,17 @@ impl BackgroundCompiler {
         Some(
             self.worker
                 .job(target.clone(), self.library.generation(), move |device, cancelled| {
-                    let wgsl = compose.run()?;
+                    let composed = compose.run()?;
                     if cancelled.load(Ordering::Acquire) {
                         return Err(Interrupted::Cancelled);
                     }
                     let id = device
                         .create_shader_module(&ShaderModuleDesc {
                             label: "permutation",
-                            wgsl: &wgsl,
+                            wgsl: &composed.wgsl,
                         })
                         .map_err(ShaderError::Rhi)?;
-                    Ok(Built::Module { key, wgsl, id })
+                    Ok(Built::Module { key, composed, id })
                 }),
         )
     }
@@ -484,9 +551,20 @@ impl BackgroundCompiler {
             return None;
         };
         let desc = desc.clone();
+        let vertex_wgsl = self.library.wgsl_of_module(desc.vertex.module);
+        let fragment_wgsl = desc
+            .fragment
+            .as_ref()
+            .and_then(|stage| self.library.wgsl_of_module(stage.module));
         Some(self.worker.job(target.clone(), 0, move |device, cancelled| {
             if cancelled.load(Ordering::Acquire) {
                 return Err(Interrupted::Cancelled);
+            }
+            if let Some(wgsl) = &vertex_wgsl {
+                check_pipeline_constants(wgsl, &desc.vertex)?;
+            }
+            if let (Some(wgsl), Some(stage)) = (&fragment_wgsl, &desc.fragment) {
+                check_pipeline_constants(wgsl, stage)?;
             }
             let id = device.create_render_pipeline(&desc)?;
             Ok(Built::Render { desc, id })
@@ -498,9 +576,13 @@ impl BackgroundCompiler {
             return None;
         };
         let desc = desc.clone();
+        let wgsl = self.library.wgsl_of_module(desc.shader.module);
         Some(self.worker.job(target.clone(), 0, move |device, cancelled| {
             if cancelled.load(Ordering::Acquire) {
                 return Err(Interrupted::Cancelled);
+            }
+            if let Some(wgsl) = &wgsl {
+                check_pipeline_constants(wgsl, &desc.shader)?;
             }
             let id = device.create_compute_pipeline(&desc)?;
             Ok(Built::Compute { desc, id })
@@ -561,7 +643,7 @@ impl BackgroundCompiler {
         let outdated = matches!(target, Target::Module(_)) && generation != self.library.generation();
         match result {
             Ok(built) if outdated => self.worker.device.destroy(built.resource()),
-            Ok(Built::Module { key, wgsl, id }) => self.library.store(key, wgsl, id),
+            Ok(Built::Module { key, composed, id }) => self.library.store(key, composed, id),
             Ok(Built::Render { desc, id }) => self.pipelines.store_render(desc, id),
             Ok(Built::Compute { desc, id }) => self.pipelines.store_compute(desc, id),
             Err(_) if outdated => {}

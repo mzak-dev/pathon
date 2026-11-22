@@ -24,7 +24,7 @@ Decyzje i uzasadnienie: [ADR-0020](../adr/0020-kontrakty-rhi-types.md). Backend 
 - **Układ texeli.** `write_texture` wymaga tylko, by `bytes_per_row` mieścił wiersz bloków; kopie bufor↔tekstura w liście komend wymagają `bytes_per_row` podzielnego przez 256. `rows_per_image` musi pokrywać wysokość kopii w blokach zawsze, także dla jednego obrazu. Naruszenie to R0113.
 - **Kolejność w passie.** `SetBindGroup` wolno przed `Set*Pipeline`; grupy zostają po zmianie potoku o zgodnym layoucie.
 - **Wątki.** Natywnie każdą metodę `DeviceApi` wolno wołać z dowolnego wątku i współbieżnie z innymi (także `create_*_pipeline` w trakcie `submit`); wyjątek: surface'y tworzy wątek z oknem (ADR-0004). `destroy_*` zasobu użytego w zgłoszonej liście jest odroczone do końca pracy GPU. Na wasm wszystko działa na jednym wątku.
-- **Współrzędne.** Konwencja WebGPU: NDC `x, y ∈ [-1, 1]` z `y` w górę, `z ∈ [0, 1]`; framebuffer i tekstury od lewego górnego rogu; przód trójkąta CCW. Dla backendu natywnego niezweryfikowane (M2-15).
+- **Współrzędne.** Konwencja WebGPU: NDC `x, y ∈ [-1, 1]` z `y` w górę, `z ∈ [0, 1]`; framebuffer i tekstury od lewego górnego rogu; przód trójkąta CCW. Na Vulkanie zweryfikowane spike'iem M2-15: ujemna wysokość viewportu (albo flaga `ADJUST_COORDINATE_SPACE` w naga) daje ten sam obraz co WebGPU.
 - **Bez dynamicznych offsetów** w bind groupach; dane per draw idą przez immediates (ADR-0018) albo osobne grupy.
 - **Rozrost struktur.** Do zamrożenia w M5-07 nowe pole w strukturze z publicznymi polami jest akceptowaną zmianą łamiącą; `#[non_exhaustive]` z konstruktorem dla struktur budowanych przez paczki i dla `Limits` / `Caps` / `AdapterInfo` dojdzie przed M5-07.
 

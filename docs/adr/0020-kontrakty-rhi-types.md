@@ -35,7 +35,7 @@ Spike ash (`docs/spike-ash.md`, pozycje #6 i J) pokazał, że część zachowani
 
 ### Współrzędne
 
-Konwencja WebGPU: NDC `x, y ∈ [-1, 1]` z `y` w górę, `z ∈ [0, 1]`; współrzędne framebuffera i tekstur od lewego górnego rogu z `y` w dół; domyślny przód trójkąta CCW (`FrontFace::Ccw`). Backend natywny dopasowuje się (np. flip Y w naga albo ujemna wysokość viewportu) — niezweryfikowane, bo spike nie narysował trójkąta (M2-15).
+Konwencja WebGPU: NDC `x, y ∈ [-1, 1]` z `y` w górę, `z ∈ [0, 1]`; współrzędne framebuffera i tekstur od lewego górnego rogu z `y` w dół; domyślny przód trójkąta CCW (`FrontFace::Ccw`). Backend natywny dopasowuje się. Spike ash (22.11.2026, [spike-ash.md](../spike-ash.md)) narysował trójkąt na Vulkanie i potwierdził, że oba sposoby dają obraz jak w WebGPU (wierzchołek u góry, CCW widoczny, CW odrzucony przy cullingu tylnych): `ADJUST_COORDINATE_SPACE` w naga oraz ujemna wysokość viewportu bez tej flagi. Backend ash ma użyć viewportu z ujemną wysokością (jak wgpu-hal), żeby shadery były identyczne jak na wgpu.
 
 ### Bez dynamicznych offsetów
 

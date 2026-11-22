@@ -310,10 +310,7 @@ fn raw_features_of(device: &WgpuDevice) -> wgpu::Features {
 }
 
 // Native wgpu futures are ready on the first poll.
-fn request_device_now(
-    adapter: &wgpu::Adapter,
-    descriptor: &wgpu::DeviceDescriptor<'_>,
-) -> (wgpu::Device, wgpu::Queue) {
+fn request_device_now(adapter: &wgpu::Adapter, descriptor: &wgpu::DeviceDescriptor<'_>) -> (wgpu::Device, wgpu::Queue) {
     use std::future::Future;
     use std::pin::pin;
     use std::task::{Context, Poll, Waker};

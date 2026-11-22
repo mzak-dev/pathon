@@ -160,7 +160,7 @@ fn a_frame_is_observed_from_its_start_to_its_commit() {
     let journal = Arc::new(Journal::default());
     let mut renderer = null_builder()
         .with_feature(DrawsOnePass)
-        .with_frame_observer(journal.clone())
+        .with_frame_observer(Arc::<Journal>::clone(&journal))
         .build()
         .expect("renderer");
     let input = one_view(&mut renderer);
@@ -191,7 +191,7 @@ fn a_frame_that_fails_to_record_is_abandoned_and_never_ended() {
     let journal = Arc::new(Journal::default());
     let mut renderer = null_builder()
         .with_feature(LosesDevice)
-        .with_frame_observer(journal.clone())
+        .with_frame_observer(Arc::<Journal>::clone(&journal))
         .build()
         .expect("renderer");
     let input = one_view(&mut renderer);
@@ -211,7 +211,7 @@ fn the_list_returned_to_a_host_ends_with_what_the_observer_appended() {
     let journal = Arc::new(Journal::default());
     let mut renderer = null_builder()
         .with_feature(DrawsOnePass)
-        .with_frame_observer(journal.clone())
+        .with_frame_observer(Arc::<Journal>::clone(&journal))
         .build()
         .expect("renderer");
     let input = one_view(&mut renderer);
@@ -234,7 +234,7 @@ fn the_list_returned_to_a_host_ends_with_what_the_observer_appended() {
 fn the_observer_hears_about_a_new_device() {
     let journal = Arc::new(Journal::default());
     let mut renderer = null_builder()
-        .with_frame_observer(journal.clone())
+        .with_frame_observer(Arc::<Journal>::clone(&journal))
         .build()
         .expect("renderer");
 
@@ -249,16 +249,16 @@ fn an_observer_set_later_replaces_and_removes_the_first() {
     let second = Arc::new(Journal::default());
     let mut renderer = null_builder()
         .with_feature(DrawsOnePass)
-        .with_frame_observer(first.clone())
+        .with_frame_observer(Arc::<Journal>::clone(&first))
         .build()
         .expect("renderer");
     let input = one_view(&mut renderer);
 
-    renderer.set_frame_observer(Some(second.clone()));
+    renderer.set_frame_observer(Some(Arc::<Journal>::clone(&second)));
     renderer.render_frame(&input).expect("frame");
     renderer.set_frame_observer(None);
     renderer.render_frame(&input).expect("unobserved frame");
 
-    assert!(first.take().is_empty());
+    assert_eq!(first.take(), []);
     assert_eq!(second.take().first(), Some(&Event::BeginFrame(0)));
 }

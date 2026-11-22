@@ -124,7 +124,7 @@ fn passes_are_reported_in_execution_order_with_the_names_of_the_graph() {
     let device = NullDevice::new();
     let recorder = Recorder::new(&device);
     let mut graph = FrameGraph::new();
-    graph.set_observer(Some(recorder.clone()));
+    graph.set_observer(Some(Arc::<Recorder>::clone(&recorder)));
     let output = import_output(&mut graph, &device);
     let mut pass = graph.add_pass(PassDesc::new("first", Stage::Opaque));
     let written = pass.write(output, Access::COLOR_ATTACHMENT);
@@ -165,7 +165,7 @@ fn a_pass_with_timestamps_of_its_own_is_left_alone() {
         end_index: 11,
     };
     let mut graph = FrameGraph::new();
-    graph.set_observer(Some(recorder.clone()));
+    graph.set_observer(Some(Arc::<Recorder>::clone(&recorder)));
     let output = import_output(&mut graph, &device);
     let mut pass = graph.add_pass(PassDesc::new("timed by the pack", Stage::Opaque));
     let written = pass.write(output, Access::COLOR_ATTACHMENT);
@@ -185,7 +185,7 @@ fn compute_passes_and_several_gpu_passes_in_one_graph_pass_are_all_named_after_i
     let device = NullDevice::new();
     let recorder = Recorder::new(&device);
     let mut graph = FrameGraph::new();
-    graph.set_observer(Some(recorder.clone()));
+    graph.set_observer(Some(Arc::<Recorder>::clone(&recorder)));
     let output = import_output(&mut graph, &device);
     let mut pass = graph.add_pass(PassDesc::new("busy", Stage::Opaque));
     let written = pass.write(output, Access::COLOR_ATTACHMENT);
@@ -228,7 +228,7 @@ fn a_failing_pass_still_closes_its_span_and_gets_no_timestamps() {
     let device = NullDevice::new();
     let recorder = Recorder::new(&device);
     let mut graph = FrameGraph::new();
-    graph.set_observer(Some(recorder.clone()));
+    graph.set_observer(Some(Arc::<Recorder>::clone(&recorder)));
     let output = import_output(&mut graph, &device);
     let mut pass = graph.add_pass(PassDesc::new("broken", Stage::Opaque));
     let written = pass.write(output, Access::COLOR_ATTACHMENT);

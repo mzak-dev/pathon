@@ -8,7 +8,7 @@ const fn code(code: &'static str, title: &'static str) -> CodeInfo {
     CodeInfo { code, title }
 }
 
-// R: RHI, G: frame graph, F: render features (packs), P: platform. Every entry needs docs/diag/<code>.md.
+// R: RHI, G: frame graph, F: render features (packs), P: platform, T: profiling. Every entry needs docs/diag/<code>.md.
 pub const CODES: &[CodeInfo] = &[
     code("R0001", "no adapter or device could be created"),
     code("R0002", "adapter lacks required features"),
@@ -48,6 +48,8 @@ pub const CODES: &[CodeInfo] = &[
     code("F0106", "second view of the same target in one frame skipped"),
     code("F0201", "features require different backends"),
     code("P0001", "browser without WebGPU"),
+    code("T0001", "GPU pass timings unavailable"),
+    code("T0002", "more GPU passes in a frame than the profiler can time"),
 ];
 
 pub fn is_registered(code: &str) -> bool {

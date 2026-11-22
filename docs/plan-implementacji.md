@@ -133,7 +133,7 @@ Hosty (M6, M7) nie są na ścieżce minimalnej, ale ich szew jest: M2-19 i M4-20
   - Minimalne nagrywanie: clear + present (rozszerzane w M1-05).
   - **Gotowe gdy:** crate kompiluje się z zależnościami tylko `bitflags` i `raw-window-handle`.
 
-- [ ] **M0-08 · `pathon-rhi-wgpu`** ★
+- [x] **M0-08 · `pathon-rhi-wgpu`** ★
   - **Stan 20.11.2026:** sprawdzone na Windows (test zgodności na GPU); Metal i WebGPU do sprawdzenia.
   - **Stan 22.11.2026:** test `crates/pathon-rhi-wgpu/tests/caps_report.rs` tworzy urządzenie na każdym natywnym backendzie systemu i porównuje `Caps` z surowym wgpu; urządzenie surowego wgpu przyjęte przez `adopt` raportuje te same `Caps` co urządzenie pathon z tym samym deskryptorem (`caps_of_an_adopted_device_match_raw_wgpu`). Sprawdzone: DX12 i Vulkan (Windows, AMD RX 9070 XT), WebGPU (Chrome, przykład web). Vulkan na lavapipe ma job `gpu`. Metal czeka na pierwszy przebieg jobu `gpu-metal` (macOS, Apple Silicon); po zielonym przebiegu można odhaczyć.
   - Urządzenie z `DeviceRequest`, asynchronicznie; konwersje typów makrem z jednej tabeli; brak `impl From<wgpu::X>` w publicznym API.
@@ -141,27 +141,30 @@ Hosty (M6, M7) nie są na ścieżce minimalnej, ale ich szew jest: M2-19 i M4-20
   - `interop::adopt(instance, adapter, device, queue)` — przyjęcie urządzenia utworzonego poza pathon; `Caps` liczone z przyjętego adaptera. W drugą stronę eksport surowych obiektów, żeby host mógł użyć urządzenia pathon.
   - **Gotowe gdy:** urządzenie powstaje na DX12, Vulkanie, Metalu i WebGPU w CI lub ręcznym teście na sprzęcie; test przyjmuje urządzenie utworzone surowym wgpu i raportuje te same `Caps`.
 
+  - **Stan 22.11.2026 (CI 45046306654):** zweryfikowane na DX12 i Vulkanie (Windows, lokalnie), Vulkanie/lavapipe (job `gpu`), Metalu (job `gpu-metal`, Apple Paravirtual) i WebGPU (Chrome 157); `caps_of_an_adopted_device_match_raw_wgpu` przechodzi.
 - [x] **M0-09 · `pathon-rhi` (fasada)** ★
   - **Stan 20.11.2026:** natywnie sprawdzone; wasm tylko kompiluje się (cargo check).
   - **Stan 22.11.2026:** sprawdzone na wasm: w Chrome ten sam kod buduje urządzenie przez `build_async()` (log `caps: Caps { backend: WebGpu, … }` przed pierwszą klatką), natywnie przez blokujące `build()` (testy GPU, `clear`). Dowód: `examples/web/verify.cjs` (Chromium 153, Windows, kod wyjścia 0).
   - `enum Device { Wgpu(..) }`, `build_async()` + natywny blokujący `build()`, re-eksport typów.
   - **Gotowe gdy:** ten sam kod tworzy urządzenie natywnie (blokująco) i na wasm (async).
 
-- [ ] **M0-10 · Przykład `clear`** ★ — **Gotowe gdy:** spełniona pierwsza część kryterium M0.
+- [x] **M0-10 · Przykład `clear`** ★ — **Gotowe gdy:** spełniona pierwsza część kryterium M0.
   - **Stan 20.11.2026:** działa na Windows; wersja webowa (`examples/web`) buduje się, obraz do sprawdzenia w Chrome; Linux i macOS do sprawdzenia.
   - **Stan 22.11.2026:** Windows (natywnie, `PATHON_EXIT_AFTER_FRAMES=60` — 60 klatek i wyjście 0) i Chrome (kolor (89, 124, 160), jak natywnie) potwierdzone. Przykład ma teraz automatyczne wyjście po N klatkach (`PATHON_EXIT_AFTER_FRAMES`), więc job `window` uruchamia go bez człowieka na Linuksie (Xvfb, lavapipe) i macOS (Metal); czeka na pierwszy przebieg. Odhaczyć po zielonym `window` na obu systemach.
 
+  - **Stan 22.11.2026 (CI 45046306654):** `clear` renderuje 120 klatek w jobie `window` na Linuksie (Xvfb + lavapipe), macOS i Windows oraz w Chrome 157 (ten sam kolor co natywnie).
 - [x] **M0-11 · Przykład `external-window`** — okno z surowego winita albo SDL3, bez `pathon-platform`. **Gotowe gdy:** przykład rysuje.
   - **Stan 20.11.2026:** działa na Windows (surowy winit, bez pathon-platform).
 
 ## M1 — RHI z modelem bindowania, Caps, diagnostyka, drugi backend
 
-- [ ] **M1-01 · Caps** ★
+- [x] **M1-01 · Caps** ★
   - **Stan 20.11.2026:** Caps z adaptera i matryca formatów gotowe, test konwersji w obie strony; porównanie na 3 systemach i w Chrome do zrobienia.
   - **Stan 22.11.2026:** `caps_report` porównuje funkcje, limity i matrycę formatów z surowym wgpu; raport (adapter, profil, funkcje, limity) trafia do podsumowania joba. Windows: Vulkan i DX12 zgodne. Chrome: `verify.cjs` porównuje `Caps` z `navigator.gpu` — 9 funkcji i 6 limitów zgodne (`SUBGROUP` nie występuje na web, bo wgpu 30.0.2 nie ma mapowania `subgroups`). Linux (lavapipe) i macOS (Metal): raporty w podsumowaniach jobów `gpu` i `gpu-metal`, czekają na pierwszy przebieg.
   - Bity funkcji i limitów z adaptera, matryca formatów tekstur (BCn, ASTC, ETC2, formaty storage), nazwane profile Web / Desktop / High.
   - **Gotowe gdy:** raport `Caps` przy starcie zgadza się z `get_capabilities` / `features()` wgpu na 3 systemach i w Chrome.
 
+  - **Stan 22.11.2026 (CI 45046306654):** `caps_report` porównuje Caps z surowym wgpu na Windows (Vulkan, DX12), Linuksie (lavapipe), macOS (Metal) i w Chrome (`verify.cjs`).
 - [x] **M1-02 · `pathon-diag`** ★
   - Typ `Diagnostic` w każdym buildzie; renderer w stylu rustc (miette) tylko w dev; w release tekst przez `log`.
   - Kody P / R / G / S / F, strona per kod w `docs/diag/`.
@@ -276,8 +279,9 @@ Hosty (M6, M7) nie są na ścieżce minimalnej, ale ich szew jest: M2-19 i M4-20
 
 ## M4 — Core działa
 
-- [ ] **M4-00 · Golden images** ★ — **pierwszy task etapu.** Render headless; referencje per backend albo metryka percepcyjna (np. FLIP); CI na lavapipe, WARP i macOS (sprawdzić Metal na hostowanych runnerach, w razie potrzeby własny runner). **Gotowe gdy:** golden test wycinka z M2-18 w CI.
+- [x] **M4-00 · Golden images** ★ — **pierwszy task etapu.** Render headless; referencje per backend albo metryka percepcyjna (np. FLIP); CI na lavapipe, WARP i macOS (sprawdzić Metal na hostowanych runnerach, w razie potrzeby własny runner). **Gotowe gdy:** golden test wycinka z M2-18 w CI.
   - **Stan 22.11.2026:** crate `pathon-golden` (`assert_golden(name, &image, tolerance)`, tryb `PATHON_UPDATE_GOLDEN=1`, artefakty actual / expected / diff, test negatywny), [ADR-0025](adr/0025-golden-images.md) i test `unlit_cube_matches_its_golden_image` zielone lokalnie (Windows, sprzętowy GPU); zadania `gpu` (lavapipe) i `golden` (WARP, macOS) w ci.yml. **Nie odhaczone:** zgodność referencji z lavapipe, WARP i Metalem potwierdzi dopiero pierwszy przebieg CI.
+  - **Stan 22.11.2026 (CI 45046306654):** golden test wycinka z M2-18 przechodzi w CI na lavapipe (Linux), WARP (Windows) i Metalu (macOS, Apple Paravirtual) z jedną referencją i `Tolerance::cross_backend()`.
 - [x] **M4-01 · `pathon-mesh`** ★
   - Pula geometrii (mega-bufory vertex / index), layouty wierzchołków, upload meshy, dane poprzedniej klatki (transformacje, pozycje skinowane) dla wektorów ruchu.
   - Wspólna dla forward, visibility buffer i RT.

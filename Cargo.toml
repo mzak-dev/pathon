@@ -15,6 +15,7 @@ pathon-api = { path = "crates/pathon-api" }
 pathon-core = { path = "crates/pathon-core" }
 pathon-diag = { path = "crates/pathon-diag" }
 pathon-golden = { path = "crates/pathon-golden" }
+pathon-ibl = { path = "crates/pathon-ibl" }
 pathon-graph = { path = "crates/pathon-graph" }
 pathon-material = { path = "crates/pathon-material" }
 pathon-mesh = { path = "crates/pathon-mesh" }

@@ -73,6 +73,10 @@ pub const CODES: &[CodeInfo] = &[
     code("Y0001", "material parameter out of range"),
     code("Y0002", "unknown or removed material"),
     code("Y0003", "material shader hook does not compile"),
+    code("I0001", "invalid image-based lighting settings"),
+    code("I0002", "invalid environment image"),
+    code("I0003", "device cannot build image-based lighting"),
+    code("I0004", "environment image larger than the device allows"),
 ];
 
 pub fn is_registered(code: &str) -> bool {

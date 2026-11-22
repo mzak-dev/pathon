@@ -9,6 +9,8 @@ use pathon::api::glam::Vec3;
 use pathon::rhi::DeviceApi;
 use pathon::{FrameReport, Renderer};
 
+pub mod radiance;
+
 struct StderrLogger;
 
 impl log::Log for StderrLogger {

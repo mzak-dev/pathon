@@ -1438,7 +1438,8 @@ fn record_frame_advances_the_clock_when_it_returns_the_list() {
     assert_eq!(renderer.frame_index(), 2);
 }
 
-// Swaps a buffer in every record and hands the old one to `release_later`; `loses_device` makes the frame fail after that.
+// Swaps a buffer in every record and hands the old one to `release_later`; `loses_device` makes the frame fail after
+// that.
 struct ReplacesBuffer {
     current: Option<BufferId>,
     retired: Arc<Mutex<Vec<BufferId>>>,

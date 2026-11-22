@@ -15,6 +15,7 @@ pathon-api = { path = "crates/pathon-api" }
 pathon-core = { path = "crates/pathon-core" }
 pathon-diag = { path = "crates/pathon-diag" }
 pathon-graph = { path = "crates/pathon-graph" }
+pathon-mesh = { path = "crates/pathon-mesh" }
 pathon-platform = { path = "crates/pathon-platform" }
 pathon-platform-winit = { path = "crates/pathon-platform-winit" }
 pathon-resources = { path = "crates/pathon-resources" }

@@ -28,6 +28,10 @@ impl RangeAllocator {
         self.free.iter().map(|range| range.end - range.start).sum()
     }
 
+    pub fn largest_free(&self) -> u64 {
+        self.free.iter().map(|range| range.end - range.start).max().unwrap_or(0)
+    }
+
     pub fn allocate(&mut self, size: u64, alignment: u64) -> Option<Range<u64>> {
         let alignment = alignment.max(1);
         for index in 0..self.free.len() {
@@ -95,6 +99,20 @@ mod tests {
         allocator.free(b);
 
         assert_eq!(allocator.allocate(300, 1), Some(0..300));
+    }
+
+    #[test]
+    fn largest_free_range_shrinks_with_fragmentation() {
+        let mut allocator = RangeAllocator::new(300);
+        let a = allocator.allocate(100, 1).expect("a");
+        allocator.allocate(100, 1).expect("b");
+        let c = allocator.allocate(100, 1).expect("c");
+        assert_eq!(allocator.largest_free(), 0);
+        allocator.free(a);
+        allocator.free(c);
+
+        assert_eq!(allocator.available(), 200);
+        assert_eq!(allocator.largest_free(), 100);
     }
 
     #[test]

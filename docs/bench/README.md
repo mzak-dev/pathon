@@ -44,3 +44,21 @@ Te same draw calle (bind group, bufor wierzchołków, bufor indeksów, `draw_ind
 Mediany różnią się w granicach szumu w obie strony. Narzut jest poniżej progu z [ADR-0009](../adr/0009-nagrywanie-przez-liste-komend.md) (15%), więc backend wgpu zostaje przy liście komend.
 
 Przed zmniejszeniem `Command` z 80 do 32 bajtów (rzadkie, duże komendy w `Box`) narzut przy 10 000 draw callach wynosił ~31%.
+
+## Nagrywanie po dodaniu komend indirect (M4-11, [ADR-0033](../adr/0033-komendy-indirect.md))
+
+Ten sam benchmark (`examples/benches/recording.rs`) powtórzony po dodaniu wariantów `Command` i ich tłumaczenia w `encode.rs`; `Command` nadal ma 32 B. Dołożona para `direct_wgpu_indirect` / `via_pathon_indirect` to ten sam draw jako `draw_indexed_indirect` z bufora argumentów (jedna komenda na draw). Pomiar z 22.11.2026 na tej samej maszynie, **obciążonej** innymi procesami (kilka buildów naraz), więc liczby szumią o ±20%: ta sama binarka dawała od 5,1 do 6,2 ms przy 10 000 draw callach. Dlatego porównanie jest przeplatane (kod sprzed zmiany i po zmianie na przemian, dwie serie po 6 rund po 1000 próbek, najszybszy wynik ze wszystkich rund); kolumna „wgpu wprost” to najlepszy wynik spośród wszystkich binarek, bo ten kod jest w nich identyczny.
+
+| Draw calle | wgpu wprost | przez pathon, przed zmianą | przez pathon, po zmianie | Narzut przed → po |
+| ---: | --- | --- | --- | --- |
+| 100 | 52 µs | 67 µs | 59 µs | +31% → +14% |
+| 1 000 | 417 µs | 552 µs | 489 µs | +32% → +17% |
+| 10 000 | 5,13 ms | 5,85 ms | 6,80 ms | +14% → +33% |
+
+Para indirect (4 rundy po 1000 próbek, bez przeplatania): przy 100 / 1 000 / 10 000 draw callach wgpu wprost 72 µs / 463 µs / 5,60 ms, przez pathon 72 µs / 546 µs / 7,11 ms (0% / +18% / +27%).
+
+Wnioski i zastrzeżenia:
+
+- Zmiana nie ma mierzalnego wpływu na nagrywanie przy 100 i 1 000 draw callach (po zmianie jest nawet szybciej, co jest szumem). Przy 10 000 draw callach wyniki po zmianie są o ~16% wyższe w obu seriach (5,85 → 6,80 ms), ale rozrzut tej samej binarki (5,1–6,2 ms) jest większy, a przy 100 i 1 000 kierunek jest przeciwny, więc nie da się tego odróżnić od szumu na obciążonej maszynie.
+- **Narzut względem wgpu wprost był już przed zmianą wyższy niż +4% z pomiaru z 20.11.2026** (+14…27% na obciążonej maszynie). Próg 15% z ADR-0009 jest więc na granicy i wymaga powtórzenia na spokojnej maszynie (RX 9070 XT, nic nie buduje się obok), zanim ktokolwiek zdecyduje o nagrywaniu wprost.
+- Komenda `MultiDraw…` zastępuje całą pętlę draw calli jedną komendą, więc koszt CPU nagrywania przestaje zależeć od liczby draw calli; to jest zysk M4-11, a nie narzut listy.

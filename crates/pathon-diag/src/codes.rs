@@ -33,6 +33,7 @@ pub const CODES: &[CodeInfo] = &[
     code("R0111", "surface used out of order"),
     code("R0112", "texture range outside its mips or layers"),
     code("R0113", "invalid texel layout of a texture copy"),
+    code("R0114", "indirect arguments not aligned to 4 bytes"),
     code("G0001", "cycle between passes"),
     code("G0002", "ordering constraint names an unknown pass"),
     code("G0003", "read of a resource with no producer"),

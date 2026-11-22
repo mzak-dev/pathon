@@ -8,9 +8,9 @@ use divan::Bencher;
 use pathon::rhi::{
     BindGroupDesc, BindGroupEntry, BindGroupId, BindGroupLayoutDesc, BindGroupLayoutEntry, BindingResource,
     BindingType, BufferDesc, BufferId, BufferUsage, Color, ColorAttachment, ColorTargetState, CommandList, DeviceApi,
-    Format, IndexFormat, PrimitiveState, RenderPassDesc, RenderPipelineDesc, RenderPipelineId, ShaderModuleDesc,
-    ShaderStage, ShaderStages, TextureDesc, TextureUsage, TextureViewDesc, TextureViewId, VertexAttribute,
-    VertexBufferLayout, VertexFormat, VertexStepMode,
+    DrawIndexedIndirectArgs, Format, IndexFormat, PrimitiveState, RenderPassDesc, RenderPipelineDesc, RenderPipelineId,
+    ShaderModuleDesc, ShaderStage, ShaderStages, TextureDesc, TextureUsage, TextureViewDesc, TextureViewId,
+    VertexAttribute, VertexBufferLayout, VertexFormat, VertexStepMode,
 };
 use pathon_examples::block_on_ready;
 use pathon_rhi_wgpu::{WgpuDevice, interop};
@@ -41,12 +41,21 @@ fn main() {
 
 const QUAD: [f32; 8] = [-1.0, -1.0, 1.0, -1.0, 1.0, 1.0, -1.0, 1.0];
 const INDICES: [u16; 6] = [0, 1, 2, 0, 2, 3];
+// The same quad as `draw_indexed(0..6, 0, 0..1)`, as indirect arguments.
+const QUAD_ARGUMENTS: DrawIndexedIndirectArgs = DrawIndexedIndirectArgs {
+    index_count: 6,
+    instance_count: 1,
+    first_index: 0,
+    base_vertex: 0,
+    first_instance: 0,
+};
 
 struct Direct {
     pipeline: wgpu::RenderPipeline,
     group: wgpu::BindGroup,
     vertices: wgpu::Buffer,
     indices: wgpu::Buffer,
+    arguments: wgpu::Buffer,
     view: wgpu::TextureView,
 }
 
@@ -55,6 +64,7 @@ struct ViaPathon {
     group: BindGroupId,
     vertices: BufferId,
     indices: BufferId,
+    arguments: BufferId,
     view: TextureViewId,
 }
 
@@ -156,6 +166,12 @@ fn direct_objects(device: &wgpu::Device, queue: &wgpu::Queue) -> Direct {
         wgpu::BufferUsages::INDEX,
         bytemuck::cast_slice(&INDICES),
     );
+    let arguments = buffer(
+        "quad arguments",
+        20,
+        wgpu::BufferUsages::INDIRECT,
+        &QUAD_ARGUMENTS.to_bytes(),
+    );
     let target = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("target"),
         size: wgpu::Extent3d {
@@ -176,6 +192,7 @@ fn direct_objects(device: &wgpu::Device, queue: &wgpu::Queue) -> Direct {
         group,
         vertices,
         indices,
+        arguments,
         view,
     }
 }
@@ -252,6 +269,7 @@ fn pathon_objects(device: &WgpuDevice) -> ViaPathon {
         .expect("bind group");
     let vertices = buffer("quad", 32, BufferUsage::VERTEX, bytemuck::cast_slice(&QUAD));
     let indices = buffer("quad indices", 12, BufferUsage::INDEX, bytemuck::cast_slice(&INDICES));
+    let arguments = buffer("quad arguments", 20, BufferUsage::INDIRECT, &QUAD_ARGUMENTS.to_bytes());
     let target = device
         .create_texture(&TextureDesc::new_2d(
             "target",
@@ -269,6 +287,7 @@ fn pathon_objects(device: &WgpuDevice) -> ViaPathon {
         group,
         vertices,
         indices,
+        arguments,
         view,
     }
 }
@@ -344,6 +363,65 @@ fn via_pathon_command_list(bencher: Bencher<'_, '_>, draws: u32) {
                 pass.set_vertex_buffer(0, objects.vertices, 0);
                 pass.set_index_buffer(objects.indices, IndexFormat::Uint16, 0);
                 pass.draw_indexed(0..6, 0, 0..1);
+            }
+        }
+        let mut encoder = new_encoder(&scene.device);
+        scene.pathon.encode_into(list, &mut encoder).expect("encode");
+        encoder.finish()
+    });
+}
+
+#[divan::bench(args = [100, 1_000, 10_000])]
+fn direct_wgpu_indirect(bencher: Bencher<'_, '_>, draws: u32) {
+    let scene = scene();
+    let objects = &scene.direct;
+    bencher.bench_local(|| {
+        let mut encoder = new_encoder(&scene.device);
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("bench"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &objects.view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                ..Default::default()
+            });
+            pass.set_pipeline(&objects.pipeline);
+            for _ in 0..draws {
+                pass.set_bind_group(0, &objects.group, &[]);
+                pass.set_vertex_buffer(0, objects.vertices.slice(..));
+                pass.set_index_buffer(objects.indices.slice(..), wgpu::IndexFormat::Uint16);
+                pass.draw_indexed_indirect(&objects.arguments, 0);
+            }
+        }
+        encoder.finish()
+    });
+}
+
+#[divan::bench(args = [100, 1_000, 10_000])]
+fn via_pathon_indirect(bencher: Bencher<'_, '_>, draws: u32) {
+    let scene = scene();
+    let objects = &scene.via_pathon;
+    bencher.bench_local(|| {
+        let mut list = CommandList::new();
+        {
+            let mut pass = list.render_pass(RenderPassDesc {
+                label: "bench",
+                color: vec![ColorAttachment::clear(objects.view, Color::BLACK)],
+                depth: None,
+                timestamps: None,
+            });
+            pass.set_pipeline(objects.pipeline);
+            for _ in 0..draws {
+                pass.set_bind_group(0, objects.group);
+                pass.set_vertex_buffer(0, objects.vertices, 0);
+                pass.set_index_buffer(objects.indices, IndexFormat::Uint16, 0);
+                pass.draw_indexed_indirect(objects.arguments, 0);
             }
         }
         let mut encoder = new_encoder(&scene.device);

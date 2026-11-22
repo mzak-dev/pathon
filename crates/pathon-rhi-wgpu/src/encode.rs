@@ -1,6 +1,6 @@
 use pathon_rhi_types::{
     BufferCopy, BufferId, Command, CommandList, ComputePassDesc, DepthAccess, DeviceApi, Extent3d, Features, LoadOp,
-    RenderPassDesc, RhiError, StoreOp, TextureCopy, TextureViewId, Transfer,
+    MultiDrawCount, RenderPassDesc, RhiError, StoreOp, TextureCopy, TextureViewId, Transfer,
 };
 
 use crate::convert;
@@ -20,6 +20,15 @@ fn require_immediates(enabled: bool) -> Result<(), RhiError> {
     }
 }
 
+// wgpu panics on a `…Count` draw without the feature (WebGPU has none), so the command is refused first.
+fn require_multi_draw_count(features: Features) -> Result<(), RhiError> {
+    if features.contains(Features::MULTI_DRAW_INDIRECT_COUNT) {
+        Ok(())
+    } else {
+        Err(RhiError::MissingFeatures(Features::MULTI_DRAW_INDIRECT_COUNT))
+    }
+}
+
 fn new_encoder(device: &wgpu::Device) -> wgpu::CommandEncoder {
     device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("pathon") })
 }
@@ -30,7 +39,7 @@ fn new_encoder(device: &wgpu::Device) -> wgpu::CommandEncoder {
 // object lock is released around it.
 pub(crate) fn encode_list(this: &WgpuDevice, list: CommandList) -> Result<Vec<wgpu::CommandBuffer>, RhiError> {
     let (device, queue) = (this.device(), this.queue());
-    let immediates = this.caps().has(Features::IMMEDIATES);
+    let features = this.caps().features;
     let mut objects = this.lock();
     let mut buffers = Vec::new();
     let mut encoder = new_encoder(device);
@@ -61,7 +70,7 @@ pub(crate) fn encode_list(this: &WgpuDevice, list: CommandList) -> Result<Vec<wg
                 encoder.pop_debug_group();
                 open_groups.pop();
             }
-            command => encode_command(&objects, &mut encoder, command, &mut commands, immediates)?,
+            command => encode_command(&objects, &mut encoder, command, &mut commands, features)?,
         }
     }
     buffers.push(encoder.finish());
@@ -72,14 +81,14 @@ pub(crate) fn encode_into(
     objects: &Objects,
     encoder: &mut wgpu::CommandEncoder,
     list: CommandList,
-    immediates: bool,
+    features: Features,
 ) -> Result<(), RhiError> {
     let mut commands = list.into_commands().into_iter();
     while let Some(command) = commands.next() {
         if let Command::External(_) = command {
             return Err(RhiError::Unsupported("external commands need their own submission"));
         }
-        encode_command(objects, encoder, command, &mut commands, immediates)?;
+        encode_command(objects, encoder, command, &mut commands, features)?;
     }
     Ok(())
 }
@@ -89,13 +98,13 @@ fn encode_command(
     encoder: &mut wgpu::CommandEncoder,
     command: Command,
     rest: &mut impl Iterator<Item = Command>,
-    immediates: bool,
+    features: Features,
 ) -> Result<(), RhiError> {
     match command {
         // wgpu tracks resource states itself; the plan only feeds validation on the null backend.
         Command::TextureAccess { .. } | Command::BufferAccess { .. } => {}
-        Command::BeginRenderPass(desc) => encode_render_pass(objects, encoder, &desc, rest, immediates)?,
-        Command::BeginComputePass(desc) => encode_compute_pass(objects, encoder, *desc, rest, immediates)?,
+        Command::BeginRenderPass(desc) => encode_render_pass(objects, encoder, &desc, rest, features)?,
+        Command::BeginComputePass(desc) => encode_compute_pass(objects, encoder, *desc, rest, features)?,
         Command::Transfer(transfer) => encode_transfer(objects, encoder, *transfer)?,
         Command::PushDebugGroup(label) => encoder.push_debug_group(label),
         Command::PopDebugGroup => encoder.pop_debug_group(),
@@ -152,7 +161,7 @@ fn encode_render_pass(
     encoder: &mut wgpu::CommandEncoder,
     desc: &RenderPassDesc,
     rest: &mut impl Iterator<Item = Command>,
-    immediates: bool,
+    features: Features,
 ) -> Result<(), RhiError> {
     let mut color_attachments = Vec::with_capacity(desc.color.len());
     for attachment in &desc.color {
@@ -241,7 +250,7 @@ fn encode_render_pass(
                 &[],
             ),
             Command::SetImmediates { offset, data } => {
-                require_immediates(immediates)?;
+                require_immediates(features.contains(Features::IMMEDIATES))?;
                 pass.set_immediates(offset, &data);
             }
             Command::SetVertexBuffer {
@@ -279,6 +288,53 @@ fn encode_render_pass(
             Command::DrawIndexedIndirect { buffer: id, offset } => {
                 pass.draw_indexed_indirect(buffer(objects, id)?, offset);
             }
+            Command::DrawIndirect { buffer: id, offset } => {
+                pass.draw_indirect(buffer(objects, id)?, offset);
+            }
+            Command::MultiDrawIndirect {
+                buffer: id,
+                offset,
+                count,
+            } => pass.multi_draw_indirect(buffer(objects, id)?, offset, count),
+            Command::MultiDrawIndexedIndirect {
+                buffer: id,
+                offset,
+                count,
+            } => pass.multi_draw_indexed_indirect(buffer(objects, id)?, offset, count),
+            Command::MultiDrawIndirectCount(draws) => {
+                require_multi_draw_count(features)?;
+                let MultiDrawCount {
+                    args,
+                    args_offset,
+                    count_buffer,
+                    count_offset,
+                    max_count,
+                } = *draws;
+                pass.multi_draw_indirect_count(
+                    buffer(objects, args)?,
+                    args_offset,
+                    buffer(objects, count_buffer)?,
+                    count_offset,
+                    max_count,
+                );
+            }
+            Command::MultiDrawIndexedIndirectCount(draws) => {
+                require_multi_draw_count(features)?;
+                let MultiDrawCount {
+                    args,
+                    args_offset,
+                    count_buffer,
+                    count_offset,
+                    max_count,
+                } = *draws;
+                pass.multi_draw_indexed_indirect_count(
+                    buffer(objects, args)?,
+                    args_offset,
+                    buffer(objects, count_buffer)?,
+                    count_offset,
+                    max_count,
+                );
+            }
             Command::PushDebugGroup(label) => pass.push_debug_group(label),
             Command::PopDebugGroup => pass.pop_debug_group(),
             other => {
@@ -296,7 +352,7 @@ fn encode_compute_pass(
     encoder: &mut wgpu::CommandEncoder,
     desc: ComputePassDesc,
     rest: &mut impl Iterator<Item = Command>,
-    immediates: bool,
+    features: Features,
 ) -> Result<(), RhiError> {
     let timestamp_writes = match desc.timestamps {
         Some(timestamps) => Some(wgpu::ComputePassTimestampWrites {
@@ -331,10 +387,13 @@ fn encode_compute_pass(
                 &[],
             ),
             Command::SetImmediates { offset, data } => {
-                require_immediates(immediates)?;
+                require_immediates(features.contains(Features::IMMEDIATES))?;
                 pass.set_immediates(offset, &data);
             }
             Command::Dispatch { x, y, z } => pass.dispatch_workgroups(x, y, z),
+            Command::DispatchIndirect { buffer: id, offset } => {
+                pass.dispatch_workgroups_indirect(buffer(objects, id)?, offset);
+            }
             Command::PushDebugGroup(label) => pass.push_debug_group(label),
             Command::PopDebugGroup => pass.pop_debug_group(),
             other => {
@@ -406,5 +465,14 @@ mod tests {
     fn immediates_are_refused_without_the_feature() {
         assert_eq!(require_immediates(false).expect_err("refused").code(), "R0104");
         assert!(require_immediates(true).is_ok());
+    }
+
+    #[test]
+    fn counted_draws_are_refused_without_the_feature() {
+        assert_eq!(
+            require_multi_draw_count(Features::empty()).expect_err("refused").code(),
+            "R0002"
+        );
+        assert!(require_multi_draw_count(Features::MULTI_DRAW_INDIRECT_COUNT).is_ok());
     }
 }

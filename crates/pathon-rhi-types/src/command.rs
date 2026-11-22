@@ -5,6 +5,7 @@ use std::ops::Range;
 use crate::access::{Access, SubresourceRange};
 use crate::desc::{BufferCopy, Extent3d, TextureCopy};
 use crate::id::{BindGroupId, BufferId, ComputePipelineId, QuerySetId, RenderPipelineId, TextureId, TextureViewId};
+use crate::indirect::MultiDrawCount;
 use crate::maybe_send::MaybeSend;
 use crate::pipeline::IndexFormat;
 
@@ -240,14 +241,37 @@ pub enum Command {
         base_vertex: i32,
         instances: Range<u32>,
     },
+    // The indirect draws read `DrawIndirectArgs` / `DrawIndexedIndirectArgs` from a `BufferUsage::INDIRECT` buffer.
+    DrawIndirect {
+        buffer: BufferId,
+        offset: u64,
+    },
     DrawIndexedIndirect {
         buffer: BufferId,
         offset: u64,
     },
+    // `count` tightly packed argument elements starting at `offset`; one draw call each.
+    MultiDrawIndirect {
+        buffer: BufferId,
+        offset: u64,
+        count: u32,
+    },
+    MultiDrawIndexedIndirect {
+        buffer: BufferId,
+        offset: u64,
+        count: u32,
+    },
+    // The draw count comes from the GPU (`Features::MULTI_DRAW_INDIRECT_COUNT`); boxed, it needs two buffers.
+    MultiDrawIndirectCount(Box<MultiDrawCount>),
+    MultiDrawIndexedIndirectCount(Box<MultiDrawCount>),
     Dispatch {
         x: u32,
         y: u32,
         z: u32,
+    },
+    DispatchIndirect {
+        buffer: BufferId,
+        offset: u64,
     },
     // Rare and large, so boxed: the common commands (binds, draws) stay small.
     Transfer(Box<Transfer>),
@@ -444,8 +468,29 @@ impl RenderPassEncoder<'_> {
         });
     }
 
+    pub fn draw_indirect(&mut self, buffer: BufferId, offset: u64) {
+        self.list.push(Command::DrawIndirect { buffer, offset });
+    }
+
     pub fn draw_indexed_indirect(&mut self, buffer: BufferId, offset: u64) {
         self.list.push(Command::DrawIndexedIndirect { buffer, offset });
+    }
+
+    pub fn multi_draw_indirect(&mut self, buffer: BufferId, offset: u64, count: u32) {
+        self.list.push(Command::MultiDrawIndirect { buffer, offset, count });
+    }
+
+    pub fn multi_draw_indexed_indirect(&mut self, buffer: BufferId, offset: u64, count: u32) {
+        self.list
+            .push(Command::MultiDrawIndexedIndirect { buffer, offset, count });
+    }
+
+    pub fn multi_draw_indirect_count(&mut self, draws: MultiDrawCount) {
+        self.list.push(Command::MultiDrawIndirectCount(Box::new(draws)));
+    }
+
+    pub fn multi_draw_indexed_indirect_count(&mut self, draws: MultiDrawCount) {
+        self.list.push(Command::MultiDrawIndexedIndirectCount(Box::new(draws)));
     }
 }
 
@@ -478,6 +523,10 @@ impl ComputePassEncoder<'_> {
 
     pub fn dispatch(&mut self, x: u32, y: u32, z: u32) {
         self.list.push(Command::Dispatch { x, y, z });
+    }
+
+    pub fn dispatch_indirect(&mut self, buffer: BufferId, offset: u64) {
+        self.list.push(Command::DispatchIndirect { buffer, offset });
     }
 }
 

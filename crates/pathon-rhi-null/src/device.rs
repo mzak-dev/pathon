@@ -692,7 +692,7 @@ impl DeviceApi for NullDevice {
         // A GPU does not run an invalid command buffer, so a rejected list must not move any texture state or buffer
         // byte.
         let saved = state.snapshot();
-        let result = Validator::new(&mut state).run(commands);
+        let result = Validator::new(&mut state, self.caps.features).run(commands);
         if result.is_err() {
             state.restore(saved);
         }

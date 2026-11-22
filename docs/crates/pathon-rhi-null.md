@@ -7,6 +7,7 @@ Backend RHI bez GPU (M1-04). Wydaje handle'y i nic nie rysuje, ale przy `submit`
 - **flagi użycia** zasobów (`TextureUsage`, `BufferUsage`) → `R0105`;
 - **prezentacja** klatki surface'a, która nie przeszła do `PRESENT` → `R0106`;
 - **timestampy passów** (`PassTimestamps`): nieistniejący zbiór zapytań → `R0003`, `begin_index == end_index` albo indeks poza zbiorem → `R0104`; `create_query_set` bez `TIMESTAMP_QUERY` → `R0002` (jak wgpu);
+- **komendy indirect**: bufor argumentów (i licznika) bez `BufferUsage::INDIRECT` → `R0105`; offset niewyrównany do 4 B → `R0114`; `offset + count × rozmiar_elementu` poza buforem (w wariantach `…Count`: `max_count` i 4 B licznika) → `R0108`; warianty `…Count` bez `MULTI_DRAW_INDIRECT_COUNT` → `R0002`; zawartości argumentów null nie sprawdza (nie wykonuje compute);
 - **układ texeli** kopii: `bytes_per_row` niemieszczący wiersza albo niepodzielny przez 256 w kopii bufor↔tekstura, `rows_per_image` mniejsze niż wysokość kopii (zawsze) → `R0113`.
 
 `submit` jest atomowy: odrzucona lista nie zmienia ani stanów tekstur, ani bajtów emulowanych buforów (jak GPU, który nie wykonuje błędnego bufora komend).

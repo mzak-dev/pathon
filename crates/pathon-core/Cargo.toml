@@ -17,6 +17,7 @@ thiserror.workspace = true
 [dev-dependencies]
 divan.workspace = true
 bytemuck.workspace = true
+pathon-golden.workspace = true
 pathon-test.workspace = true
 raw-window-handle.workspace = true
 

@@ -5,7 +5,8 @@ use std::sync::{Arc, Mutex};
 use pathon_api::glam::Vec3;
 use pathon_api::graph::{GraphTextureDesc, PassDesc, Stage};
 use pathon_api::{Camera, RecordCtx, RenderFeature};
-use pathon_core::{FrameInput, Renderer, ViewInput};
+use pathon_core::{FrameInput, RenderError, Renderer, ViewInput};
+use pathon_golden::{Tolerance, announce_adapter, assert_golden, gpu_or_skip, read_texture};
 use pathon_rhi::{
     Access, BufferCopy, BufferDesc, BufferUsage, Color, ColorAttachment, CommandList, DepthAttachment, DeviceApi,
     Extent3d, Format, FormatKind, PhysicalSize, RenderPassDesc, RhiError, SubresourceRange, TexelLayout, TextureCopy,
@@ -75,6 +76,35 @@ fn unlit_cube_goes_through_the_whole_stack() {
         [0, 0, 255, 255],
         "centre shows the cube"
     );
+}
+
+#[test]
+fn unlit_cube_matches_its_golden_image() {
+    let built = Renderer::builder()
+        .with_clear_color(CLEAR)
+        .with_feature(UnlitMeshPack::new())
+        .build();
+    let Some(mut renderer) = gpu_or_skip("unlit_cube_matches_its_golden_image", built, |error| {
+        matches!(error, RenderError::Rhi(RhiError::NoAdapter(_)))
+    }) else {
+        return;
+    };
+    announce_adapter("unlit_cube_matches_its_golden_image", renderer.device().caps());
+    let target = renderer
+        .add_offscreen_target(PhysicalSize::new(SIZE, SIZE), Format::Rgba8Unorm)
+        .expect("target");
+    let camera = Camera::look_at(Vec3::new(0.0, 0.0, 2.5), Vec3::ZERO, std::f32::consts::FRAC_PI_3, 1.0);
+    let input = FrameInput {
+        views: vec![ViewInput { target, camera }],
+        time_seconds: 0.4,
+        ..FrameInput::default()
+    };
+
+    renderer.render_frame(&input).expect("frame");
+    let texture = renderer.target_texture(target).expect("offscreen texture");
+    let image = read_texture(&**renderer.device(), texture, Access::SAMPLED).expect("readback");
+
+    assert_golden("unlit_cube", &image, Tolerance::cross_backend());
 }
 
 #[test]

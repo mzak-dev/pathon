@@ -1988,6 +1988,7 @@ name = "pathon-shader"
 version = "0.0.1"
 dependencies = [
  "naga",
+ "pathon-api",
  "pathon-rhi",
  "pathon-rhi-types",
  "thiserror 2.0.21",

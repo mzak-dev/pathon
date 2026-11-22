@@ -62,6 +62,10 @@ Wymieniony obiekt GPU paczka oddaje przez `RecordCtx::release_later(resource)`: 
 
 ADR-0008: `parallel_for(len, &task)` blokuje do końca, więc zadanie może pożyczać dane klatki. `SerialTaskPool` jest domyślny (także na wasm).
 
+ADR-0024: `try_spawn(job) -> Result<(), BackgroundJob>` uruchamia zadanie `'static` bez czekania na nie (kompilacja permutacji w tle, `pathon-shader`). Domyślna implementacja oddaje zadanie w `Err`, więc `SerialTaskPool`, wasm i pule hostów bez tej metody dalej działają: wołający wykonuje zadanie sam, w wybranym momencie. Zadanie jest `Send` natywnie, a na wasm nie musi (`BackgroundJob`).
+
+`SetupCtx` pożycza urządzenie i pulę na czas wywołania (`device()`, `task_pool()`); `device_handle()` i `task_pool_handle()` dają uchwyty `Arc` do przechowania na czas życia urządzenia, dla pracy, która przeżywa klatkę.
+
 ## Domknięcie passa jest `Send`
 
 ADR-0012: domknięcie przekazane do `PassBuilder::record` jest `MaybeSend` (`Send` natywnie, bez wymagań na wasm), żeby passy dało się kiedyś nagrywać równolegle. Paczka nie może więc przechwycić `Rc` ani innego typu bez `Send`:

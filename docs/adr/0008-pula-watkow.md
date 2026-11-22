@@ -37,3 +37,4 @@ pub trait TaskPool: MaybeSendSync {
 
 - Bez podanej puli pathon działa szeregowo, więc wasm i testy nie potrzebują wątków.
 - Zadania z zależnościami (np. równoległe nagrywanie passów z grafu) układa core w kolejne wywołania `parallel_for`; jeśli to nie wystarczy, wracamy do tego ADR.
+- Uzupełnienie ([ADR-0024](0024-kompilacja-w-tle.md)): `TaskPool` ma też `try_spawn` dla zadań, które żyją dłużej niż klatka (kompilacja permutacji w tle); `parallel_for` zostaje bez zmian.

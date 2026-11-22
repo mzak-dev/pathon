@@ -544,8 +544,8 @@ impl Renderer {
                 self.targets.remove(id);
             }
         }
-        self.registry
-            .reset(self.device.as_ref(), self.task_pool.as_ref(), &mut self.shared);
+        let handle: Arc<dyn DeviceApi> = Arc::<Device>::clone(&self.device);
+        self.registry.reset(&handle, &self.task_pool, &mut self.shared);
         if let Some(callback) = &mut self.on_reupload {
             callback(&self.device);
         }

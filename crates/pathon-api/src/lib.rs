@@ -16,7 +16,7 @@ pub use pack::{Pack, PackRegistrar};
 pub use pathon_diag::{Diagnostic, Severity};
 pub use shared::Shared;
 pub use slot::{Slot, Slots};
-pub use task_pool::{SerialTaskPool, TaskPool};
+pub use task_pool::{BackgroundJob, SerialTaskPool, TaskPool};
 pub use view::{Camera, ViewCtx, ViewId};
 
 // Everything a regular pack needs, so packs depend on `pathon-api` alone.

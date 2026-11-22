@@ -2,7 +2,7 @@ use std::any::Any;
 use std::sync::Arc;
 
 use pathon_api::{Pack, PackRegistrar, RenderFeature, SerialTaskPool, Shared, TaskPool};
-use pathon_rhi::{Color, Device, DeviceRequest, MaybeSend};
+use pathon_rhi::{Color, Device, DeviceApi, DeviceRequest, MaybeSend};
 
 use crate::error::RenderError;
 use crate::registry::Registry;
@@ -57,8 +57,8 @@ struct Prepared {
 
 impl Prepared {
     fn finish(mut self, device: Arc<Device>, ownership: DeviceOwnership) -> Renderer {
-        self.registry
-            .activate(device.as_ref(), self.task_pool.as_ref(), &mut self.shared);
+        let handle: Arc<dyn DeviceApi> = Arc::<Device>::clone(&device);
+        self.registry.activate(&handle, &self.task_pool, &mut self.shared);
         Renderer::new(
             device,
             ownership,

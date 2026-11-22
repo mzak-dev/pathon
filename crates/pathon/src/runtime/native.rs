@@ -8,7 +8,7 @@ use std::thread::{self, JoinHandle};
 use std::time::Instant;
 
 use crossbeam_channel::{Sender, bounded};
-use pathon_api::TaskPool;
+use pathon_api::{BackgroundJob, TaskPool};
 use pathon_core::{FrameInput, FrameReport, RenderError, Renderer, RendererBuilder, TargetId, ViewInput};
 use pathon_platform::{App, Platform, PlatformCtx, PlatformEvent, WindowDesc, WindowId};
 use pathon_rhi::{MaybeSend, PhysicalSize, SurfaceTarget};
@@ -60,6 +60,25 @@ impl TaskPool for StdTaskPool {
     fn thread_count(&self) -> usize {
         self.threads
     }
+
+    // Ceiling like `parallel_for`: one thread per job; the caller bounds how many run at once (ADR-0024).
+    fn try_spawn(&self, job: BackgroundJob) -> Result<(), BackgroundJob> {
+        // The job moves into the closure, so a failed spawn takes it back out of the shared slot.
+        let slot = Arc::new(Mutex::new(Some(job)));
+        let worker_slot = Arc::clone(&slot);
+        let spawned = thread::Builder::new().name("pathon-task".into()).spawn(move || {
+            let job = lock_job(&worker_slot).take();
+            if let Some(job) = job {
+                job();
+            }
+        });
+        match spawned {
+            Ok(_) => Ok(()),
+            Err(_) => Err(lock_job(&slot)
+                .take()
+                .expect("a thread that never started left the job in the slot")),
+        }
+    }
 }
 
 enum Message {
@@ -92,6 +111,11 @@ struct RunnerApp<Scene> {
     start: Instant,
     last_frame: Instant,
     frame_index: u64,
+}
+
+fn lock_job(slot: &Mutex<Option<BackgroundJob>>) -> MutexGuard<'_, Option<BackgroundJob>> {
+    slot.lock()
+        .expect("the job slot is only emptied, and the job runs after the lock is released")
 }
 
 fn lock_error(error: &Mutex<Option<RunError>>) -> MutexGuard<'_, Option<RunError>> {
@@ -295,6 +319,22 @@ mod tests {
             }
         });
         assert!(visits.iter().all(|visit| visit.load(Ordering::Relaxed) == 1));
+    }
+
+    #[test]
+    fn std_pool_runs_a_spawned_job_off_the_calling_thread() {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let caller = thread::current().id();
+
+        let spawned = StdTaskPool::new().try_spawn(Box::new(move || {
+            sender.send(thread::current().id()).expect("the test is waiting");
+        }));
+
+        assert!(spawned.is_ok());
+        let worker = receiver
+            .recv_timeout(std::time::Duration::from_secs(30))
+            .expect("the job ran");
+        assert_ne!(worker, caller);
     }
 
     // Surfaces come up, a few frames run, the window closes; no real windows are opened.

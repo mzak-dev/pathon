@@ -28,6 +28,7 @@ pathon-rhi-wgpu.workspace = true
 pathon-scene.workspace = true
 pathon-shadow.workspace = true
 pathon-shader.workspace = true
+pathon-skin.workspace = true
 pathon-test.workspace = true
 png.workspace = true
 serde_json.workspace = true

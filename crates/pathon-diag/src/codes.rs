@@ -10,7 +10,7 @@ const fn code(code: &'static str, title: &'static str) -> CodeInfo {
 
 // R: RHI, G: frame graph, F: render features (packs), P: platform, M: meshes and geometry pool, S: shaders,
 // T: profiling, N: scene, X: textures, Y: materials, H: HDR output, Q: post, B: bindless textures, I: IBL, D: shadows,
-// L: PBR lighting. Every entry needs docs/diag/<code>.md.
+// L: PBR lighting, W: skinning and morph targets. Every entry needs docs/diag/<code>.md.
 pub const CODES: &[CodeInfo] = &[
     code("R0001", "no adapter or device could be created"),
     code("R0002", "adapter lacks required features"),
@@ -116,6 +116,9 @@ pub const CODES: &[CodeInfo] = &[
     code("L0004", "PBR input missing from Shared"),
     code("L0005", "light cluster index list overflowed"),
     code("L0006", "device cannot run the PBR passes"),
+    code("W0001", "skinned instance does not fit its buffers"),
+    code("W0002", "invalid morph target data"),
+    code("W0003", "deformed output buffers do not fit the device"),
 ];
 
 pub fn is_registered(code: &str) -> bool {

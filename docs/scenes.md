@@ -168,3 +168,6 @@ Co widać i co nie jest wierne (viewer to przejściowy zamiennik pbr, cieni, IBL
 - **Materiały:** straty z tabeli wyżej (bump, korekcje koloru, atrybuty obiektu) są widoczne jako płaskie albo jednolite powierzchnie (np. skóra foteli). `KHR_texture_transform` dla normalnej i okluzji bierze transformację base color, bo crate `gltf` nie wystawia jej dla tych dwóch map.
 - **Alias:** okno nie ma MSAA (zrzuty wygładza `--supersample`).
 
+## Render referencyjny w Cyclesie
+
+Wzorzec do porównań obrazu (ten sam `.glb` odtworzony w Blenderze, trzy kamery, metryki, AOV): [porownanie-obrazu.md](porownanie-obrazu.md); skrypty `tools/scenes/render_reference.py` i `tools/scenes/compare.py`. Wyniki leżą w `test-assets/classroom/reference/` (poza gitem), małe PNG w `docs/scenes/reference/`.

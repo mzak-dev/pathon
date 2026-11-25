@@ -216,7 +216,7 @@ Uwagi do kolejności:
 
 ## Protokół porównania z Cyclesem (scena classroom)
 
-Cel: mierzalne porównanie renderu pathon z renderem referencyjnym Blendera, powtarzalne co zmianę techniki. Opis scen i eksportu: [scenes.md](scenes.md). **To jest specyfikacja: skryptu ani komparatora nie implementujemy w tym zadaniu.**
+Cel: mierzalne porównanie renderu pathon z renderem referencyjnym Blendera, powtarzalne co zmianę techniki. Opis scen i eksportu: [scenes.md](scenes.md). **Strona Blendera i komparator są zrobione (K01, 25.11.2026): praktyczny opis kroków, ustawień i pierwszych wyników jest w [porownanie-obrazu.md](porownanie-obrazu.md); poniżej zostaje specyfikacja wyjściowa, a tam, gdzie wdrożenie ją zmieniło, obowiązuje porownanie-obrazu.md.**
 
 ### Dwa wzorce, dwa pytania
 
@@ -248,7 +248,7 @@ Wzorzec B jest metryką główną, A jest pomocniczy (pokazuje łączną lukę i
 
 Wspólny tonemap do metryk LDR: PBR Neutral (jest w `pathon-post`) zastosowany identycznie do obu obrazów w skrypcie komparatora, żeby różnica operatorów nie zaszła do wyniku.
 
-### Skrypty i narzędzia (propozycje, nic nie jest zaimplementowane)
+### Skrypty i narzędzia (propozycje; `render_reference.py` i `compare.py` są zaimplementowane, strona pathon nie)
 
 | Element | Opis |
 | --- | --- |

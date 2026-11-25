@@ -2,7 +2,7 @@
 
 Oświetlenie z otoczenia (M4-06, [ADR-0037](../adr/0037-ibl-srodowisko-prefiltr-i-lut.md)): obraz HDR w pamięci staje się kostką prefiltrowaną per chropowatość, kostką irradiancji i tablicą BRDF (split-sum), a moduły WGSL `package::ibl::*` oddają z nich `diffuse` i `specular` osobno, tak jak `material::evaluate`. **Bez tego metale są czarne**: nie mają światła rozproszonego, a odbijać nie mają czego.
 
-To zwykła paczka (`[package.metadata.pathon] kind = "pack"`): zależy tylko od `pathon-api` (moduły WESL składa konsument przez `pathon-shader`). Nie rysuje niczego sama: nie ma pętli po światłach, cieni, okluzji ani nieba (to `pathon-pbr`, `pathon-shadow`, `pathon-sky`), nie czyta plików (wczytanie `.hdr` jest w `examples/`) i nie zna materiałów poza kontraktem `diffuse` / `specular`.
+To zwykła paczka (`[package.metadata.pathon] kind = "pack"`): zależy tylko od `pathon-api` (moduły WESL składa konsument przez `pathon-shader`). Nie rysuje niczego sama: nie ma pętli po światłach, cieni, okluzji ani nieba (to `pathon-pbr`, `pathon-shadow`, [`pathon-sky`](pathon-sky.md)), nie czyta plików (wczytanie `.hdr` jest w `examples/`) i nie zna materiałów poza kontraktem `diffuse` / `specular`.
 
 ```rust
 # use pathon_ibl::{IblBuilder, IblSettings, SyntheticSky};

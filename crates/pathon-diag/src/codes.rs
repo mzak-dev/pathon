@@ -10,7 +10,8 @@ const fn code(code: &'static str, title: &'static str) -> CodeInfo {
 
 // R: RHI, G: frame graph, F: render features (packs), P: platform, M: meshes and geometry pool, S: shaders,
 // T: profiling, N: scene, X: textures, Y: materials, H: HDR output, Q: post, B: bindless textures, I: IBL, D: shadows,
-// L: PBR lighting, K: hot reload of shaders, W: skinning and morph targets. Every entry needs docs/diag/<code>.md.
+// L: PBR lighting, K: hot reload of shaders, W: skinning and morph targets, A: sky. Every entry needs
+// docs/diag/<code>.md.
 pub const CODES: &[CodeInfo] = &[
     code("R0001", "no adapter or device could be created"),
     code("R0002", "adapter lacks required features"),
@@ -107,6 +108,9 @@ pub const CODES: &[CodeInfo] = &[
     code("I0002", "invalid environment image"),
     code("I0003", "device cannot build image-based lighting"),
     code("I0004", "environment image larger than the device allows"),
+    code("A0001", "sky setting outside its range was repaired"),
+    code("A0002", "the sky could not become an environment picture"),
+    code("A0003", "camera height outside the atmosphere was clamped"),
     code("D0001", "shadow setting out of range repaired"),
     code("D0002", "shadow light direction is not usable"),
     code("D0003", "camera projection unsupported by shadow cascades"),

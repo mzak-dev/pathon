@@ -2104,6 +2104,7 @@ dependencies = [
  "pathon-shader",
  "pathon-shadow",
  "pathon-skin",
+ "pathon-sky",
  "pathon-test",
  "pathon-texture",
  "png",
@@ -2343,6 +2344,18 @@ dependencies = [
  "pathon-rhi",
  "pathon-shader",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "pathon-sky"
+version = "0.0.1"
+dependencies = [
+ "bytemuck",
+ "naga",
+ "pathon-api",
+ "pathon-core",
+ "pathon-golden",
+ "pathon-ibl",
 ]
 
 [[package]]

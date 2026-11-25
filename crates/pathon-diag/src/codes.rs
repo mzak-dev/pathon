@@ -9,7 +9,7 @@ const fn code(code: &'static str, title: &'static str) -> CodeInfo {
 }
 
 // R: RHI, G: frame graph, F: render features (packs), P: platform, M: meshes and geometry pool, S: shaders,
-// T: profiling, N: scene, X: textures, Y: materials, H: HDR output, Q: post, B: bindless textures, I: IBL. Every entry
+// T: profiling, N: scene, X: textures, Y: materials, H: HDR output, Q: post, B: bindless textures, I: IBL, D: shadows. Every entry
 // needs docs/diag/<code>.md.
 pub const CODES: &[CodeInfo] = &[
     code("R0001", "no adapter or device could be created"),
@@ -29,7 +29,7 @@ pub const CODES: &[CodeInfo] = &[
     code("R0106", "surface frame presented without reaching PRESENT"),
     code("R0107", "bind group does not match its layout"),
     code("R0108", "buffer access out of bounds"),
-    code("R0109", "invalid texture or view description"),
+    code("R0109", "invalid texture, view or depth state description"),
     code("R0110", "empty shader module"),
     code("R0111", "surface used out of order"),
     code("R0112", "texture range outside its mips or layers"),
@@ -107,6 +107,9 @@ pub const CODES: &[CodeInfo] = &[
     code("I0002", "invalid environment image"),
     code("I0003", "device cannot build image-based lighting"),
     code("I0004", "environment image larger than the device allows"),
+    code("D0001", "shadow setting out of range repaired"),
+    code("D0002", "shadow light direction is not usable"),
+    code("D0003", "camera projection unsupported by shadow cascades"),
 ];
 
 pub fn is_registered(code: &str) -> bool {

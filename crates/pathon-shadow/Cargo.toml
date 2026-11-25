@@ -1,0 +1,28 @@
+[package]
+name = "pathon-shadow"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[package.metadata.pathon]
+kind = "pack"
+
+[dependencies]
+bytemuck.workspace = true
+pathon-api.workspace = true
+pathon-mesh.workspace = true
+pathon-scene.workspace = true
+
+[dev-dependencies]
+pathon-core.workspace = true
+pathon-golden.workspace = true
+pathon-rhi.workspace = true
+pathon-shader.workspace = true
+
+[features]
+gpu-tests = []
+
+[lints]
+workspace = true

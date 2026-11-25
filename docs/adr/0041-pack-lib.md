@@ -19,6 +19,8 @@ Nowy rodzaj crate'u: `[package.metadata.pathon] kind = "pack-lib"`.
 
 Oznaczone jako `pack-lib` od teraz: `pathon-mesh`, `pathon-scene`, `pathon-material`, `pathon-bindless`, `pathon-ibl`, `pathon-texture`.
 
+Uzupełnienie (25.11.2026): `pathon-shadow` jest też `pack-lib`. ADR-0044 zakłada, że `pathon-pbr` czyta wynik cieni (`ShadowFrame`, slot, moduł WGSL), a paczka nie może zależeć od paczki. Typy i moduł WGSL cieni to kontrakt wejścia oświetlenia, jak `IblEnvironment`; `ShadowPack` zostaje zwykłą paczką, którą dodaje aplikacja.
+
 ## Konsekwencje
 
 - Zależność jest jawna w `Cargo.toml` i sprawdzana: dwa testy w `xtask/src/rules.rs` (paczka może użyć `pack-lib`, nie może innej paczki; `pack-lib` sam przestrzega granicy).

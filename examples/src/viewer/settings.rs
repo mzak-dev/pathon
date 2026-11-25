@@ -1,31 +1,58 @@
-// What the host changes between frames; it reaches the pack through `Renderer::shared_mut`.
+// What the host changes between frames; it reaches the packs through `Renderer::shared_mut`.
+
+/// Which lighting the viewer draws with: the stack of pathon packs, or the one-feature stand-in of M4-10 for comparison.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum LightingMode {
+    #[default]
+    Pbr,
+    Simple,
+}
 
 /// Blender renders the classroom at exposure 0 with lights converted at 683 lm/W (docs/scenes.md), so 1/683 is its
-/// exposure. The viewer starts one stop above: ACES takes the mid-tones down where Blender's Standard transform does
-/// not.
+/// exposure. The viewer starts one stop above: the tonemapper takes the mid-tones down where Blender's Standard
+/// transform does not.
 pub const DEFAULT_EXPOSURE: f32 = 2.0 / 683.0;
 const EXPOSURE_STEP_STOPS: f32 = 0.5;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "each bool is one key of the viewer; an enum per key would only rename it"
+)]
 pub struct ViewerSettings {
-    /// Linear multiplier of the scene radiance before the tonemapper.
+    /// Linear multiplier of the scene radiance before the tonemapper. With automatic exposure it is only the
+    /// compensation: `log2(exposure / DEFAULT_EXPOSURE)` stops on top of what the histogram chose.
     pub exposure: f32,
-    /// Constant stand-in for image-based lighting (IBL arrives with M4-06): illuminance in lux from above and below.
+    pub auto_exposure: bool,
+    pub bloom: bool,
+    /// Constant stand-in for image-based lighting in `--simple` mode: illuminance in lux from above and below.
     pub ambient_sky_lux: f32,
     pub ambient_ground_lux: f32,
     /// Emission in glTF files from Blender is in watts, lights are in lumens: this brings the two to one scale.
     pub emissive_scale: f32,
     pub sun_shadows: bool,
+    /// Scale of the environment as light (`PbrSettings::environment_intensity`): the units of the HDR picture are
+    /// not lux, and nothing here tells the room from the outdoors, so this is the one knob of the skylight.
+    pub environment_intensity: f32,
+    /// Scale of the environment as the backdrop seen through the windows.
+    pub sky_intensity: f32,
+    /// Tests every light in every pixel instead of the clusters, to compare the two.
+    pub brute_force_lights: bool,
 }
 
 impl Default for ViewerSettings {
     fn default() -> Self {
         Self {
             exposure: DEFAULT_EXPOSURE,
+            auto_exposure: false,
+            bloom: true,
             ambient_sky_lux: 400.0,
             ambient_ground_lux: 150.0,
             emissive_scale: 683.0,
             sun_shadows: true,
+            environment_intensity: 300.0,
+            sky_intensity: 6000.0,
+            brute_force_lights: false,
         }
     }
 }
@@ -35,10 +62,17 @@ impl ViewerSettings {
         self.exposure *= (stops * EXPOSURE_STEP_STOPS).exp2();
     }
 
+    /// The `[` and `]` keys: the ambient of `--simple` and the environment of the pbr stack by the same factor.
     pub fn adjust_ambient(&mut self, stops: f32) {
         let factor = (stops * EXPOSURE_STEP_STOPS).exp2();
         self.ambient_sky_lux *= factor;
         self.ambient_ground_lux *= factor;
+        self.environment_intensity *= factor;
+    }
+
+    /// Stops of `exposure` above the default: the compensation of automatic exposure.
+    pub fn exposure_stops(&self) -> f32 {
+        (self.exposure / DEFAULT_EXPOSURE).log2()
     }
 }
 
@@ -52,5 +86,6 @@ mod tests {
         settings.adjust_exposure(1.0);
         settings.adjust_exposure(1.0);
         assert!((settings.exposure / DEFAULT_EXPOSURE - 2.0).abs() < 1e-5);
+        assert!((settings.exposure_stops() - 1.0).abs() < 1e-5);
     }
 }

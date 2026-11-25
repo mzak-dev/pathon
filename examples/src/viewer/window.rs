@@ -9,7 +9,8 @@ use pathon::platform::{App, PhysicalSize, PlatformCtx, PlatformEvent, PlatformWi
 use pathon::rhi::{DeviceApi, PhysicalSize as RhiSize, SurfaceTarget, WindowSource};
 
 use super::controls::{Command, Controls};
-use super::session::{Session, viewer_builder};
+use super::session::Session;
+use super::stack::ViewerConfig;
 use crate::gltf_loader::LoadedScene;
 
 const WHEEL_SPEED_FACTOR: f32 = 1.15;
@@ -31,6 +32,7 @@ pub struct ViewerWindow {
     title: String,
     running: Option<Running>,
     failure: Arc<std::sync::Mutex<Option<String>>>,
+    config: ViewerConfig,
 }
 
 impl std::fmt::Debug for ViewerWindow {
@@ -50,12 +52,18 @@ fn surface_target(window: &Arc<dyn PlatformWindow>) -> SurfaceTarget {
 
 impl ViewerWindow {
     /// `failure` receives the reason when the viewer stops because of an error, so `main` can exit with a code.
-    pub fn new(scene: LoadedScene, title: String, failure: Arc<std::sync::Mutex<Option<String>>>) -> Self {
+    pub fn new(
+        scene: LoadedScene,
+        title: String,
+        failure: Arc<std::sync::Mutex<Option<String>>>,
+        config: ViewerConfig,
+    ) -> Self {
         Self {
             scene: Some(scene),
             title,
             running: None,
             failure,
+            config,
         }
     }
 
@@ -73,16 +81,18 @@ impl ViewerWindow {
             .create_window(&WindowDesc::new(self.title.clone(), 1280.0, 720.0))
             .map_err(|error| error.to_string())?;
         let surface = surface_target(&window);
-        let mut renderer = viewer_builder()
+        let mut renderer = self
+            .config
+            .builder()
             .with_compatible_surface(surface.clone())
             .build()
             .map_err(|error| error.to_string())?;
         log::info!("adapter: {}", renderer.device().caps().adapter.name);
         let target = renderer.add_window(surface).map_err(|error| error.to_string())?;
-        let session = Session::new(renderer, &scene).map_err(|error| error.to_string())?;
+        let session = Session::new(renderer, &scene, &self.config).map_err(|error| error.to_string())?;
         log::info!(
             "controls: WASD/arrows move, Q/E down/up, Shift fast, mouse drag look, wheel speed, 1-9 file cameras, \
-             +/- exposure, [ ] ambient, T sun shadows, I info, Esc quit"
+             +/- exposure, X auto exposure, B bloom, [ ] ambient/environment, T sun shadows, I info, Esc quit"
         );
         Ok(Running {
             window,
@@ -115,6 +125,8 @@ impl Running {
             Command::AmbientUp => session.settings.adjust_ambient(1.0),
             Command::AmbientDown => session.settings.adjust_ambient(-1.0),
             Command::ToggleShadows => session.settings.sun_shadows = !session.settings.sun_shadows,
+            Command::ToggleAutoExposure => session.settings.auto_exposure = !session.settings.auto_exposure,
+            Command::ToggleBloom => session.settings.bloom = !session.settings.bloom,
             Command::PrintInfo => log::info!("{}", session.describe()),
             Command::Exit => return false,
         }

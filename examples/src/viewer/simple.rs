@@ -1,7 +1,7 @@
-// The viewer as a pack (M4-10): the one `RenderFeature` that draws the test scene. It plays the part of the packs that
-// come later (pbr, shadows, post) in the simplest form that makes the scene readable: a sun shadow map, a forward
-// pass with the standard material, and an ACES tonemap into the target. It reads scene data from `Shared`:
-// `SharedAssets` (host, once) and `ViewerSettings` (host, every frame).
+// The simple lighting of the viewer (`--simple`, M4-10): one `RenderFeature` that draws the test scene without the
+// pathon packs, kept to compare with the pbr stack. It plays the part of pbr, shadows and post in the simplest form
+// that makes the scene readable: a sun shadow map, a forward pass with the standard material, and an ACES tonemap into
+// the target. It reads scene data from `Shared`: `SharedSimple` (host, once) and `ViewerSettings` (host, every frame).
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -26,12 +26,12 @@ use super::gpu_data::{
     build_lights, sun_view_projection,
 };
 use super::settings::{DEFAULT_EXPOSURE, ViewerSettings};
-use super::upload::{SharedAssets, ViewerAssets};
+use super::upload::{SharedSimple, SimpleScene};
 
 const FORWARD_ROOT: &str = "forward";
-const FORWARD_SOURCE: &str = include_str!("forward.wesl");
-const TEXTURE_SOURCE: &str = include_str!("texture_source.wesl");
-const TONEMAP_SOURCE: &str = include_str!("tonemap.wgsl");
+const FORWARD_SOURCE: &str = include_str!("simple_forward.wesl");
+const TEXTURE_SOURCE: &str = include_str!("simple_texture_source.wesl");
+const TONEMAP_SOURCE: &str = include_str!("simple_tonemap.wgsl");
 const HDR_FORMAT: Format = Format::Rgba16Float;
 const DEPTH_FORMAT: Format = Format::Depth32Float;
 const UNIFORM_RING_BYTES: u64 = 64 << 10;
@@ -79,7 +79,7 @@ fn read_only_storage() -> BindingType {
 
 #[derive(Debug)]
 struct Gpu {
-    assets: Arc<ViewerAssets>,
+    assets: Arc<SimpleScene>,
     forward_layout: BindGroupLayoutId,
     shadow_layout: BindGroupLayoutId,
     tonemap_layout: BindGroupLayoutId,
@@ -102,7 +102,7 @@ struct Gpu {
 }
 
 impl Gpu {
-    fn build(device: &dyn DeviceApi, assets: Arc<ViewerAssets>) -> Result<Self, RhiError> {
+    fn build(device: &dyn DeviceApi, assets: Arc<SimpleScene>) -> Result<Self, RhiError> {
         let world = Arc::clone(&assets.snapshot);
         let draws = build_draws(&world, &assets.materials, &assets.material_ids);
         let (lights, sun) = build_lights(&world);
@@ -335,13 +335,13 @@ impl Gpu {
     }
 }
 
-/// The pack of the test-scene viewer; the host puts a [`SharedAssets`] into `Shared` after the upload.
+/// The pack of the test-scene viewer; the host puts a [`SharedSimple`] into `Shared` after the upload.
 #[derive(Debug, Default)]
-pub struct ViewerPack {
+pub struct SimplePack {
     gpu: Option<Gpu>,
 }
 
-impl ViewerPack {
+impl SimplePack {
     pub fn new() -> Self {
         Self::default()
     }
@@ -349,7 +349,7 @@ impl ViewerPack {
 
 fn draw_calls(
     pass: &mut pathon::rhi::RenderPassEncoder<'_>,
-    assets: &ViewerAssets,
+    assets: &SimpleScene,
     calls: impl Iterator<Item = DrawCall>,
     pipelines: &dyn Fn(PipelineKey) -> RenderPipelineId,
     with_materials: bool,
@@ -372,7 +372,7 @@ fn draw_calls(
     Ok(())
 }
 
-impl RenderFeature for ViewerPack {
+impl RenderFeature for SimplePack {
     fn name(&self) -> &'static str {
         "gltf viewer"
     }
@@ -391,7 +391,7 @@ impl RenderFeature for ViewerPack {
         let Some(output) = ctx.slot(Slot::OUTPUT) else {
             return Ok(());
         };
-        let Some(assets) = ctx.shared().get::<SharedAssets>().map(|shared| Arc::clone(&shared.0)) else {
+        let Some(assets) = ctx.shared().get::<SharedSimple>().map(|shared| Arc::clone(&shared.0)) else {
             return Ok(());
         };
         let settings = ctx.shared().get::<ViewerSettings>().copied().unwrap_or_default();
@@ -501,7 +501,7 @@ impl RenderFeature for ViewerPack {
         });
 
         let mut pass = graph.add_pass(PassDesc::new("viewer forward", Stage::Opaque));
-        let shadow_read = pass.read(shadow_written, Access::SAMPLED);
+        let shadow_read = pass.read(shadow_written, Access::SAMPLED.union(Access::DEPTH_READ));
         let hdr_written = pass.write(hdr, Access::COLOR_ATTACHMENT);
         let depth_written = pass.write(depth, Access::DEPTH_WRITE);
         // The backdrop of the windows follows the exposure, so it keeps its look when the scene is brightened.

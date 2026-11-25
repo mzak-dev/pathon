@@ -2,7 +2,7 @@
 
 Cienie światła kierunkowego z map kaskadowych (M4-07, [ADR-0044](../adr/0044-cienie-kaskadowe-csm.md)): od 1 do 4 kaskad podzielonych wzdłuż głębi kamery, każda w warstwie jednej tekstury `Depth32Float` (reverse-Z), filtr PCF, stabilizacja do tekseli i trzy warstwy biasu. Pass cieni jest węzłem grafu w `Stage::Shadows` i trzyma rolę `Role::SHADOWS`; shader oświetlenia czyta wynik funkcją WGSL `shadow_factor_directional`.
 
-To zwykła paczka (`[package.metadata.pathon] kind = "pack"`): zależy od `pathon-api` oraz od `pack-lib` `pathon-mesh` i `pathon-scene` ([ADR-0041](../adr/0041-pack-lib.md)). Nie rysuje sceny ani nie liczy oświetlenia: rysuje tylko głębię rzucających cień i oddaje mapę oraz uniformy. Spoty i punktowe (kostka), PCSS / VSM i cienie kontaktowe są odłożone z uzasadnieniem w ADR.
+To `pack-lib` (`[package.metadata.pathon] kind = "pack-lib"`, [ADR-0041](../adr/0041-pack-lib.md)): `PbrPack` zależy od niego, żeby czytać `ShadowFrame`, slot i moduł WGSL, a `ShadowPack` pozostaje paczką, którą aplikacja dodaje do renderera. Sam zależy od `pathon-api` oraz od `pack-lib` `pathon-mesh` i `pathon-scene`. Nie rysuje sceny ani nie liczy oświetlenia: rysuje tylko głębię rzucających cień i oddaje mapę oraz uniformy. Spoty i punktowe (kostka), PCSS / VSM i cienie kontaktowe są odłożone z uzasadnieniem w ADR.
 
 ```rust,ignore
 use pathon_shadow::{DirectionalShadowLight, ShadowPack, ShadowScene, ShadowSettings};
@@ -73,7 +73,7 @@ Czysty kod CPU, testowany bez GPU. `CameraFrustum::from_camera` odczytuje z maci
 | `shadow_cascade_index(shadows, view_depth)` | numer kaskady dla odległości |
 | `shadow_light_space`, `shadow_pcf3`, `shadow_pcf5`, `shadow_sample_cascade` | elementy składowe |
 
-Hak `shadow_factor(light, position)` w `pathon-pbr` wywołuje `shadow_factor_directional` z `light` jako `light_index`; normalną, głębię widoku i `pixel` bierze z kontekstu fragmentu.
+`pathon-pbr` wywołuje `shadow_factor_directional` w pętli świateł (permutacja `shadows`, [pathon-pbr](pathon-pbr.md#cienie)) z indeksem światła w swojej tablicy (światła kierunkowe pierwsze) jako `light_index`; normalną, głębię widoku i `pixel` bierze z kontekstu fragmentu.
 
 ```wgsl
 import package::shadow::sample::{ShadowCascades, shadow_factor_directional};
@@ -103,4 +103,4 @@ Bufory paczki (macierze modeli, argumenty indirect, uniformy) są zapisywane prz
 - `tests/golden_shadows.rs` (`--features gpu-tests`, `PATHON_TEST_BACKEND=vulkan|dx12|metal`): scena z podłogą, stosem sześcianów, kulą, płaszczyzną skierowaną do światła i odległym sześcianem; shading `N·L × shadow_factor` napisany w teście. Asercje: piksel w cieniu ≪ w świetle (pięć rzucających, w tym kaskada 3), brak acne na płaszczyźnie prostopadłej do światła (najciemniejszy z 81 próbek ≥ 97% wartości) i na podłodze pod kątem przez wszystkie kaskady (68 próbek, równe co do bitu), brak peter-panningu (cień sięga 3 cm od ściany sześcianu), mapa przesuwa się o całe teksele przy ruchu i obrocie kamery (`Stable`; `Focused` migocze), miększe filtry poszerzają krawędź, rysowanie indirect i pojedyncze dają ten sam obraz. Golden image `shadows_csm` w `tests/golden/`.
 - Przykład: `cargo run -p pathon-examples --bin shadow_scene -- wynik.png [hard|pcf3|pcf5] [stable|focused] [kaskady]` ([przykłady](../examples.md)).
 
-**Nie potwierdzone / otwarte:** referencja na lavapipe, WARP i Metalu dopiero w CI; ścieżka bez `INDIRECT_FIRST_INSTANCE` była sprawdzona tylko na RX 9070 XT (wymuszona `use_indirect_draws = false`) i na `rhi-null`, nie w przeglądarce; hak w `pathon-pbr` czeka na merge M4-05.
+**Nie potwierdzone / otwarte:** referencja na lavapipe, WARP i Metalu dopiero w CI; ścieżka bez `INDIRECT_FIRST_INSTANCE` była sprawdzona tylko na RX 9070 XT (wymuszona `use_indirect_draws = false`) i na `rhi-null`, nie w przeglądarce; od przepięcia viewera sceny testowej (docs/scenes.md) cienie przechodzą też przez `pathon-pbr` (testy w `pathon-pbr/tests/golden_scene.rs`).

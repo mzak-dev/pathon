@@ -2,7 +2,7 @@
 
 Oświetlenie fizyczne sceny (M4-05, [ADR-0042](../adr/0042-pbr-prepass-klastry-i-forward.md)): prepass (`depth`, `normals`, `motion`, `material_id`, na żądanie `roughness`, `albedo` i `depth_pyramid`), przypisanie świateł do klastrów w compute i pass koloru, który woła `material::standard::evaluate` i `ibl::shading::ibl_evaluate` i pisze `hdr` (oraz `diffuse` i `specular` na żądanie).
 
-To zwykła paczka (`[package.metadata.pathon] kind = "pack"`): zależy od `pathon-api`, `pathon-shader` i od crate'ów `pack-lib` ([ADR-0041](../adr/0041-pack-lib.md)): `pathon-scene`, `pathon-mesh`, `pathon-material`, `pathon-bindless`, `pathon-ibl`. Nie zna ECS, plików ani okna: scenę, geometrię i materiały dostaje przez `Shared`. Nie robi cieni, nieba, cullingu, skinningu ani TAA.
+To zwykła paczka (`[package.metadata.pathon] kind = "pack"`): zależy od `pathon-api`, `pathon-shader` i od crate'ów `pack-lib` ([ADR-0041](../adr/0041-pack-lib.md)): `pathon-scene`, `pathon-mesh`, `pathon-material`, `pathon-bindless`, `pathon-ibl`, `pathon-shadow`. Nie zna ECS, plików ani okna: scenę, geometrię i materiały dostaje przez `Shared`. Cieni nie rysuje (robi to `ShadowPack`, który tylko czyta), nie robi też nieba, cullingu, skinningu ani TAA.
 
 ```rust,ignore
 let mut renderer = Renderer::builder()
@@ -36,6 +36,7 @@ Przykład: `cargo run -p pathon-examples --bin pbr_scene -- wynik.png` ([przykł
 | `MaterialHooks` | nie | hook powierzchni aplikacji; `texture_source` ustawia paczka z binderu |
 | `IblEnvironment` | nie | publikuje `IblPack`; bez niego środowisko jest czarne |
 | `PbrSettings` | nie | `ClusterSettings`, `LightAssignment`, `environment_intensity`; zmieniane między klatkami |
+| `ShadowFrame` i slot `shadow.map` | nie | publikuje `ShadowPack` ([pathon-shadow](pathon-shadow.md)); gdy są oba, pass koloru używa permutacji z flagą `shadows` |
 
 Brak któregokolwiek z wymaganych daje `L0004` (raz) i puste sloty. Kamera to `ViewInput::camera` **bez jittera**: paczka nakłada `ViewCtx::jitter` sama i trzyma poprzednią macierz widoku per `ViewId`.
 
@@ -56,23 +57,30 @@ Dekodowanie normalnych i referencje CPU (`oct_encode`, `oct_decode`, `depth_pyra
 
 ## Klastry świateł
 
-Siatka kafli (`tile_size` px, potęga dwójki) razy wykładnicze warstwy głębi (`slices` od `near` do `far`). Compute (`cluster.wesl`): jeden wątek na klaster liczy jego AABB w przestrzeni widoku (perspektywa i ortografia), zlicza światła, których sfera zasięgu go dotyka, rezerwuje miejsce na liście jednym `atomicAdd` na `u32` i zapisuje indeksy w kolejności świateł. Nie ma atomików 64-bit, więc ten sam shader działa na Web. Światła kierunkowe nie są klastrowane. Zasięg punktowego i reflektora to `Light::influence_radius`, a tłumienie ma okno `saturate(1 − (d/r)⁴)²` (Karis 2013), więc światło znika dokładnie na zasięgu i klaster nic nie zmienia w obrazie. Przepełnienie wspólnej listy (`max_light_indices`) skraca listy późniejszych klastrów (`L0005`).
+Siatka kafli (`tile_size` px, potęga dwójki) razy wykładnicze warstwy głębi (`slices` od `near` do `far`). Compute (`cluster.wesl`): jeden wątek na klaster liczy jego AABB w przestrzeni widoku (perspektywa i ortografia), zlicza światła, których sfera zasięgu go dotyka, rezerwuje miejsce na liście jednym `atomicAdd` na `u32` i zapisuje indeksy w kolejności świateł. Nie ma atomików 64-bit, więc ten sam shader działa na Web. Światła kierunkowe nie są klastrowane. Zasięg punktowego i reflektora to `Light::influence_radius`, a tłumienie ma okno `saturate(1 − (d/r)⁴)²` (Karis 2013), więc światło znika dokładnie na zasięgu i klaster nic nie zmienia w obrazie. Lista jest tak duża, jak trzeba: `min(max_light_indices, klastry × światła)` wpisów (domyślny limit 2²⁴), więc przepełnienie (`L0005`) wymaga jawnie mniejszego limitu; wtedy skraca listy losowych klastrów, bo kolejność rezerwacji zależy od planowania wątków.
 
 `LightAssignment::BruteForce` testuje w kolorze każde światło i służy do sprawdzania klastrów.
 
 ## Pass koloru
 
-Forward z prepassem: kolor testuje głębię `GreaterEqual` bez zapisu, więc każdy piksel jest cieniowany raz. Masked odrzuca fragmenty już w prepassie. Dla każdego światła: `LightSample` (kierunek, promieniowanie = kolor · lux albo kandela · tłumienie), `shadow_factor` (hak, domyślnie 1; podmienia go `pathon-shadow`), `evaluate` osobno na `diffuse` i `specular`. Środowisko: `ibl_evaluate`; okluzja materiału zaciemnia dyfuzję, specular dostaje okluzję Lagarde'a (2014), oba korektę wielokrotnego odbicia Jimenez i in. (2016). Obiekty z `alpha: Blend` idą osobnym passem po opaque, posortowane od najdalszych, premultiplied, z testem głębi bez zapisu.
+Forward z prepassem: kolor testuje głębię `GreaterEqual` bez zapisu, więc każdy piksel jest cieniowany raz. Masked odrzuca fragmenty już w prepassie. Dla każdego światła: `LightSample` (kierunek, promieniowanie = kolor · lux albo kandela · tłumienie), `shadow_factor` (hak aplikacji, domyślnie 1) razy mapa kaskad, `evaluate` osobno na `diffuse` i `specular`. Środowisko: `ibl_evaluate`; okluzja materiału zaciemnia dyfuzję, specular dostaje okluzję Lagarde'a (2014), oba korektę wielokrotnego odbicia Jimenez i in. (2016). Obiekty z `alpha: Blend` idą osobnym passem po opaque, posortowane od najdalszych, premultiplied, z testem głębi bez zapisu.
 
 Jednostki: lux (kierunkowe), kandela (punktowe i reflektory, lumeny / 4π jak w glTF). `hdr` jest bez ekspozycji; jasność wyświetlana to `hdr × exposure` ([pathon-post](pathon-post.md)).
+
+## Cienie
+
+Cieniowane światło to jedno światło kierunkowe, które `ShadowPack` rysuje do `shadow.map`; reszta świateł (punktowe, reflektory) cieni nie ma. Gdy w klatce są `ShadowFrame` i slot `shadow.map`, `LightingFeature` buduje permutację z flagą WESL `shadows` (`ForwardKey::shadows`): w grupie 0 dochodzą trzy bindingi `SHADOW_FIRST_BINDING`… (kaskady, tablica głębi, sampler porównawczy, tuż za bindingami IBL), a `add_light` mnoży promieniowanie przez `shadow_factor_directional` z `package::shadow::sample`. Normalną geometryczną (po odwróceniu dla tylnej ściany), głębię widoku i `@builtin(position).xy` shader trzyma w zmiennej prywatnej, wypełnianej raz w `shade`. Bez światła w `ShadowScene` paczka cieni nie publikuje niczego i działa permutacja bez cieni (układ bindingów jak dawniej).
+
+`light_index` w `DirectionalShadowLight` to indeks w tablicy świateł paczki pbr, w której światła kierunkowe są pierwsze (`PackedLights`): słońce będące jedynym światłem kierunkowym ma indeks 0, niezależnie od kolejności w scenie. Hak `pbr::hooks::shadow_factor(light_index, position)` zostaje dla własnych cieni aplikacji i mnoży się z mapą.
 
 ## Ograniczenia
 
 - Brak cullingu: rysowane są wszystkie widoczne instancje, jedno wywołanie na instancję (M4-11).
 - `CullMode::None`: podwójna strona rozstrzyga się przez `front_facing`; transformacje lustrzane odwracają znak stycznej niepoprawnie.
 - Wgrywanie instancji i świateł co klatkę w całości (przyrostowe z `changes()` zostaje na M4-11).
+- Układy grupy 0 są reflektowane raz na permutację (cache w `PbrShaders`); wcześniej parsowanie WGSL szło co klatkę (14 ms CPU na scenie z 862 instancjami).
 - Koszt przypisania to `O(klastry × światła)`; hierarchiczne przycinanie do zmierzenia w M4-17.
-- Brak AA specular, okluzji z bent normals, cieni, nieba, przezroczystości z transmisją (M4-15) i MSAA (M4-19).
+- Brak AA specular, okluzji z bent normals, cieni punktowych i reflektorów, nieba, przezroczystości z transmisją (M4-15) i MSAA (M4-19).
 
 ## Diagnostyka
 
@@ -91,7 +99,7 @@ Jednostki: lux (kierunkowe), kandela (punktowe i reflektory, lumeny / 4π jak w 
 - `tests/shaders.rs` (`rhi-null`): wszystkie korzenie składają się i przechodzą naga, potoki prepassu i koloru istnieją dla 48 permutacji materiału na obu ścieżkach tekstur (z `binding_array` i bez), z binderem i bez, potoki klastrów i piramidy.
 - `tests/clusters.rs` (`--features gpu-tests`): listy z GPU kontra brute force w `f64` na losowych scenach (10, 100, 1000 świateł; perspektywa i ortografia), punkty losowe dostają każde światło, które je dosięga, przepełnienie jest liczone i nie wychodzi poza listę, zero świateł; na `rhi-null` walidacja komend.
 - `tests/prepass.rs`: głębia (reverse-Z), normalne, id materiałów, roughness i albedo względem geometrii sceny; ruch obiektu i ruch kamery w pikselach (±0,5); piramida względem referencji CPU, bit w bit.
-- `tests/golden_scene.rs`: pełny łańcuch (`IblPack`, `PbrPack`, `PostPack`) na scenie testowej (podłoga, kule metal i dielektryk, sześcian, ogrodzenie masked, cztery materiały, trzy z teksturami; słońce, trzy światła punktowe i reflektor): golden `tests/golden/pbr_scene.png`, brak NaN, `diffuse + specular = hdr`, klastry równe `BruteForce` z tysiącem świateł, ścieżka per-materiał równa bindless, przezroczysta tafla; na `rhi-null` cała scena ze wszystkimi slotami.
+- `tests/golden_scene.rs`: pełny łańcuch (`IblPack`, `PbrPack`, `PostPack`) na scenie testowej (podłoga, kule metal i dielektryk, sześcian, ogrodzenie masked, cztery materiały, trzy z teksturami; słońce, trzy światła punktowe i reflektor): golden `tests/golden/pbr_scene.png`, brak NaN, `diffuse + specular = hdr`, klastry równe `BruteForce` z tysiącem świateł, ścieżka per-materiał równa bindless, przezroczysta tafla; na `rhi-null` cała scena ze wszystkimi slotami, także z `ShadowPack` (z cieniem i bez światła do cieniowania); na GPU cień słońca przyciemnia podłogę za sześcianem i niczego nie rozjaśnia. `tests/shaders.rs`: permutacja `shadows` dodaje dokładnie trzy bindingi.
 
 ```powershell
 cargo test -p pathon-pbr                                                    # bez GPU

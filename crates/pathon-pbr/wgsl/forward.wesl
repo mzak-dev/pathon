@@ -7,6 +7,7 @@ import package::pbr::common::{Frame, Instance, cluster_index, world_normal, worl
 import package::pbr::hooks::shadow_factor;
 import package::pbr::lights::{GpuLight, light_sample};
 import package::pbr::occlusion::{gtao_multi_bounce, specular_ao_lagarde};
+import package::shadow::sample::{ShadowCascades, shadow_factor_directional};
 
 @group(0) @binding(0) var<uniform> frame: Frame;
 @group(0) @binding(1) var<storage, read> materials: array<MaterialData>;
@@ -15,6 +16,17 @@ import package::pbr::occlusion::{gtao_multi_bounce, specular_ao_lagarde};
 @group(0) @binding(4) var<storage, read> cluster_ranges: array<vec2<u32>>;
 @group(0) @binding(5) var<storage, read> cluster_indices: array<u32>;
 // IBL_BINDINGS
+// SHADOW_BINDINGS
+
+// What `shadow_factor_directional` needs about the fragment besides its position; `shade` fills it once so that the
+// light loop keeps its signature.
+struct ShadowContext {
+    normal: vec3<f32>,
+    view_depth: f32,
+    pixel: vec2<f32>,
+}
+
+var<private> shadow_context: ShadowContext;
 
 struct Varying {
     @invariant @builtin(position) clip: vec4<f32>,
@@ -54,7 +66,19 @@ fn add_light(
 ) {
     let light = lights[index];
     let lit = light_sample(light, surface.position);
-    let visibility = shadow_factor(index, surface.position);
+    var visibility = shadow_factor(index, surface.position);
+    @if(shadows) {
+        visibility = visibility * shadow_factor_directional(
+            shadow_cascades,
+            shadow_map,
+            shadow_sampler,
+            index,
+            surface.position,
+            shadow_context.normal,
+            shadow_context.view_depth,
+            shadow_context.pixel,
+        );
+    }
     if (visibility <= 0.0) {
         return;
     }
@@ -85,6 +109,8 @@ fn shade(in: Varying, front_facing: bool) -> Shaded {
         discard;
     }
     let view = normalize(frame.camera_position.xyz - in.position);
+    let view_depth = -(frame.world_to_view * vec4<f32>(in.position, 1.0)).z;
+    shadow_context = ShadowContext(surface.geometric_normal, view_depth, in.clip.xy);
 
     var diffuse = vec3<f32>(0.0);
     var specular = vec3<f32>(0.0);
@@ -97,7 +123,6 @@ fn shade(in: Varying, front_facing: bool) -> Shaded {
             add_light(surface, view, light, &diffuse, &specular);
         }
     } else {
-        let view_depth = -(frame.world_to_view * vec4<f32>(in.position, 1.0)).z;
         let range = cluster_ranges[cluster_index(frame, in.clip.xy, view_depth)];
         for (var entry = 0u; entry < range.y; entry++) {
             add_light(surface, view, cluster_indices[range.x + entry], &diffuse, &specular);

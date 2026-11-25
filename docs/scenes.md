@@ -124,7 +124,7 @@ Sprawdzone przy tworzeniu (22.11.2026, Blender 5.2.2):
 - Ponowny import `.glb` do Blendera (`import_scene.gltf`): 956 obiektów (836 meshów, 107 empty, 10 świateł, 3 kamery), 28 obrazów; render Workbench z `renderCam` pokazuje poprawną klasę (tablica z napisami, tablice korkowe, mapa, drzwi, ławki z teksturami, podłoga).
 - Własne sprawdzenia JSON-a glb: brak prymitywów z teksturą bez `TEXCOORD_0`, 77 materiałów, 2 z `BLEND`.
 
-Render w pathon: patrz [Render w pathon](#render-w-pathon) niżej.
+Render w pathon: patrz [Render w pathon (pbr)](#render-w-pathon-pbr) niżej.
 
 Walidator uruchomisz tak:
 
@@ -143,11 +143,15 @@ PATHON_TEST_SCENE=test-assets/classroom/classroom-lite.glb cargo test -p pathon-
 
 Do codziennych testów i Chrome używaj `classroom-lite.glb` (17,9 MB), do pomiarów wydajności `classroom.glb`. Do IBL wskaż `test-assets/classroom/env/Garage.hdr` (M4-06). Główna kamera i światła są w `*.scene.json`; loader bierze z niego tylko flagę `main` kamery (nazwa obiektu = nazwa węzła glTF), reszta idzie z samego `.glb`.
 
-## Render w pathon
+## Render w pathon (pbr)
 
-`cargo run --release -p pathon-examples --bin gltf_viewer` (opis, sterowanie i tryb `--screenshot` w [przykładach](examples.md#viewer-sceny-testowej-gltf_viewer)). Sprawdzone 22.11.2026 na Windows, Vulkan, AMD Radeon RX 9070 XT, w obu wariantach sceny: wczytanie `.glb` ok. 0,1-0,5 s (obrazy dekodowane równolegle), wgranie na GPU poniżej sekundy, w oknie 1280×720 ok. 70 klatek na sekundę przy włączonym vsync (`classroom.glb`: 862 instancje, 606 tys. trójkątów po rozwinięciu instancji, 78 materiałów, 10 świateł).
+`cargo run --release -p pathon-examples --bin gltf_viewer` (opis, sterowanie, flagi i tryby `--screenshot` i `--bench` w [przykładach](examples.md#viewer-sceny-testowej-gltf_viewer)). Od 25.11.2026 viewer oświetla scenę stosem paczek pathon: `IblPack` (środowisko `env/Garage.hdr`, czytnik Radiance w `examples/src/radiance.rs`), `ShadowPack` (cztery kaskady słońca, PCF 3×3, mapy 2048², zasięg 40 m), `PbrPack` (prepass, klastry świateł, materiały standardowe, tekstury przez `TextureBinder`: bindless, gdy urządzenie je ma, inaczej grupa na materiał), `PostPack` (ekspozycja, bloom, ACES) i własna cecha viewera z tłem okien (`PbrPack` nieba nie rysuje). Dawne oświetlenie z M4-10 zostaje pod `--simple` do porównań (`classroom-lite-renderCam-simple.png`).
 
-Zrzuty referencyjne (960×540, ekspozycja domyślna viewera, `--supersample 2`) leżą w `docs/scenes/`:
+Sprawdzone 25.11.2026 na Windows, Vulkan, AMD Radeon RX 9070 XT, w obu wariantach sceny (`classroom.glb`: 862 instancje, 606 tys. trójkątów, 78 materiałów, 28 tekstur, 10 świateł). Wczytanie `.glb` 0,1-0,5 s, wgranie na GPU 0,1-0,2 s, w oknie 1280×720 75 klatek na sekundę przy vsync (limit monitora).
+
+### Zrzuty
+
+Zrzuty referencyjne (960×540, ekspozycja domyślna, `--supersample 2`) leżą w `docs/scenes/`:
 
 | Plik | Co | Polecenie (`--size 960x540 --supersample 2`) |
 | --- | --- | --- |
@@ -155,16 +159,43 @@ Zrzuty referencyjne (960×540, ekspozycja domyślna viewera, `--supersample 2`) 
 | `classroom-lite-wide.png` | `pathon_wide` (14 mm) | `classroom-lite.glb --camera 1` |
 | `classroom-lite-reverse.png` | `pathon_reverse`, od strony tablicy | `classroom-lite.glb --camera 0` |
 | `classroom-renderCam.png` | kamera główna, wariant pełny | `classroom.glb --camera 2` |
+| `classroom-lite-renderCam-simple.png` | to samo co pierwszy, dawne oświetlenie | `classroom-lite.glb --camera 2 --simple` |
 
-Numer kamery to kolejność z pliku (log viewera ją wypisuje; w klasie: 0 `pathon_reverse`, 1 `pathon_wide`, 2 `renderCam`). Pliki są wygenerowane lokalnym wariantem sceny, której licencji nie potwierdzono do końca (patrz wyżej): zanim obrazy wyjdą poza repozytorium, trzeba to zrobić.
+Numer kamery to kolejność z pliku (log viewera ją wypisuje; w klasie: 0 `pathon_reverse`, 1 `pathon_wide`, 2 `renderCam`). Pliki są wygenerowane lokalnym wariantem sceny, której licencji nie potwierdzono do końca (patrz wyżej), a tło okien to `Garage.hdr` o nieznanej licencji: zanim obrazy wyjdą poza repozytorium, trzeba to sprawdzić.
 
-Co widać i co nie jest wierne (viewer to przejściowy zamiennik pbr, cieni, IBL i postu):
+### Co widać
 
-- **Zgadza się:** tablica z napisami, mapa, tablice korkowe, drzwi, ławki i krzesła z drewnem i metalem, żaluzje, kosz z siatki (blend z maski alfa) z kulkami papieru, lampy sufitowe jako emisja, plamy słońca na podłodze przez żaluzje (cień kierunkowy z mapy 4096²). Normalne, winding i odwrócenie Y są poprawne; lustrzane instancje (ujemny wyznacznik) nie mają odwróconych normalnych.
-- **Jasność:** ekspozycja 1/683 z tego opisu jest u Blendera przy transformacji Standard; z ACES (przybliżenie Narkowicza w shaderze viewera) obraz jest za ciemny, więc viewer startuje o jeden stopień wyżej (2/683). Klawisze `+` / `-` zmieniają ekspozycję, `--ev` w trybie zrzutu.
-- **Oświetlenie:** pętla po wszystkich 10 światłach bez cieni (poza słońcem) plus ambient półsferyczny 400 / 150 lx w miejsce IBL. Wypełnienie za oknem (213 437 cd) świeci też na powierzchnie, które w rzeczywistości zasłania ściana, a światła sufitowe nie rzucają cieni, więc kontakty (spód ławek) są jaśniejsze niż w Cyclesie.
-- **Okna:** światło dzienne to słońce, a tło okien to stały kolor nieba (brak portalu i IBL).
-- **Szkło** (`frostedGlass`, szkło zegara): `KHR_materials_transmission` jest rysowane jako blend z alfą `1 - 0,9 * transmission`, bez załamania.
-- **Materiały:** straty z tabeli wyżej (bump, korekcje koloru, atrybuty obiektu) są widoczne jako płaskie albo jednolite powierzchnie (np. skóra foteli). `KHR_texture_transform` dla normalnej i okluzji bierze transformację base color, bo crate `gltf` nie wystawia jej dla tych dwóch map.
-- **Alias:** okno nie ma MSAA (zrzuty wygładza `--supersample`).
+Co się zgadza:
 
+- Cień słońca przez żaluzje i okna daje ostre plamy na podłodze i ławkach bez acne i peter-panningu (sprawdzone 1:1 na zrzucie 1920×1080); ławki, krzesła, rury i oprawy rzucają poprawne cienie słońca, a wnętrze jest w większości w cieniu, jak w prawdziwej klasie.
+- Lampy sufitowe i zegar świecą (emisja × 683), szyby zegara i okien przepuszczają obraz; tablica, mapa, tablice korkowe, drzwi, kaloryfer mają materiały i tekstury, a okna widać na tle środowiska.
+- Ekspozycja stała 1/342 (2/683) daje obraz zbliżony do automatycznej (`--auto-exposure` wychodzi na +0 EV), ACES i Khronos Neutral (`--neutral`) różnią się tylko nasyceniem.
+- Obraz ze stosu pathon jest ciemniejszy i bardziej kontrastowy niż `--simple`, bo ambient nie jest już stały, a światło ze środowiska jest jedno i słabe (300).
+
+Co jest źle albo nie jest wierne (w kolejności wpływu na obraz, to samo jest wejściem do M5):
+
+1. **Brak oświetlenia pośredniego (GI) i widoczności nieba.** `IblPack` daje wnętrzu całe niebo z każdej strony, bo irradiancja nie zna ścian: przy `environment_intensity` 2000 sceny tracą cienie i robi się płasko jasno (`--environment-intensity 2000`), przy 0 jest ciemno i bez wypełnienia (`--environment-intensity 0`); 300 to ręcznie dobrany kompromis. Brak światła odbitego: plamy słońca nie rozjaśniają sufitu ani ścian, nic nie przejmuje koloru podłogi, wnętrze jest równo „płaskie” poza plamami. To największa różnica względem Cyclesa.
+2. **Brak okluzji otoczenia.** Poza mapami AO z tekstur (`occlusionTexture`) nic nie przyciemnia styków: spody ławek, narożniki, miejsce za kaloryferem, oparcia przy ścianie. SSAO / GTAO (M5-02) i okluzja IBL (bent normals) mają tu największy zysk za najmniejszy koszt.
+3. **Cienie tylko słońca.** Dziewięć świateł punktowych i reflektorów (sześć lamp sufitowych, lampa korytarza, podświetlenie tablicy, wypełnienie za oknem) nie rzuca cieni: światło wypełniające za oknem (213 437 cd) świeci też na zewnętrzną stronę ściany (widać z kamery na zewnątrz, `--eye 9,1.6,0 --target 0,1.2,0`), a lampy nie cieniują spodów ławek. Potrzebne: cienie reflektorów i punktowych (kostka), ewentualnie cień kontaktowy.
+4. **Brak odbić.** Podłoga (lakierowane drewno), szyby, tablica i metalowe nogi odbijają wyłącznie `Garage.hdr` (zapisany w IBL jako środowisko hali, które nie ma nic wspólnego z klasą), nie salę, okna ani lampy. Potrzebne: SSR i/lub sonda odbić dla wnętrza, w obu przypadkach z lokalną korektą parallax; do tego prawdziwe środowisko (niebo) w oknach zamiast garażu.
+5. **Aliasing specular i filtrowanie tekstur.** Słońce na wąskich żaluzjach daje iskrzące punkty (`classroom-lite-wide.png`, prawa strona), bo shader nie ma AA specular (geometrycznego ani przez normalne), a `TextureBinder` ma presety bez anizotropii (viewer `--simple` miał 8×), więc podłoga i ściany pod małym kątem są bardziej rozmyte. Okno nie ma MSAA ani TAA (zrzuty wygładza `--supersample`).
+6. **Szkło bez załamania.** `transmission` jest blendem z 10% krycia (hack hosta w `upload.rs`): bez załamania, bez tłumienia i bez rozmycia przez matowe szkło (`frostedGlass`). Szkło widziane przed niebem jest zastępowane tłem (cecha nieba pisze wszystko, co ma głębię 0).
+7. **Brak volumetryki.** Słupy światła w oknach i przy tablicy (`_volumeLight`, `_dustParticules`) nie są eksportowane, a stos ich nie ma.
+8. **Straty materiałów** z tabeli wyżej (bump, korekcje koloru, atrybuty obiektu, brak `normalTexture` tam, gdzie był bump) są widoczne jako płaskie ściany i jednolite siedziska; to ograniczenie eksportu, nie renderera.
+9. **Niebo jest cechą viewera**, nie paczką: `PbrPack` nie rysuje tła, więc viewer dorzuca `SkyFeature` (pass po `pbr lighting`). Docelowo potrzebna paczka nieba (`pathon-sky`, wymieniona w [pathon-ibl](crates/pathon-ibl.md)) i światło słońca z jej modelu zamiast ręcznych `sky_intensity` i `environment_intensity`.
+
+### Wydajność
+
+RX 9070 XT, Vulkan, `--bench 300` (render offscreen, `Rgba8UnormSrgb`, kamera `renderCam`, bloom włączony, cienie włączone). „Ściana” to czas na klatkę przy zajętym GPU (przepustowość), „CPU” to czas `render_frame` (nagrywanie i zgłoszenie), pasy GPU z `pathon-profile` (timestampy na granicach passów, średnia z 60 klatek).
+
+| Scena i rozmiar | Światła / klastry | Ściana | CPU | Suma passów GPU |
+| --- | --- | ---: | ---: | ---: |
+| `classroom.glb` 1280×720 | 10 / 86 400 | 2,06 ms (484 fps) | 2,05 ms | 2,17 ms |
+| `classroom.glb` 1920×1080 | 10 / 195 840 | 2,30 ms (434 fps) | 2,14 ms | 2,13 ms |
+| `classroom-lite.glb` 1280×720 | 10 / 86 400 | 1,90 ms (526 fps) | 1,87 ms | 2,20 ms |
+| `classroom.glb` 1920×1080, `--per-material` | 10 / 195 840 | 2,20 ms (454 fps) | 2,05 ms | 2,56 ms |
+| `classroom.glb` 1920×1080, `--simple` | 10 / — | 1,78 ms (563 fps) | 1,77 ms | 2,40 ms |
+
+Passy GPU (`classroom.glb` 1920×1080, ms): prepass 0,81, forward 0,74, cień (4 kaskady) 0,12, klastry świateł 0,05, przezroczyste 0,04, niebo 0,03, bloom razem ok. 0,25 (prefiltr 0,12, reszta poniżej 0,03), ekspozycja 0,002, tonemapping 0,06. Prepass kosztuje tyle co kolor, bo każda z 862 instancji to osobne rysowanie bez cullingu (M4-11); GPU jest tu mało obciążone, więc czas GPU prawie nie zależy od rozdzielczości, a ścianę wyznacza CPU. W oknie ta scena trzyma 75 fps (vsync).
+
+Dwa błędy `pathon-pbr` znalezione i naprawione przy tym pomiarze: (1) refleksja układu grupy 0 (parsowanie WGSL naga) działała co klatkę dla każdej permutacji, co dawało 14 ms CPU na klatkę zamiast 2 (cache w `PbrShaders`); (2) lista indeksów klastrów miała stałą pojemność 2²⁰ wpisów, a scena z 195 840 klastrami i światłami o zasięgu pokrywającym całą salę potrzebuje ponad 2 mln: przepełnienie skracało listy losowych klastrów i dawało poziome pasy bez światła (każdy kafel 16 px). Pojemność liczy się teraz jako `min(max_light_indices, klastry × światła)` (domyślny limit 2²⁴), więc przepełnienie nie jest możliwe bez jawnego, mniejszego limitu. Test klastrów kontra brute force tego nie łapał, bo sceny testowe mają mało klastrów; do M5 warto dodać `L0005` jako rzeczywistą diagnostykę (licznik przepełnienia jest liczony, ale nikt go nie czyta).

@@ -12,10 +12,12 @@ use pathon_api::glam::{Affine3A, Quat, Vec3};
 use pathon_api::{Severity, Slot};
 use pathon_bindless::PathPreference;
 use pathon_ibl::{IblPack, IblSettings, IblSource, SyntheticSky};
+use pathon_mesh::GeometryPool;
 use pathon_pbr::{LightAssignment, PbrPack, PbrSettings};
 use pathon_post::{BloomSettings, ExposureMode, ExposureSettings, PostPack, PostSettings};
 use pathon_rhi::{Format, NullDevice};
 use pathon_scene::Light;
+use pathon_shadow::{DirectionalShadowLight, ShadowPack, ShadowScene, ShadowSettings};
 use support::Lcg;
 use support::probe::{Probe, ProbeReader};
 use support::scene::{Content, Harness, add_content_with, instance, null_harness, scale_translate};
@@ -137,6 +139,24 @@ fn base_builder(builder: pathon_core::RendererBuilder) -> pathon_core::RendererB
         .with_pack(post())
 }
 
+const SUN_DIRECTION: Vec3 = Vec3::new(-0.5, -0.8, -0.6);
+
+// The shadow pack lights nothing: the host tells it which light it shadows (the sun is the first directional light,
+// so it is light 0 in the array of the pbr pack) and what casts.
+fn shadow_the_sun(harness: &mut Harness) {
+    let shared = harness.renderer.shared_mut();
+    let pool = shared.remove::<GeometryPool>().expect("the host's pool");
+    let scene = shared.get_mut::<ShadowScene>().expect("ShadowPack inserts the scene");
+    let casters = scene.fill_from_world(harness.scene.world(), &pool);
+    assert!(casters > 0, "the test scene has casters");
+    scene.light = Some(DirectionalShadowLight::new(SUN_DIRECTION, 0));
+    shared.insert(pool);
+}
+
+fn with_shadows(builder: pathon_core::RendererBuilder) -> pathon_core::RendererBuilder {
+    base_builder(builder.with_pack(ShadowPack::with_settings(ShadowSettings::COMPACT)))
+}
+
 fn golden_camera() -> pathon_api::Camera {
     pathon_api::Camera::look_at(
         Vec3::new(0.0, 2.8, 7.6),
@@ -167,6 +187,27 @@ fn the_scene_validates_on_the_null_device_with_every_slot_requested() {
 
     assert_no_errors(&diagnostics);
     assert!(readers.is_some());
+}
+
+#[test]
+fn the_shadowed_scene_validates_on_the_null_device() {
+    let mut harness = null_harness(SIZE, Format::Rgba8Unorm, with_shadows);
+    objects(&mut harness, PathPreference::Auto);
+    lights(&mut harness);
+    shadow_the_sun(&mut harness);
+
+    let diagnostics = harness.render(golden_camera());
+
+    assert_no_errors(&diagnostics);
+}
+
+#[test]
+fn the_shadowed_scene_validates_without_a_light_to_shadow() {
+    let mut harness = null_harness(SIZE, Format::Rgba8Unorm, with_shadows);
+    objects(&mut harness, PathPreference::Auto);
+    lights(&mut harness);
+
+    assert_no_errors(&harness.render(golden_camera()));
 }
 
 #[cfg(feature = "gpu-tests")]
@@ -264,6 +305,49 @@ mod gpu {
             "diffuse + specular differ from hdr by {worst} (relative)"
         );
         assert!(diffuse.iter().any(|texel| texel[0] > 0.1) && specular.iter().any(|texel| texel[0] > 0.1));
+    }
+
+    #[test]
+    fn the_sun_shadow_darkens_the_floor_behind_the_cube_and_leaves_the_lit_side_alone() {
+        let test = "the_sun_shadow_darkens_the_floor_behind_the_cube_and_leaves_the_lit_side_alone";
+        let render = |shadowed: bool| -> Option<Vec<[f32; 4]>> {
+            let mut readers = None;
+            let mut harness = harness(test, SIZE, Format::Rgba8Unorm, |builder| {
+                let (builder, split) = configure_split(if shadowed {
+                    with_shadows(builder)
+                } else {
+                    base_builder(builder)
+                });
+                readers = Some(split);
+                builder
+            })?;
+            objects(&mut harness, PathPreference::Auto);
+            lights(&mut harness);
+            if shadowed {
+                shadow_the_sun(&mut harness);
+            }
+            assert_no_errors(&harness.render(golden_camera()));
+            let device = std::sync::Arc::clone(harness.renderer.device());
+            Some(halves(&readers?[0], &*device))
+        };
+        let (Some(lit), Some(shadowed)) = (render(false), render(true)) else {
+            return;
+        };
+
+        let luminance = |texel: &[f32; 4]| texel[0] + texel[1] + texel[2];
+        let darker = lit
+            .iter()
+            .zip(&shadowed)
+            .filter(|(lit, shadowed)| luminance(shadowed) < luminance(lit) * 0.8)
+            .count();
+        let brighter = lit
+            .iter()
+            .zip(&shadowed)
+            .filter(|(lit, shadowed)| luminance(shadowed) > luminance(lit) * 1.02 + 0.01)
+            .count();
+        assert!(darker > 400, "the shadow darkens only {darker} pixels");
+        assert_eq!(brighter, 0, "shadows must only remove light");
+        assert!(shadowed.iter().all(|texel| texel.iter().all(|value| value.is_finite())));
     }
 
     fn thousand_lights(harness: &mut Harness) {

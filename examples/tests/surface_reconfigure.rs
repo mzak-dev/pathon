@@ -2,8 +2,8 @@
 // next frames must still render. On DX12 `ResizeBuffers` fails while anything still holds a back buffer, e.g. a view
 // of the presented frame that waits in the deferred-release queue; the surface then stays unconfigured and every frame
 // ends in R0009 (ADR-0034). Runs on the real window and GPU: PATHON_BACKEND=dx12|vulkan|metal picks the backend,
-// `PATHON_REQUIRE_GPU=1` turns a missing display or adapter into a failure instead of a skip. Harness off: the event
-// loop must be on the main thread.
+// `PATHON_REQUIRE_WINDOW=1` turns a missing display and `PATHON_REQUIRE_GPU=1` a missing adapter into a failure instead
+// of a skip. Harness off: the event loop must be on the main thread.
 
 #![expect(
     clippy::print_stdout,
@@ -70,6 +70,10 @@ fn requested_backend() -> Option<Backend> {
 
 fn require_gpu() -> bool {
     std::env::var_os("PATHON_REQUIRE_GPU").is_some()
+}
+
+fn require_window() -> bool {
+    std::env::var_os("PATHON_REQUIRE_WINDOW").is_some()
 }
 
 fn has_display() -> bool {
@@ -277,8 +281,8 @@ impl App for Probe {
 
 fn main() -> ExitCode {
     if !has_display() {
-        if require_gpu() {
-            eprintln!("surface_reconfigure: no display and PATHON_REQUIRE_GPU is set");
+        if require_window() {
+            eprintln!("surface_reconfigure: no display and PATHON_REQUIRE_WINDOW is set");
             return ExitCode::FAILURE;
         }
         eprintln!("surface_reconfigure: skipped, no display");

@@ -1,6 +1,7 @@
 //! M3-06 end to end: the shader files of the `hot_reload` example are edited while frames run, and the picture follows
 //! them within two seconds, keeps its last colour while a shader does not compile, and follows the fix. The null device
-//! runs the same script without looking at pixels; the GPU variant (feature `gpu-tests`, Vulkan) checks the colours.
+//! runs the same script without looking at pixels; the GPU variant (feature `gpu-tests`, `PATHON_TEST_BACKEND` picks
+//! the backend) checks the colours.
 
 #![expect(clippy::print_stdout, reason = "the measured delays are the point of this test")]
 
@@ -163,14 +164,20 @@ fn editing_a_shader_file_changes_the_picture_without_a_restart_on_the_null_devic
 
 #[cfg(feature = "gpu-tests")]
 #[test]
-fn editing_a_shader_file_changes_the_picture_without_a_restart_on_vulkan() {
+fn editing_a_shader_file_changes_the_picture_without_a_restart_on_a_real_gpu() {
     use pathon::rhi::{Backend, DeviceRequest};
 
+    let backend = match std::env::var("PATHON_TEST_BACKEND").ok().as_deref() {
+        Some("vulkan") => Some(Backend::Vulkan),
+        Some("dx12") => Some(Backend::Dx12),
+        Some("metal") => Some(Backend::Metal),
+        _ => None,
+    };
     let device = Device::build(&DeviceRequest {
         label: "hot reload test",
-        backend: Some(Backend::Vulkan),
+        backend,
         ..Default::default()
     })
-    .expect("a Vulkan adapter is required for gpu-tests");
+    .expect("an adapter is required for gpu-tests");
     scenario(Arc::new(device), true);
 }

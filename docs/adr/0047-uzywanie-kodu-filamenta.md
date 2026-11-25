@@ -1,6 +1,14 @@
 # ADR-0047: Używanie kodu Filamenta
 
-**Status:** Proponowany (autor zezwolił na użycie kodu Filamenta; punkt 5 o licencji plików i crate'ów czeka na jego potwierdzenie, bo zmienia obietnicę z ADR-0001)
+**Status:** Przyjęty 2026-11-25 w wersji **„bez kodu Filamenta”**. Autor zdecydował, że kod Filamenta nie jest przenoszony: licencja projektu zostaje `MIT OR Apache-2.0` (ADR-0001) bez wyjątków, a Filament służy tylko jako wzór wyglądu i miara.
+
+## Decyzja obowiązująca (nadpisuje dalsze punkty o portowaniu)
+
+- **Nie portujemy kodu Filamenta** (GLSL, C++ ani żadnego innego pliku z jego repozytorium) i nie wzorujemy się na jego kodzie przy pisaniu własnego. Nie czytamy też jego plików źródłowych podczas implementacji.
+- **Źródłem wiedzy są publikacje i opisy:** prace naukowe i prezentacje (np. Karis, Heitz, Burley, Jimenez i in. o GTAO, Hillaire o atmosferze), dokumentacja Filamenta (`Physically Based Rendering in Filament`, `Materials`) jako opis równań, oraz własne wyprowadzenia. Implementacja powstaje od zera w WGSL/Rust.
+- **Filament jako miara:** porównujemy wygląd i wydajność z jego wynikami (renderem referencyjnym), nie kodem.
+- Pozostałe punkty poniżej (porty, nagłówki, granica licencji crate'u) są **nieaktywne**; zostają jako opis rozważanych opcji. Gdyby decyzja miała się zmienić, wraca opcja „granica = crate”.
+- `THIRD_PARTY_NOTICES.md` zostaje jako szablon na przyszłe, niezależne źródła.
 **Data:** 2026-11-25
 **Dotyczy:** [ADR-0001](0001-licencja.md), [ADR-0041](0041-pack-lib.md), `xtask deps-check` (reguła `license`), [THIRD_PARTY_NOTICES.md](../../THIRD_PARTY_NOTICES.md), [docs/filament-reference.md](../filament-reference.md)
 

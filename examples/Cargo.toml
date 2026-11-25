@@ -18,6 +18,7 @@ pathon-bindless.workspace = true
 pathon-devtools.workspace = true
 pathon-ibl.workspace = true
 pathon-golden.workspace = true
+pathon-hot.workspace = true
 pathon-material.workspace = true
 pathon-mesh.workspace = true
 pathon-pbr.workspace = true

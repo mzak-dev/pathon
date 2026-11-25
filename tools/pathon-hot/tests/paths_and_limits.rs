@@ -19,7 +19,10 @@ fn a_file_over_the_size_limit_is_refused_and_the_old_one_stays() {
     });
     let module = rig.build(&key("big"));
 
-    write(&rig.dir.join("shaders/big.wgsl"), &format!("{SMALL}// {}\n", "x".repeat(2000)));
+    write(
+        &rig.dir.join("shaders/big.wgsl"),
+        &format!("{SMALL}// {}\n", "x".repeat(2000)),
+    );
     let reports = pump_for_code(&mut rig, "K0002");
 
     assert!(reports.iter().all(|report| !report.changed()));
@@ -56,7 +59,11 @@ fn files_with_other_extensions_are_ignored() {
             rig.pump()
         })
         .collect();
-    assert!(reports.iter().all(|report| !report.changed() && report.diagnostics.is_empty()));
+    assert!(
+        reports
+            .iter()
+            .all(|report| !report.changed() && report.diagnostics.is_empty())
+    );
 }
 
 // The process must survive sources that would overflow wesl's stack (PAT-122); each reaches the reloader as an edit of
@@ -125,7 +132,10 @@ fn a_chain_of_imports_deeper_than_the_limit_is_refused_instead_of_crashing_the_p
     );
     let reports = pump_for_code(&mut rig, "K0005");
 
-    assert!(reports.iter().all(|report| !report.changed()), "no module of the chain was taken");
+    assert!(
+        reports.iter().all(|report| !report.changed()),
+        "no module of the chain was taken"
+    );
     assert_eq!(rig.compiler.shader_module(&key("chain")).ready(), Some(module));
 }
 
@@ -135,14 +145,21 @@ fn a_chain_of_imports_present_at_start_is_refused_too() {
     let depth = 200;
     for index in 0..depth {
         let body = if index + 1 < depth {
-            format!("import package::m{}::f{};\nfn f{index}() -> f32 {{ return f{}(); }}", index + 1, index + 1, index + 1)
+            format!(
+                "import package::m{}::f{};\nfn f{index}() -> f32 {{ return f{}(); }}",
+                index + 1,
+                index + 1,
+                index + 1
+            )
         } else {
             format!("fn f{index}() -> f32 {{ return 1.0; }}")
         };
         write(&dir.join(&format!("modules/m{index}.wgsl")), &body);
     }
     fs::create_dir_all(dir.join("shaders")).expect("dir");
-    let config = HotConfig::new().with_shader_dir(dir.join("shaders")).with_module_dir(dir.join("modules"));
+    let config = HotConfig::new()
+        .with_shader_dir(dir.join("shaders"))
+        .with_module_dir(dir.join("modules"));
     let mut reloader = HotReloader::new(&config).expect("starts");
     let mut compiler = pathon_shader::BackgroundCompiler::new(
         std::sync::Arc::new(pathon_rhi::Device::null()),
@@ -153,15 +170,25 @@ fn a_chain_of_imports_present_at_start_is_refused_too() {
     let report = reloader.pump(&mut compiler);
 
     assert!(codes(std::slice::from_ref(&report)).contains(&"K0005"));
-    assert!(report.reloaded.len() < depth, "{} of {depth} modules were taken", report.reloaded.len());
+    assert!(
+        report.reloaded.len() < depth,
+        "{} of {depth} modules were taken",
+        report.reloaded.len()
+    );
 }
 
 #[test]
 fn starting_without_a_directory_or_on_a_missing_one_is_an_error() {
-    assert!(matches!(HotReloader::new(&HotConfig::new()), Err(HotError::NoDirectories)));
+    assert!(matches!(
+        HotReloader::new(&HotConfig::new()),
+        Err(HotError::NoDirectories)
+    ));
     let missing = TempDir::new("missing").join("nope");
     let config = HotConfig::new().with_shader_dir(missing);
-    assert!(matches!(HotReloader::new(&config), Err(HotError::DirectoryUnavailable { .. })));
+    assert!(matches!(
+        HotReloader::new(&config),
+        Err(HotError::DirectoryUnavailable { .. })
+    ));
 }
 
 fn try_link_file(target: &Path, link: &Path) -> bool {
@@ -195,20 +222,36 @@ fn a_link_that_leaves_the_watched_directory_is_not_followed() {
     let reports = pump_for_code(&mut rig, "K0001");
     let more: Vec<_> = (0..10).map(|_| rig.pump()).collect();
 
-    assert!(reports.iter().chain(&more).all(|report| !report.changed()), "nothing outside was registered");
-    assert_eq!(rig.compiler.shader_module(&key("stolen")), pathon_shader::Lookup::Failed);
+    assert!(
+        reports.iter().chain(&more).all(|report| !report.changed()),
+        "nothing outside was registered"
+    );
+    assert_eq!(
+        rig.compiler.shader_module(&key("stolen")),
+        pathon_shader::Lookup::Failed
+    );
     if linked_dir {
-        assert_eq!(rig.compiler.shader_module(&key("linked/inside")), pathon_shader::Lookup::Failed);
+        assert_eq!(
+            rig.compiler.shader_module(&key("linked/inside")),
+            pathon_shader::Lookup::Failed
+        );
     }
 }
 
 #[test]
 fn a_link_to_a_file_inside_the_directory_is_read() {
     let mut rig = Rig::new(&[("target", SMALL)], &[]);
-    if !try_link_file(&rig.dir.join("shaders/target.wgsl"), &rig.dir.join("shaders/alias.wgsl")) {
+    if !try_link_file(
+        &rig.dir.join("shaders/target.wgsl"),
+        &rig.dir.join("shaders/alias.wgsl"),
+    ) {
         eprintln!("symbolic links are not permitted here; the link test is skipped");
         return;
     }
     let reports = rig.pump_until_reloaded("the alias");
-    assert!(reports.iter().any(|report| report.reloaded.iter().any(|label| label.ends_with("alias.wgsl"))));
+    assert!(
+        reports
+            .iter()
+            .any(|report| report.reloaded.iter().any(|label| label.ends_with("alias.wgsl")))
+    );
 }

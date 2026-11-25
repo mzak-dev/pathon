@@ -54,7 +54,11 @@ fn a_plain_write_rebuilds_the_shader_without_a_restart() {
     write(&rig.dir.join("shaders/plain.wgsl"), &fill_with("3.0"));
     let reports = rig.pump_until_reloaded("the plain write");
 
-    assert!(reports.iter().any(|report| report.reloaded.iter().any(|label| label.ends_with("plain.wgsl"))));
+    assert!(
+        reports
+            .iter()
+            .any(|report| report.reloaded.iter().any(|label| label.ends_with("plain.wgsl")))
+    );
     let after = rig.build(&key("plain"));
     assert_ne!(before, after);
     assert!(wgsl_of(&rig, "plain").contains("* 3.0"));
@@ -77,7 +81,10 @@ fn a_changed_module_rebuilds_the_roots_that_import_it() {
     let mut rig = Rig::new(&[("fill", FILL)], &[("colors", COLORS)]);
     rig.build(&key("fill"));
 
-    write(&rig.dir.join("modules/colors.wgsl"), "fn tint(x: f32) -> f32 { return x * 7.0; }");
+    write(
+        &rig.dir.join("modules/colors.wgsl"),
+        "fn tint(x: f32) -> f32 { return x * 7.0; }",
+    );
     rig.pump_until_reloaded("the module");
 
     rig.build(&key("fill"));
@@ -102,10 +109,18 @@ fn a_shader_that_does_not_compile_leaves_the_previous_version_in_use() {
         .flat_map(|report| &report.diagnostics)
         .find(|diagnostic| diagnostic.code == "S0107")
         .expect("located error");
-    assert!(located.message.contains("keep.wgsl:3:"), "file and line: {}", located.message);
+    assert!(
+        located.message.contains("keep.wgsl:3:"),
+        "file and line: {}",
+        located.message
+    );
     assert!(reports.iter().all(|report| !report.changed()), "nothing was applied");
     assert!(reports.iter().all(|report| report.retired.is_empty()));
-    assert_eq!(rig.compiler.shader_module(&key("keep")), Lookup::Ready(good), "the working module is still there");
+    assert_eq!(
+        rig.compiler.shader_module(&key("keep")),
+        Lookup::Ready(good),
+        "the working module is still there"
+    );
     assert!(wgsl_of(&rig, "keep").contains("* 2.0"));
 
     write(&rig.dir.join("shaders/keep.wgsl"), &fill_with("4.0"));
@@ -137,7 +152,10 @@ fn one_broken_file_does_not_hold_back_another() {
     rig.build(&key("good"));
     rig.build(&key("bad"));
 
-    write(&rig.dir.join("shaders/bad.wgsl"), "@compute @workgroup_size(1) fn main() { let a = nope; }");
+    write(
+        &rig.dir.join("shaders/bad.wgsl"),
+        "@compute @workgroup_size(1) fn main() { let a = nope; }",
+    );
     write(&rig.dir.join("shaders/good.wgsl"), &fill_with("9.0"));
     let reports = rig.pump_until("both files handled", |reports| {
         reports.iter().any(HotReport::changed) && codes(reports).contains(&"K0006")
@@ -160,7 +178,10 @@ fn a_module_and_the_root_that_needs_it_arrive_together() {
         &rig.dir.join("shaders/pair.wgsl"),
         "import package::fresh::scale;\n@compute @workgroup_size(1) fn main() { let v = scale(1.0); }\n",
     );
-    write(&rig.dir.join("modules/fresh.wgsl"), "fn scale(x: f32) -> f32 { return x * 11.0; }");
+    write(
+        &rig.dir.join("modules/fresh.wgsl"),
+        "fn scale(x: f32) -> f32 { return x * 11.0; }",
+    );
     let reports = rig.pump_until_reloaded("both files");
 
     assert!(!codes(&reports).contains(&"K0006"));
@@ -176,7 +197,11 @@ fn a_deleted_shader_is_dropped() {
     fs::remove_file(rig.dir.join("shaders/gone.wgsl")).expect("delete");
     let reports = rig.pump_until("the deletion", |reports| reports.iter().any(HotReport::changed));
 
-    assert!(reports.iter().any(|report| report.removed.iter().any(|label| label.ends_with("gone.wgsl"))));
+    assert!(
+        reports
+            .iter()
+            .any(|report| report.removed.iter().any(|label| label.ends_with("gone.wgsl")))
+    );
     assert_eq!(rig.compiler.shader_module(&key("gone")), Lookup::Failed);
 }
 
@@ -194,7 +219,10 @@ fn replaced_modules_and_pipelines_are_handed_back_only_once_the_replacements_are
 
     write(&rig.dir.join("shaders/pipes.wgsl"), &fill_with("3.0"));
     let reports = rig.pump_until_reloaded("the change");
-    assert!(reports.iter().all(|report| report.retired.is_empty()), "nothing is retired while the old pipeline may be drawing");
+    assert!(
+        reports.iter().all(|report| report.retired.is_empty()),
+        "nothing is retired while the old pipeline may be drawing"
+    );
     assert_eq!(
         rig.compiler.compute_pipeline(&old_desc),
         Lookup::Failed,
@@ -227,7 +255,13 @@ fn replaced_modules_and_pipelines_are_handed_back_only_once_the_replacements_are
 #[test]
 fn a_build_that_fails_in_the_background_keeps_the_old_resources_alive() {
     // Passes the check on the composed text (naga with every capability) but not the pipeline's override check.
-    let mut rig = Rig::new(&[("late", "override gain: f32 = 1.0;\n@compute @workgroup_size(1) fn main() { let v = gain; }")], &[]);
+    let mut rig = Rig::new(
+        &[(
+            "late",
+            "override gain: f32 = 1.0;\n@compute @workgroup_size(1) fn main() { let v = gain; }",
+        )],
+        &[],
+    );
     let old_module = rig.build(&key("late"));
 
     write(
@@ -244,5 +278,8 @@ fn a_build_that_fails_in_the_background_keeps_the_old_resources_alive() {
     let later: Vec<HotReport> = (0..10).map(|_| rig.pump()).collect();
 
     assert!(reports.iter().chain(&later).all(|report| report.retired.is_empty()));
-    assert!(rig.reloader.take_retired().contains(&Resource::from(old_module)), "the old module is still kept");
+    assert!(
+        rig.reloader.take_retired().contains(&Resource::from(old_module)),
+        "the old module is still kept"
+    );
 }

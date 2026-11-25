@@ -182,6 +182,7 @@ jobs:
         shell: bash
         run: |
           cargo test -p pathon-golden --features gpu-tests -- --test-threads=1 --nocapture
+          cargo test -p pathon-examples --features gpu-tests --test hot_reload -- --test-threads=1 --nocapture
           cargo test -p pathon-core --features gpu-tests --test vertical_slice_gpu unlit_cube_matches_its_golden_image -- --test-threads=1 --nocapture
           cargo test -p pathon-texture --features gpu-tests --test bc7_fallback -- --test-threads=1 --nocapture
           cargo test -p pathon-post --features gpu-tests --test chain_gpu -- --test-threads=1 --nocapture

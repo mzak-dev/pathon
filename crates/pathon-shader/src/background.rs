@@ -321,7 +321,8 @@ pub struct BackgroundCompiler {
     requested: HashSet<Target>,
     failed: HashSet<Target>,
     failures: Vec<BuildFailure>,
-    // Modules whose pipelines were evicted: nothing may be built from them, and a build that finishes late is destroyed.
+    // Modules whose pipelines were evicted: nothing may be built from them, and a build that finishes late is
+    // destroyed.
     evicted_modules: HashSet<ShaderModuleId>,
     running: usize,
     max_in_flight: usize,
@@ -549,22 +550,23 @@ impl BackgroundCompiler {
             }
         };
         let key = key.clone();
-        Some(
-            self.worker
-                .job(target.clone(), self.library.generation(), move |device, cancelled| {
-                    let composed = compose.run()?;
-                    if cancelled.load(Ordering::Acquire) {
-                        return Err(Interrupted::Cancelled);
-                    }
-                    let id = device
-                        .create_shader_module(&ShaderModuleDesc {
-                            label: "permutation",
-                            wgsl: &composed.wgsl,
-                        })
-                        .map_err(ShaderError::Rhi)?;
-                    Ok(Built::Module { key, composed, id })
-                }),
-        )
+        Some(self.worker.job(
+            target.clone(),
+            self.library.root_generation(&key.root),
+            move |device, cancelled| {
+                let composed = compose.run()?;
+                if cancelled.load(Ordering::Acquire) {
+                    return Err(Interrupted::Cancelled);
+                }
+                let id = device
+                    .create_shader_module(&ShaderModuleDesc {
+                        label: "permutation",
+                        wgsl: &composed.wgsl,
+                    })
+                    .map_err(ShaderError::Rhi)?;
+                Ok(Built::Module { key, composed, id })
+            },
+        ))
     }
 
     fn enqueue_render(&mut self, target: &Target) -> Option<BackgroundJob> {
@@ -685,7 +687,7 @@ impl BackgroundCompiler {
     // A module result from before a source changed, or a pipeline whose module was evicted meanwhile.
     fn is_outdated(&self, target: &Target, generation: u64) -> bool {
         match target {
-            Target::Module(_) => generation != self.library.generation(),
+            Target::Module(key) => generation != self.library.root_generation(&key.root),
             Target::Render(desc) => render_uses_module(desc, &self.evicted_module_list()),
             Target::Compute(desc) => self.evicted_modules.contains(&desc.shader.module),
         }

@@ -1,13 +1,17 @@
 use pathon_diag::Diagnostic;
 
 pub(crate) fn outside_root(file: &str, detail: &str) -> Diagnostic {
-    Diagnostic::warning("K0001", format!("`{file}` is skipped: {detail}"))
-        .with_hint("hot reload reads only files under the watched directories and follows no symbolic links out of them")
+    Diagnostic::warning("K0001", format!("`{file}` is skipped: {detail}")).with_hint(
+        "hot reload reads only files under the watched directories and follows no symbolic links out of them",
+    )
 }
 
 pub(crate) fn too_large(file: &str, size: u64, limit: u64) -> Diagnostic {
-    Diagnostic::warning("K0002", format!("`{file}` is skipped: {size} bytes, over the limit of {limit}"))
-        .with_hint("raise `SourceLimits::max_file_bytes` or split the shader into modules")
+    Diagnostic::warning(
+        "K0002",
+        format!("`{file}` is skipped: {size} bytes, over the limit of {limit}"),
+    )
+    .with_hint("raise `SourceLimits::max_file_bytes` or split the shader into modules")
 }
 
 pub(crate) fn unreadable(file: &str, detail: &str) -> Diagnostic {

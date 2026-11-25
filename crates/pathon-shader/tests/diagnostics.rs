@@ -158,6 +158,26 @@ fn an_error_inside_a_module_points_into_the_modules_own_file() {
 }
 
 #[test]
+fn an_unknown_name_inside_a_module_points_into_the_modules_own_file() {
+    let mut library = library_with(
+        "shaders/quad.wgsl",
+        "import package::palette::tint;\n@fragment fn fs() -> @location(0) vec4<f32> { return tint(); }",
+    );
+    library
+        .add_module_file(
+            "palette",
+            "fn tint() -> vec4<f32> {\n    return vec4<f32>(oops, 0.0, 0.0, 1.0);\n}\n",
+            "modules/palette.wgsl",
+        )
+        .expect("palette");
+    let diagnostic = compile_error(&mut library);
+
+    assert_eq!(diagnostic.code, "S0107");
+    let location = diagnostic.location.as_ref().expect("a location");
+    assert_eq!((location.file.as_str(), location.line), ("modules/palette.wgsl", 2));
+}
+
+#[test]
 fn a_syntax_error_inside_a_module_points_into_the_modules_own_file() {
     let mut library = library_with(
         "shaders/lit.wgsl",

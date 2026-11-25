@@ -16,6 +16,10 @@ pub enum DirRole {
 /// recursively, far from overflowing a 1 MiB stack in a debug build (`docs/crates/pathon-hot.md`).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[non_exhaustive]
+#[expect(
+    clippy::struct_field_names,
+    reason = "each field is a different limit, and `max_` says so"
+)]
 pub struct SourceLimits {
     pub max_file_bytes: u64,
     /// Depth of nested `(`, `{` and `[`.

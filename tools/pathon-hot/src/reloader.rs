@@ -1,23 +1,22 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::fs;
-use std::io;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, JoinHandle};
+use std::{fs, io};
 
 use crossbeam_channel::{Receiver, Sender};
-use notify::{Event, EventKind, PollWatcher, RecommendedWatcher, RecursiveMode, Watcher};
 use notify::event::{AccessKind, AccessMode};
+use notify::{Event, EventKind, PollWatcher, RecommendedWatcher, RecursiveMode, Watcher};
 use pathon_diag::{Diagnostic, Severity};
 use pathon_rhi_types::Resource;
 use pathon_shader::{BackgroundCompiler, LibrarySnapshot};
 
 use crate::change::{Action, Batch, Change, Files, Kind};
 use crate::config::HotConfig;
+use crate::diagnostics;
 use crate::error::HotError;
 use crate::scan::WatchedDir;
 use crate::worker::{Signal, WORKER_STACK_BYTES, Worker};
-use crate::diagnostics;
 
 /// What one [`HotReloader::pump`] did.
 #[derive(Debug, Default)]
@@ -92,7 +91,9 @@ impl HotReloader {
         };
         // Nothing is built from the files yet, so the first read needs no vetting; the first pump delivers it.
         let initial = worker.read_initial(watcher_notice);
-        batches_out.send(initial).map_err(|_| HotError::Thread(io::Error::other("the batch channel closed")))?;
+        batches_out
+            .send(initial)
+            .map_err(|_| HotError::Thread(io::Error::other("the batch channel closed")))?;
         let thread = thread::Builder::new()
             .name("pathon-hot".into())
             .stack_size(WORKER_STACK_BYTES)
@@ -139,9 +140,12 @@ impl HotReloader {
             self.build_failed = true;
             report.diagnostics.push(failure.diagnostic());
         }
-        report
-            .diagnostics
-            .extend(compiler.take_warnings().iter().map(pathon_shader::ShaderDiagnostic::to_diagnostic));
+        report.diagnostics.extend(
+            compiler
+                .take_warnings()
+                .iter()
+                .map(pathon_shader::ShaderDiagnostic::to_diagnostic),
+        );
         self.settle(compiler.pending(), changed, &mut report);
         for diagnostic in &report.diagnostics {
             log_diagnostic(diagnostic);
@@ -179,7 +183,12 @@ impl Drop for HotReloader {
     }
 }
 
-fn apply(compiler: &mut BackgroundCompiler, change: Change, report: &mut HotReport, evicted: &mut Vec<pathon_rhi_types::ShaderModuleId>) {
+fn apply(
+    compiler: &mut BackgroundCompiler,
+    change: Change,
+    report: &mut HotReport,
+    evicted: &mut Vec<pathon_rhi_types::ShaderModuleId>,
+) {
     let name = change.key.name.as_str();
     let removed = matches!(change.action, Action::Remove);
     match (change.key.kind, &change.action) {

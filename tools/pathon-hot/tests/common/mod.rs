@@ -4,12 +4,11 @@
     reason = "each test crate that includes this module uses a different part of it"
 )]
 
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::thread;
 use std::time::{Duration, Instant};
+use std::{fs, thread};
 
 use pathon_api::SerialTaskPool;
 use pathon_hot::{HotConfig, HotReloader, HotReport};

@@ -1,6 +1,6 @@
-// The thread that reads the files. It owns everything slow (reading, measuring, composing a changed shader) so the frame
-// thread only applies what comes out (ADR-0040). Composition runs here because wesl recurses deeply: this thread has a
-// large stack, and `guard` keeps inputs well below what even that could not hold.
+// The thread that reads the files. It owns everything slow (reading, measuring, composing a changed shader) so the
+// frame thread only applies what comes out (ADR-0040). Composition runs here because wesl recurses deeply: this thread
+// has a large stack, and `guard` keeps inputs well below what even that could not hold.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::PathBuf;
@@ -19,7 +19,8 @@ use crate::scan::{self, WatchedDir};
 use crate::{diagnostics, guard};
 
 pub(crate) const WORKER_STACK_BYTES: usize = 64 << 20;
-// A checkout that rewrites hundreds of files is taken whole or not at all; trying each file alone would cost a check per file.
+// A checkout that rewrites hundreds of files is taken whole or not at all; trying each file alone would cost a check
+// per file.
 const MAX_CHANGES_TRIED_ONE_BY_ONE: usize = 32;
 
 #[derive(Debug)]
@@ -85,7 +86,10 @@ impl Worker {
             }
         }
         if !problems.is_empty() {
-            let diagnostics = problems.iter().map(|problem| diagnostics::watcher_problem(problem)).collect();
+            let diagnostics = problems
+                .iter()
+                .map(|problem| diagnostics::watcher_problem(problem))
+                .collect();
             self.send(Batch {
                 changes: Vec::new(),
                 diagnostics,

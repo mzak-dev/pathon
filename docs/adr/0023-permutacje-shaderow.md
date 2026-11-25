@@ -14,7 +14,7 @@ M3-03 rozdziela **klucz shadera** (flagi materiału, hooki paczek, profil) od **
 - **`ShaderLibrary`** w `pathon-shader`: moduły (przez `ShaderComposer`), shadery główne rejestrowane pod nazwą i kesz `ShaderKey → ShaderModuleId` na urządzeniu. Ta sama permutacja składa się i tworzy moduł raz.
 - **Klucz potoku = opis potoku** (`RenderPipelineDesc` / `ComputePipelineDesc`) z modułem z `ShaderLibrary`, po normalizacji: `constants` posortowane po nazwie. `PipelineCache` w `pathon-shader` trzyma `opis → RenderPipelineId / ComputePipelineId`. Permutacja wchodzi do klucza potoku przez `ShaderModuleId`, więc dwa klucze shadera nie dają tego samego potoku.
 - **Granica paczek:** paczka może zależeć bezpośrednio od `pathon-shader` (obok `pathon-api`); xtask (`pack-boundary`) dopuszcza ten crate. Rdzeń nie zależy od `pathon-shader` — składanie, kesz i (w M3-04) kompilacja w tle należą do paczek, a moduły współdzielone między paczkami trzymają one w `Shared`.
-- Unieważnianie kesza po zmianie modułu (hot-reload) zostaje na M3-06. Dziś `ShaderLibrary` tylko wyrzuca moduły zastąpionego źródła i oddaje ich id wołającemu do zwolnienia; potoki w `PipelineCache` zbudowane z nich zostają do M3-06. Rejestracja nowej ścieżki albo nazwy kesza nie rusza.
+- Unieważnianie kesza po zmianie modułu (hot-reload) zostaje na M3-06. Dziś `ShaderLibrary` tylko wyrzuca moduły zastąpionego źródła i oddaje ich id wołającemu do zwolnienia; potoki w `PipelineCache` zbudowane z nich zostały do M3-06 (rozwiązane w [ADR-0040](0040-hot-reload-shaderow.md): `PipelineCache::evict_modules`, a wyrzucane są tylko permutacje shaderów dotkniętych zmianą). Rejestracja nowej ścieżki albo nazwy kesza nie rusza.
 
 ## Konsekwencje
 

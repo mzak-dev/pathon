@@ -4,6 +4,8 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+use pathon_shader::package_paths;
+
 use crate::config::SourceLimits;
 
 #[derive(PartialEq, Eq, Debug)]
@@ -135,19 +137,7 @@ fn longest_of<'a>(imported: &[&'a str], chains: &HashMap<&'a str, Vec<&'a str>>)
 
 fn imported_modules<'a>(source: &str, modules: &BTreeMap<&'a str, &'a str>) -> Vec<&'a str> {
     let mut found = Vec::new();
-    for (position, _) in source.match_indices("package::") {
-        let preceded_by_identifier = source[..position]
-            .chars()
-            .next_back()
-            .is_some_and(|character| character.is_alphanumeric() || character == '_');
-        if preceded_by_identifier {
-            continue;
-        }
-        let path: String = source[position + "package::".len()..]
-            .chars()
-            .take_while(|character| character.is_alphanumeric() || *character == '_' || *character == ':')
-            .collect();
-        let segments: Vec<&str> = path.split("::").collect();
+    for segments in package_paths(source) {
         let module = (1..=segments.len())
             .rev()
             .find_map(|length| modules.get_key_value(segments[..length].join("::").as_str()));
@@ -259,10 +249,7 @@ mod tests {
 
     #[test]
     fn import_cycles_end_the_chain_instead_of_looping() {
-        let modules = BTreeMap::from([
-            ("a", "import package::b::g;"),
-            ("b", "import package::a::f;"),
-        ]);
+        let modules = BTreeMap::from([("a", "import package::b::g;"), ("b", "import package::a::f;")]);
         let (depth, _) = longest_import_chain(&modules, []);
         assert_eq!(depth, 2);
     }

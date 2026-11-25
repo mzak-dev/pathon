@@ -1,6 +1,7 @@
 // Shared helpers for the examples; see docs/examples.md.
 
 pub mod gltf_loader;
+pub mod hot_quad;
 pub mod viewer;
 
 use std::future::Future;

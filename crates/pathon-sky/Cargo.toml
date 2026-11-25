@@ -1,0 +1,27 @@
+[package]
+name = "pathon-sky"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+# ADR-0045: pbr and shadow read `SunLight` from `Shared` by type, so the crate has to be visible to other packs.
+[package.metadata.pathon]
+kind = "pack-lib"
+
+[dependencies]
+bytemuck.workspace = true
+pathon-api.workspace = true
+pathon-ibl.workspace = true
+
+[dev-dependencies]
+naga.workspace = true
+pathon-core.workspace = true
+pathon-golden.workspace = true
+
+[features]
+gpu-tests = []
+
+[lints]
+workspace = true

@@ -37,6 +37,7 @@ pathon-rhi-wgpu = { path = "crates/pathon-rhi-wgpu" }
 pathon-scene = { path = "crates/pathon-scene" }
 pathon-shadow = { path = "crates/pathon-shadow" }
 pathon-shader = { path = "crates/pathon-shader" }
+pathon-sky = { path = "crates/pathon-sky" }
 pathon-skin = { path = "crates/pathon-skin" }
 pathon-test = { path = "crates/pathon-test" }
 pathon-texture = { path = "crates/pathon-texture" }
@@ -134,3 +135,7 @@ cast_lossless = "warn"
 wildcard_imports = "warn"
 needless_for_each = "warn"
 float_cmp = "warn"
+
+# The CPU model of the sky is a numeric reference run by the tests; unoptimised it is 10x slower than the GPU it checks.
+[profile.dev.package.pathon-sky]
+opt-level = 2

@@ -9,6 +9,7 @@ use pathon_api::rhi::{
 use pathon_ibl::IblBindings;
 use pathon_material::{AlphaKind, MaterialHooks, MaterialVariant};
 use pathon_shader::{PipelineCache, ShaderError, ShaderKey, ShaderLibrary, reflect_bind_groups};
+use pathon_shadow::ShadowBindings;
 
 pub(crate) const COMMON_MODULE: &str = "pbr::common";
 pub(crate) const LIGHTS_MODULE: &str = "pbr::lights";
@@ -27,6 +28,11 @@ const DEPTH_PYRAMID_WESL: &str = include_str!("../wgsl/depth_pyramid.wesl");
 /// First binding of the environment maps in the colour pass (after frame, materials, instances, lights and the two
 /// cluster buffers).
 pub const IBL_FIRST_BINDING: u32 = 6;
+/// First binding of the shadow cascades, the map and its sampler (right after the four environment bindings); they
+/// exist only in the permutation with the `shadows` flag.
+pub const SHADOW_FIRST_BINDING: u32 = IBL_FIRST_BINDING + IblBindings::COUNT;
+/// WESL flag of the colour pass: the light that `pathon-shadow` shadows is attenuated by its cascaded map.
+pub const SHADOWS_FLAG: &str = "shadows";
 /// The group of the material textures when a `TextureBinder` is present.
 pub const TEXTURE_GROUP: u32 = 1;
 
@@ -54,6 +60,18 @@ pub struct ForwardKey {
     pub variant: MaterialVariant,
     /// Also write the `diffuse` and `specular` slots.
     pub split: bool,
+    /// Read the cascaded shadow map of `pathon-shadow` (the `shadows` flag): three more bindings in group 0.
+    pub shadows: bool,
+}
+
+impl ForwardKey {
+    pub fn shader_key(self) -> ShaderKey {
+        let mut key = self.variant.shader_key("forward");
+        key.features
+            .set(SHADOWS_FLAG, self.shadows)
+            .expect("the shadows flag is a WGSL identifier");
+        key
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -73,6 +91,9 @@ impl PbrShaders {
         for (path, source) in pathon_ibl::modules() {
             library.add_module(path, source)?;
         }
+        for (path, source) in pathon_shadow::modules() {
+            library.add_module(path, source)?;
+        }
         for (path, source) in [
             (COMMON_MODULE, COMMON_WESL),
             (LIGHTS_MODULE, LIGHTS_WESL),
@@ -82,7 +103,10 @@ impl PbrShaders {
             library.add_module(path, source)?;
         }
         let ibl = IblBindings::starting_at(IBL_FIRST_BINDING).wgsl_declarations(0);
-        library.add_root("forward", &FORWARD_WESL.replace("// IBL_BINDINGS", &ibl));
+        let forward = FORWARD_WESL
+            .replace("// IBL_BINDINGS", &ibl)
+            .replace("// SHADOW_BINDINGS", &shadow_declarations());
+        library.add_root("forward", &forward);
         library.add_root("prepass", PREPASS_WESL);
         library.add_root("cluster", CLUSTER_WESL);
         library.add_root("depth_pyramid", DEPTH_PYRAMID_WESL);
@@ -196,7 +220,7 @@ impl PbrShaders {
         vertex_buffers: &[VertexBufferLayout],
         texture_layout: Option<BindGroupLayoutId>,
     ) -> Result<RenderPipeline, RhiError> {
-        let shader = key.variant.shader_key("forward");
+        let shader = key.shader_key();
         let fragment = if key.split { "fs_split" } else { "fs" };
         let frame_layout = self.reflected_group_zero(device, &shader, &["vs", fragment], |_| {})?;
         let module = self
@@ -319,6 +343,15 @@ impl PbrShaders {
     pub fn wgsl(&mut self, key: &ShaderKey) -> Result<Arc<str>, ShaderError> {
         self.library.wgsl(key)
     }
+}
+
+// Every declaration carries `@if(shadows)`, so the permutation without shadows has the layout it had before.
+fn shadow_declarations() -> String {
+    ShadowBindings::starting_at(SHADOW_FIRST_BINDING)
+        .wgsl_declarations(0)
+        .lines()
+        .map(|line| format!("@if({SHADOWS_FLAG}) {line}\n"))
+        .collect()
 }
 
 fn shader_error(error: &ShaderError) -> RhiError {

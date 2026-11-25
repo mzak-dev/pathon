@@ -17,6 +17,7 @@ pathon-ibl.workspace = true
 pathon-material.workspace = true
 pathon-mesh.workspace = true
 pathon-scene.workspace = true
+pathon-shadow.workspace = true
 pathon-shader.workspace = true
 
 [dev-dependencies]

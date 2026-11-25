@@ -3,17 +3,18 @@ use std::sync::Arc;
 use pathon_api::graph::{GraphBufferDesc, PassDesc, Stage};
 use pathon_api::rhi::{
     Access, BindGroupDesc, BindGroupEntry, BindingResource, BufferUsage, Caps, Color, ColorAttachment, DepthAccess,
-    DepthAttachment, Format, FormatCaps, LoadOp, RenderPassDesc, RhiError, StoreOp,
+    DepthAttachment, Format, FormatCaps, LoadOp, RenderPassDesc, RhiError, StoreOp, TextureViewId,
 };
 use pathon_api::{Negotiation, RecordCtx, RenderFeature, Slot};
 use pathon_bindless::TextureBinder;
 use pathon_ibl::{IblBindings, IblEnvironment};
 use pathon_material::{AlphaKind, MaterialHooks, MaterialVariant};
+use pathon_shadow::{SHADOW_MAP, SHADOW_MAP_ACCESS, ShadowBindings, ShadowFrame};
 
 use crate::cluster::{COUNTERS_SIZE, ClusterBuffers, ClusterParams, ClusterPipeline, RANGE_SIZE};
 use crate::context::PbrContext;
 use crate::prepass::{draw_list, with_context};
-use crate::shaders::{ForwardKey, IBL_FIRST_BINDING, RenderPipeline};
+use crate::shaders::{ForwardKey, IBL_FIRST_BINDING, RenderPipeline, SHADOW_FIRST_BINDING};
 
 /// Assigns the lights to clusters in compute, then draws the opaque and masked meshes (`Stage::Opaque`) and the blended
 /// ones, farthest first (`Stage::Transparent`), into `hdr`; `diffuse` and `specular` are written too when another pack
@@ -80,6 +81,10 @@ fn record_lighting(
     let hooks = ctx.shared().get::<MaterialHooks>().cloned();
     let published = ctx.shared().get::<IblEnvironment>().copied();
     let environment = pbr.environment(device, published)?;
+    // The shadow pack publishes both or neither (no light, no map); anything else means this view has no shadows.
+    let shadow_frame = ctx.shared().get::<ShadowFrame>().copied();
+    let shadow_map = ctx.slot(SHADOW_MAP).zip(shadow_frame);
+    let shadows = shadow_map.is_some();
     pbr.shaders(hooks.as_ref(), binder)
         .map_err(|error| RhiError::validation("L0006", error.to_string()))?;
     let cluster = if let Some(cluster) = pbr.cluster {
@@ -103,6 +108,7 @@ fn record_lighting(
                     ForwardKey {
                         variant: item.variant,
                         split: split && item.variant.alpha != AlphaKind::Transparent,
+                        shadows,
                     },
                     &frame.draws.vertex_buffers,
                     texture_layout,
@@ -181,6 +187,7 @@ fn record_lighting(
     let depth_read = pass.read(depth, Access::DEPTH_READ);
     let ranges_read = pass.read_buffer(ranges, Access::STORAGE_READ);
     let indices_read = pass.read_buffer(indices, Access::STORAGE_READ);
+    let shadow_read = shadow_map.map(|(map, frame)| (pass.read(map, SHADOW_MAP_ACCESS), frame));
     let hdr = pass.write(hdr, Access::COLOR_ATTACHMENT);
     let split_slots = split_slots.map(|(diffuse, specular)| {
         (
@@ -205,6 +212,7 @@ fn record_lighting(
         let depth_view = pass.view(depth_read)?;
         let ranges = pass.buffer(ranges_read);
         let indices = pass.buffer(indices_read);
+        let shadows = shadow_bindings(pass, shadow_read)?;
         let groups = frame_groups(
             pass,
             &opaque_pipelines,
@@ -216,6 +224,7 @@ fn record_lighting(
                 ranges,
                 indices,
                 environment,
+                shadows,
             },
         )?;
         let mut render = pass.commands().render_pass(RenderPassDesc {
@@ -246,12 +255,14 @@ fn record_lighting(
     let depth_read = pass.read(depth, Access::DEPTH_READ);
     let ranges_read = pass.read_buffer(ranges, Access::STORAGE_READ);
     let indices_read = pass.read_buffer(indices, Access::STORAGE_READ);
+    let shadow_read = shadow_map.map(|(map, frame)| (pass.read(map, SHADOW_MAP_ACCESS), frame));
     let hdr = pass.modify(hdr, Access::COLOR_ATTACHMENT);
     let draws = Arc::clone(&frame.draws);
     pass.record(move |pass| {
         let depth_view = pass.view(depth_read)?;
         let ranges = pass.buffer(ranges_read);
         let indices = pass.buffer(indices_read);
+        let shadows = shadow_bindings(pass, shadow_read)?;
         let groups = frame_groups(
             pass,
             &variants,
@@ -263,6 +274,7 @@ fn record_lighting(
                 ranges,
                 indices,
                 environment,
+                shadows,
             },
         )?;
         let hdr_view = pass.view(hdr)?;
@@ -283,7 +295,7 @@ fn record_lighting(
     Ok(())
 }
 
-fn read_only_depth(view: pathon_api::rhi::TextureViewId) -> DepthAttachment {
+fn read_only_depth(view: TextureViewId) -> DepthAttachment {
     DepthAttachment {
         view,
         load: LoadOp::Load,
@@ -301,6 +313,16 @@ struct FrameBindings {
     ranges: pathon_api::rhi::BufferId,
     indices: pathon_api::rhi::BufferId,
     environment: IblEnvironment,
+    /// The cascade uniforms and the view of the map array, when the permutation has the `shadows` flag.
+    shadows: Option<(ShadowFrame, TextureViewId)>,
+}
+
+fn shadow_bindings(
+    pass: &mut pathon_api::graph::PassContext<'_>,
+    read: Option<(pathon_api::graph::TextureHandle, ShadowFrame)>,
+) -> Result<Option<(ShadowFrame, TextureViewId)>, RhiError> {
+    read.map(|(map, frame)| Ok((frame, pass.view_with(map, &ShadowBindings::map_view_desc())?)))
+        .transpose()
 }
 
 // One group 0 per pipeline layout in use; variants share a layout, so the groups are equal but each pipeline's own
@@ -348,6 +370,9 @@ fn frame_groups(
                     },
                 ];
                 entries.extend(IblBindings::starting_at(IBL_FIRST_BINDING).bind_group_entries(&bindings.environment));
+                if let Some((frame, map_view)) = bindings.shadows {
+                    entries.extend(ShadowBindings::starting_at(SHADOW_FIRST_BINDING).bind_group_entries(&frame, map_view));
+                }
                 let group = pass.create_bind_group(&BindGroupDesc {
                     label: "pbr forward frame",
                     layout: pipeline.frame_layout,

@@ -5,9 +5,10 @@ use pathon_api::rhi::BindGroupLayoutId;
 use pathon_bindless::{BINDLESS_FEATURES, BinderDesc, PathPreference, TextureBinder};
 use pathon_material::{MaterialHooks, MaterialVariant};
 use pathon_mesh::VertexLayout;
-use pathon_pbr::{ClusterPipeline, ForwardKey, PbrShaders, PrepassKey, TEXTURE_GROUP};
+use pathon_pbr::{ClusterPipeline, ForwardKey, PbrShaders, PrepassKey, SHADOW_FIRST_BINDING, TEXTURE_GROUP};
 use pathon_rhi::{Features, NullDevice};
-use pathon_shader::{ShaderFeatures, ShaderKey};
+use pathon_shader::{ShaderFeatures, ShaderKey, reflect_bind_groups};
+use pathon_shadow::ShadowBindings;
 
 fn binder(device: &NullDevice, preference: PathPreference) -> TextureBinder {
     TextureBinder::new(
@@ -51,10 +52,10 @@ fn forward_and_prepass_pipelines_exist_for_all_forty_eight_permutations_on_both_
         let textures: Option<BindGroupLayoutId> = Some(binder.layout());
 
         for variant in MaterialVariant::all() {
-            for split in [false, true] {
+            for (split, shadows) in [(false, false), (true, false), (false, true), (true, true)] {
                 shaders
-                    .forward_pipeline(&device, ForwardKey { variant, split }, &layouts, textures)
-                    .unwrap_or_else(|error| panic!("{variant:?} split {split}: {error}"));
+                    .forward_pipeline(&device, ForwardKey { variant, split, shadows }, &layouts, textures)
+                    .unwrap_or_else(|error| panic!("{variant:?} split {split} shadows {shadows}: {error}"));
             }
         }
         for (masked, full) in [(false, false), (true, false), (false, true), (true, true)] {
@@ -77,6 +78,7 @@ fn the_pack_works_without_a_texture_binder() {
             ForwardKey {
                 variant: MaterialVariant::default(),
                 split: true,
+                shadows: false,
             },
             &layouts,
             None,
@@ -93,6 +95,28 @@ fn the_pack_works_without_a_texture_binder() {
             None,
         )
         .expect("prepass without textures");
+}
+
+#[test]
+fn the_shadow_permutation_adds_the_three_shadow_bindings_and_nothing_else() {
+    let mut shaders = PbrShaders::new(&MaterialHooks::default()).expect("modules register");
+    let bindings = |shaders: &mut PbrShaders, shadows: bool| {
+        let key = ForwardKey {
+            variant: MaterialVariant::default(),
+            split: false,
+            shadows,
+        }
+        .shader_key();
+        let wgsl = shaders.wgsl(&key).unwrap_or_else(|error| panic!("shadows {shadows}: {error}"));
+        let group = reflect_bind_groups(&wgsl, &["vs", "fs"]).expect("reflection").remove(0);
+        group.entries.iter().map(|entry| entry.binding).collect::<Vec<_>>()
+    };
+
+    let without = bindings(&mut shaders, false);
+    let with = bindings(&mut shaders, true);
+
+    assert_eq!(without, (0..SHADOW_FIRST_BINDING).collect::<Vec<_>>());
+    assert_eq!(with, (0..SHADOW_FIRST_BINDING + ShadowBindings::COUNT).collect::<Vec<_>>());
 }
 
 #[test]

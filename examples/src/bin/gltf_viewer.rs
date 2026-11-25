@@ -5,8 +5,9 @@
 //   cargo run --release -p pathon-examples --bin gltf_viewer -- [scene.glb] [options]
 //   PATHON_TEST_SCENE=test-assets/classroom/classroom-lite.glb cargo run --release -p pathon-examples --bin gltf_viewer
 //
-// Options: --screenshot out.png [--camera N | --eye x,y,z --target x,y,z [--fov DEG]] [--size WxH]
+// Options: --screenshot out.png [--camera N | --camera-name NAME | --eye x,y,z --target x,y,z [--fov DEG]] [--size WxH]
 //          [--supersample N] [--ev STOPS] [--no-shadows] [--auto-exposure] [--no-bloom] [--neutral]
+//          [--dump-hdr out.npy] [--reference-like lights-only|ibl]  (the measuring mode, docs/porownanie-obrazu.md)
 // [--brute-force-lights]          [--env file.hdr | --env none] [--environment-intensity X] [--sky-intensity X]
 //          [--simple] [--per-material] [--bench FRAMES] [--backend vulkan|dx12|metal]
 
@@ -23,8 +24,9 @@ use pathon_bindless::PathPreference;
 use pathon_examples::gltf_loader::load_path;
 use pathon_examples::viewer::bench::{format_report, run_benchmark};
 use pathon_examples::viewer::environment::{default_environment_path, load_environment};
+use pathon_examples::viewer::linear_dump::{render_linear, write_npy};
 use pathon_examples::viewer::screenshot::{ScreenshotRequest, render_screenshot, write_png};
-use pathon_examples::viewer::settings::LightingMode;
+use pathon_examples::viewer::settings::{LightingMode, ReferenceLighting};
 use pathon_examples::viewer::stack::ViewerConfig;
 use pathon_examples::viewer::window::ViewerWindow;
 use pathon_post::Tonemapper;
@@ -41,6 +43,7 @@ enum EnvironmentChoice {
 struct Options {
     scene: PathBuf,
     screenshot: Option<PathBuf>,
+    dump_hdr: Option<PathBuf>,
     bench_frames: Option<u32>,
     request: ScreenshotRequest,
     lighting: LightingMode,
@@ -82,6 +85,7 @@ fn parse_options(args: impl Iterator<Item = String>) -> Result<Options, String> 
     let mut options = Options {
         scene: PathBuf::new(),
         screenshot: None,
+        dump_hdr: None,
         bench_frames: None,
         request: ScreenshotRequest::default(),
         lighting: LightingMode::Pbr,
@@ -96,6 +100,15 @@ fn parse_options(args: impl Iterator<Item = String>) -> Result<Options, String> 
         let request = &mut options.request;
         match arg.as_str() {
             "--screenshot" => options.screenshot = Some(PathBuf::from(value("--screenshot")?)),
+            "--dump-hdr" => options.dump_hdr = Some(PathBuf::from(value("--dump-hdr")?)),
+            "--reference-like" => {
+                request.reference_like = Some(match value("--reference-like")?.as_str() {
+                    "lights-only" => ReferenceLighting::LightsOnly,
+                    "ibl" => ReferenceLighting::Ibl,
+                    other => return Err(format!("--reference-like takes lights-only or ibl, got {other}")),
+                });
+            }
+            "--camera-name" => request.camera_name = Some(value("--camera-name")?),
             "--bench" => options.bench_frames = Some(parse_number("--bench", &value("--bench")?)?),
             "--camera" => request.camera = Some(parse_number("--camera", &value("--camera")?)?),
             "--size" => (request.width, request.height) = parse_size(&value("--size")?)?,
@@ -134,6 +147,9 @@ fn parse_options(args: impl Iterator<Item = String>) -> Result<Options, String> 
             other if other.starts_with("--") => return Err(format!("unknown option {other}")),
             path => scene = Some(PathBuf::from(path)),
         }
+    }
+    if options.dump_hdr.is_some() {
+        options.tonemapper = Tonemapper::Linear;
     }
     options.request.eye_and_target = match (eye, target) {
         (Some(eye), Some(target)) => Some((eye, target)),
@@ -192,6 +208,17 @@ fn run(options: &Options) -> Result<(), String> {
     if let Some(frames) = options.bench_frames {
         let report = run_benchmark(&scene, &config, &options.request, frames)?;
         log::info!("benchmark of {frames} frames:\n{}", format_report(&report));
+        return Ok(());
+    }
+    if let Some(path) = &options.dump_hdr {
+        let image = render_linear(&scene, &config, &options.request)?;
+        write_npy(path, &image)?;
+        log::info!(
+            "wrote {} ({}x{} linear float32)",
+            path.display(),
+            image.width,
+            image.height
+        );
         return Ok(());
     }
     if let Some(path) = &options.screenshot {

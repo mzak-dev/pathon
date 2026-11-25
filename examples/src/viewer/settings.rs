@@ -14,6 +14,18 @@ pub enum LightingMode {
 /// transform does not.
 pub const DEFAULT_EXPOSURE: f32 = 2.0 / 683.0;
 const EXPOSURE_STEP_STOPS: f32 = 0.5;
+/// Blender's radiance is the pathon radiance divided by 683 lm/W, so this exposure makes the two equal (docs/porownanie-obrazu.md).
+pub const REFERENCE_EXPOSURE: f32 = 1.0 / 683.0;
+/// Scale of an environment picture in W/m2/sr (Blender) to the photometric units of the lights.
+const REFERENCE_ENVIRONMENT_INTENSITY: f32 = 683.0;
+
+/// How the Cycles reference of the classroom is lit around the lights of the file: the black world of the
+/// `lights-only` variant, or `Garage.hdr` as both light and backdrop (`ibl`).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ReferenceLighting {
+    LightsOnly,
+    Ibl,
+}
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 #[expect(
@@ -71,6 +83,23 @@ impl ViewerSettings {
         self.environment_intensity *= factor;
     }
 
+    /// The settings that make the picture comparable with the Cycles reference: exposure 1/683, no automatic
+    /// exposure, no bloom, and an environment of the reference's strength (none for `LightsOnly`).
+    pub fn reference_like(lighting: ReferenceLighting) -> Self {
+        let environment = match lighting {
+            ReferenceLighting::LightsOnly => 0.0,
+            ReferenceLighting::Ibl => REFERENCE_ENVIRONMENT_INTENSITY,
+        };
+        Self {
+            exposure: REFERENCE_EXPOSURE,
+            auto_exposure: false,
+            bloom: false,
+            environment_intensity: environment,
+            sky_intensity: environment,
+            ..Self::default()
+        }
+    }
+
     /// Stops of `exposure` above the default: the compensation of automatic exposure.
     pub fn exposure_stops(&self) -> f32 {
         (self.exposure / DEFAULT_EXPOSURE).log2()
@@ -80,6 +109,19 @@ impl ViewerSettings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_reference_settings_match_blender_exposure_and_the_environment_of_the_variant() {
+        let lights_only = ViewerSettings::reference_like(ReferenceLighting::LightsOnly);
+        assert!((lights_only.exposure * 683.0 - 1.0).abs() < 1e-6);
+        assert!(!lights_only.bloom && !lights_only.auto_exposure);
+        assert_eq!(
+            (lights_only.environment_intensity, lights_only.sky_intensity),
+            (0.0, 0.0)
+        );
+        let ibl = ViewerSettings::reference_like(ReferenceLighting::Ibl);
+        assert_eq!((ibl.environment_intensity, ibl.sky_intensity), (683.0, 683.0));
+    }
 
     #[test]
     fn two_steps_up_is_one_stop() {

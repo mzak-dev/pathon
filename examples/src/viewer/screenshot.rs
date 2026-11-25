@@ -11,7 +11,7 @@ use pathon_golden::{GoldenImage, read_texture};
 
 use super::camera::FlyCamera;
 use super::session::Session;
-use super::settings::ViewerSettings;
+use super::settings::{ReferenceLighting, ViewerSettings};
 use super::stack::ViewerConfig;
 use crate::gltf_loader::LoadedScene;
 
@@ -28,6 +28,8 @@ pub struct ScreenshotRequest {
     /// Renders at `supersample` times the size and averages down; 1 is off.
     pub supersample: u32,
     pub camera: Option<usize>,
+    /// Picks the camera of the file by its node name instead of its index (`--camera` wins when both are given).
+    pub camera_name: Option<String>,
     /// Overrides the camera: where the free camera stands and what it looks at.
     pub eye_and_target: Option<(Vec3, Vec3)>,
     pub vertical_fov_degrees: Option<f32>,
@@ -39,6 +41,8 @@ pub struct ScreenshotRequest {
     pub environment_intensity: Option<f32>,
     pub sky_intensity: Option<f32>,
     pub brute_force_lights: bool,
+    /// Lights the frame like the Cycles reference (docs/porownanie-obrazu.md), whatever the other switches say.
+    pub reference_like: Option<ReferenceLighting>,
 }
 
 impl Default for ScreenshotRequest {
@@ -48,6 +52,7 @@ impl Default for ScreenshotRequest {
             height: 540,
             supersample: 1,
             camera: None,
+            camera_name: None,
             eye_and_target: None,
             vertical_fov_degrees: None,
             exposure_stops: 0.0,
@@ -57,6 +62,7 @@ impl Default for ScreenshotRequest {
             environment_intensity: None,
             sky_intensity: None,
             brute_force_lights: false,
+            reference_like: None,
         }
     }
 }
@@ -64,11 +70,13 @@ impl Default for ScreenshotRequest {
 impl ScreenshotRequest {
     /// The settings a session starts from, with this request's changes.
     pub fn settings(&self) -> ViewerSettings {
-        let mut settings = ViewerSettings::default();
+        let mut settings = self
+            .reference_like
+            .map_or_else(ViewerSettings::default, ViewerSettings::reference_like);
         settings.adjust_exposure(self.exposure_stops * 2.0);
         settings.sun_shadows = self.sun_shadows;
-        settings.auto_exposure = self.auto_exposure;
-        settings.bloom = self.bloom;
+        settings.auto_exposure |= self.auto_exposure;
+        settings.bloom &= self.bloom;
         settings.brute_force_lights = self.brute_force_lights;
         settings.environment_intensity = self.environment_intensity.unwrap_or(settings.environment_intensity);
         settings.sky_intensity = self.sky_intensity.unwrap_or(settings.sky_intensity);
@@ -77,7 +85,15 @@ impl ScreenshotRequest {
 
     /// Puts the free camera of `session` where the request wants it.
     pub fn place_camera(&self, session: &mut Session) -> Result<(), String> {
-        if let Some(index) = self.camera
+        let by_name = self.camera_name.as_deref().map(|name| {
+            session
+                .assets
+                .cameras
+                .iter()
+                .position(|entry| entry.name == name)
+                .ok_or_else(|| format!("the file has no camera named {name}"))
+        });
+        if let Some(index) = self.camera.map(Ok).or(by_name).transpose()?
             && !session.use_scene_camera(index)
         {
             return Err(format!("the file has no camera {index}"));

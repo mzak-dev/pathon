@@ -85,6 +85,7 @@ pub fn tonemap(operator: Tonemapper, rgb: [f32; 3]) -> [f32; 3] {
     match operator {
         Tonemapper::AcesFitted => aces_fitted(rgb),
         Tonemapper::PbrNeutral => pbr_neutral(rgb),
+        Tonemapper::Linear => rgb,
     }
 }
 
@@ -211,6 +212,11 @@ mod tests {
         assert!(close(srgb_oetf(1.0), 1.0, 1.0e-6));
         assert!(close(srgb_oetf(0.18), 0.461_356, 1.0e-4));
         assert!(close(srgb_oetf(0.002), 0.025_84, 1.0e-5));
+    }
+
+    #[test]
+    fn linear_leaves_scene_colour_unchanged_even_above_one() {
+        assert_eq!(tonemap(Tonemapper::Linear, [0.0, 0.5, 40.0]), [0.0, 0.5, 40.0]);
     }
 
     #[test]

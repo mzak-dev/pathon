@@ -463,7 +463,8 @@ def main():
     metrics["flip"] = flip_result[0] if flip_result else "flip_evaluator not installed"
 
     per_mask = {}
-    for mask_name, mask in build_masks(layers, material_ids).items():
+    masks = build_masks(layers, material_ids)
+    for mask_name, mask in masks.items():
         ref_mean = mean_over(mask, reference_lum)
         entry = {"pixels": int(mask.sum()), "share_of_image": float(mask.mean())}
         if ref_mean:
@@ -472,6 +473,9 @@ def main():
             entry["delta_e2000_mean"] = mean_over(mask, delta_e)
         per_mask[mask_name] = entry
     metrics["per_mask"] = per_mask
+    windows = masks.get("windows")
+    if windows is not None and (~windows).any():  # a few bright, lit blinds carry half of the image's luminance
+        metrics["bias_without_windows"] = float(test_lum[~windows].mean() / reference_lum[~windows].mean())
 
     if layers is not None:
         terms = decompose_reference(layers)

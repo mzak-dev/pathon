@@ -51,7 +51,7 @@ Wartości poza zakresem są naprawiane (przycięcie, NaN → domyślna) i zgłas
 | `bloom.scatter` | 0.7 | 0…1 | ile każdego szerszego poziomu trafia do wyniku |
 | `bloom.levels` | 6 | 1…8 | poziomy piramidy (zmniejszane do tego, co mieści obraz) |
 | `bloom.karis_average` | `true` | — | ważenie `1 / (1 + luma)` na pierwszym downsample przeciw migotaniu |
-| `tonemap.operator` | `AcesFitted` | `AcesFitted`, `PbrNeutral` | krzywa |
+| `tonemap.operator` | `AcesFitted` | `AcesFitted`, `PbrNeutral`, `Linear` | krzywa |
 | `tonemap.output` | `Srgb` | `Srgb`; `Pq`, `ScRgb` jeszcze nie | transfer wyjściowy (punkt rozszerzenia M4-16, Q0002) |
 
 ## Ekspozycja
@@ -68,6 +68,7 @@ Piramida w passach renderujących (pełnoekranowy trójkąt na poziom), poziom 0
 | --- | --- |
 | `AcesFitted` | dopasowanie Hilla do RRT+ODT ACES (przedmnożenie `1/0.6`), filmowy |
 | `PbrNeutral` | Khronos PBR Neutral: kolory bazowe bez zmian poniżej ramienia, kompresja tylko świateł |
+| `Linear` | bez krzywej i bez obcinania z góry (`hdr × ekspozycja`, bez bloomu przy `bloom.enabled = false`); do celów zmiennoprzecinkowych, które narzędzie odczytuje (porównanie obrazu, [porownanie-obrazu.md](../porownanie-obrazu.md)) |
 
 Kodowanie wyjścia wynika z formatu `output`: `*Srgb` koduje sprzęt, `Rgba8Unorm`, `Bgra8Unorm`, `Rgb10a2Unorm` dostają sRGB OETF w shaderze, formaty zmiennoprzecinkowe dostają wartości liniowe. Wyjście HDR (PQ, scRGB) dochodzi z M4-16.
 

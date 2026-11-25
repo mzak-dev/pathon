@@ -16,6 +16,8 @@ pub enum Command {
     AmbientUp,
     AmbientDown,
     ToggleShadows,
+    ToggleAutoExposure,
+    ToggleBloom,
     PrintInfo,
     Exit,
 }
@@ -36,6 +38,8 @@ fn command_for(key: &str) -> Option<Command> {
         "]" => Some(Command::AmbientUp),
         "[" => Some(Command::AmbientDown),
         "t" => Some(Command::ToggleShadows),
+        "x" => Some(Command::ToggleAutoExposure),
+        "b" => Some(Command::ToggleBloom),
         "i" => Some(Command::PrintInfo),
         "Named(Escape)" => Some(Command::Exit),
         digit => {

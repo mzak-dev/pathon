@@ -1,6 +1,8 @@
 // The host side of the viewer: a `LoadedScene` becomes what pathon's crates keep. Meshes go to a `GeometryPool`,
 // images through `TextureLoader` (sRGB views, mips in compute), materials into a `MaterialTable`, and instances,
-// lights and cameras into a `Scene` the render side reads as a snapshot.
+// lights and cameras into a `Scene` the render side reads as a snapshot. The pbr stack gets its textures through a
+// `TextureBinder` (bindless or a group per material, whichever the device allows); `--simple` keeps the viewer's own
+// five-map bind group per material.
 
 use std::collections::HashMap;
 use std::fmt::Display;
@@ -13,12 +15,17 @@ use pathon::rhi::{
     BindGroupLayoutId, BindingResource, BindingType, BufferDesc, BufferId, BufferUsage, DeviceApi, FilterMode, Id,
     RawHandle, SamplerBindingType, SamplerDesc, SamplerId, ShaderStages, TextureViewId,
 };
-use pathon_material::{MaterialId, MaterialTable, MaterialTextures, StandardMaterial, TextureSlot};
+use pathon_bindless::{BinderDesc, PathPreference, SamplerPreset, TextureBinder, TextureHandle};
+use pathon_material::{AlphaKind, MaterialId, MaterialTable, MaterialTextures, StandardMaterial, TextureSlot};
 use pathon_mesh::{GeometryPool, IndexData, MeshData, MeshId, PoolDesc, VertexLayout};
-use pathon_scene::{Aabb, CameraDesc, CameraId, InstanceDesc, MaterialHandle, MeshHandle, Scene, Snapshot};
+use pathon_scene::{
+    Aabb, CameraDesc, CameraId, InstanceDesc, LightKind, MaterialHandle, MeshHandle, RenderWorld, Scene, Snapshot,
+};
+use pathon_shadow::ShadowCaster;
 use pathon_texture::{ColorSpace, Texture, TextureLoader, TextureSource, Variant};
 
-use crate::gltf_loader::{CpuMaterial, LoadedScene, TextureRole, UvTransform};
+use super::settings::LightingMode;
+use crate::gltf_loader::{CpuMaterial, CpuMesh, LoadedScene, SurfaceVertex, TextureRole, UvTransform};
 
 const FRAMES_IN_FLIGHT: u32 = 2;
 const ANISOTROPY: u16 = 8;
@@ -78,9 +85,25 @@ pub struct UploadStats {
     pub triangles: usize,
 }
 
-/// Everything the viewer pack draws from. Immutable after the upload, so the render side shares it through an `Arc`.
+/// What both lightings need on the host: the scene snapshot, the cameras and what the shadows are made of.
 #[derive(Debug)]
 pub struct ViewerAssets {
+    /// Kept alive: the views in the material groups or in the binder point into them.
+    pub textures: Vec<Texture>,
+    pub snapshot: Snapshot,
+    pub cameras: Vec<SceneCameraEntry>,
+    pub main_camera: Option<usize>,
+    pub bounds: (Vec3, Vec3),
+    pub stats: UploadStats,
+    /// Every opaque and masked instance, for `ShadowScene`: blended surfaces (glass) do not cast shadows.
+    pub shadow_casters: Vec<ShadowCaster>,
+    /// The way the first directional light shines: the sun that `ShadowScene` shadows.
+    pub sun_direction: Option<Vec3>,
+}
+
+/// Everything the `--simple` pack draws from. Immutable after the upload, so the render side shares it through an `Arc`.
+#[derive(Debug)]
+pub struct SimpleScene {
     pub pool: GeometryPool,
     pub materials: MaterialTable,
     /// `MaterialId`s in the order of `LoadedScene::materials`; an instance's `MaterialHandle` holds the index.
@@ -90,17 +113,33 @@ pub struct ViewerAssets {
     pub material_layout: BindGroupLayoutId,
     /// One bind group per `MaterialId`.
     pub material_groups: Vec<BindGroupId>,
-    pub textures: Vec<Texture>,
     pub snapshot: Snapshot,
-    pub cameras: Vec<SceneCameraEntry>,
-    pub main_camera: Option<usize>,
     pub bounds: (Vec3, Vec3),
-    pub stats: UploadStats,
 }
 
-/// The `Shared` value the pack looks for.
+/// The `Shared` value the simple pack looks for.
 #[derive(Clone, Debug)]
-pub struct SharedAssets(pub Arc<ViewerAssets>);
+pub struct SharedSimple(pub Arc<SimpleScene>);
+
+/// What the pbr stack takes from `Shared`: all three move there, because the packs own them from then on.
+#[derive(Debug)]
+pub struct PbrScene {
+    pub pool: GeometryPool,
+    pub materials: MaterialTable,
+    pub binder: TextureBinder,
+}
+
+#[derive(Debug)]
+pub enum SceneGpu {
+    Simple(Arc<SimpleScene>),
+    Pbr(PbrScene),
+}
+
+#[derive(Debug)]
+pub struct UploadedScene {
+    pub assets: ViewerAssets,
+    pub gpu: SceneGpu,
+}
 
 fn material_layout_entries() -> Vec<BindGroupLayoutEntry> {
     let entry = |binding, ty| BindGroupLayoutEntry {
@@ -199,23 +238,25 @@ impl<'device> TextureCache<'device> {
     }
 }
 
-// What the standard material needs to read a texture here: a slot that is the role, because each material has its own
-// bind group of five textures (M4-04 replaces this with global slots).
-fn standard_with_slots(material: &CpuMaterial) -> StandardMaterial {
-    let slot = |role: TextureRole| material.textures[role as usize].map(|_| TextureSlot(role as u32));
+// What the standard material needs to read a texture: `slot` says where each role's map lives (a role index for the
+// simple bind group, a binder value for the pbr stack).
+fn standard_with_slots(
+    material: &CpuMaterial,
+    slot: &mut dyn FnMut(TextureRole) -> Result<Option<TextureSlot>, UploadError>,
+) -> Result<StandardMaterial, UploadError> {
     let mut standard = material.standard.clone();
     standard.textures = MaterialTextures {
-        base_color: slot(TextureRole::BaseColor),
-        metallic_roughness: slot(TextureRole::MetallicRoughness),
-        normal: slot(TextureRole::Normal),
-        occlusion: slot(TextureRole::Occlusion),
-        emissive: slot(TextureRole::Emissive),
+        base_color: slot(TextureRole::BaseColor)?,
+        metallic_roughness: slot(TextureRole::MetallicRoughness)?,
+        normal: slot(TextureRole::Normal)?,
+        occlusion: slot(TextureRole::Occlusion)?,
+        emissive: slot(TextureRole::Emissive)?,
     };
     // The viewer has no refraction: glass is drawn as blended, so transmission selects the transparent pass.
     if standard.transmission > 0.0 {
         standard.alpha_mode = pathon_material::AlphaMode::Blend;
     }
-    standard
+    Ok(standard)
 }
 
 fn create_sampler(device: &dyn DeviceApi) -> Result<SamplerId, UploadError> {
@@ -299,56 +340,129 @@ fn create_material_groups(
     Ok(MaterialGroups { layout, groups })
 }
 
+// The pbr stack has one table of textures and no per-map UV transform, so the transform of a material is baked into
+// the UVs of its mesh. Maps of one material share it in practice (Blender's mapping node feeds all of them); the base
+// colour one wins when they differ.
+fn material_uv_transform(material: &CpuMaterial) -> UvTransform {
+    let base = material.textures[TextureRole::BaseColor as usize];
+    base.or_else(|| material.textures.iter().flatten().next().copied())
+        .map_or(UvTransform::IDENTITY, |texture| texture.transform)
+}
+
+fn materials_with_diverging_transforms(scene: &LoadedScene) -> usize {
+    scene
+        .materials
+        .iter()
+        .filter(|material| {
+            let chosen = material_uv_transform(material);
+            material
+                .textures
+                .iter()
+                .flatten()
+                .any(|texture| texture.transform != chosen)
+        })
+        .count()
+}
+
+fn transformed_uv(vertex: &SurfaceVertex, transform: UvTransform) -> [f32; 2] {
+    let [m00, m01, m10, m11] = transform.matrix;
+    let [u, v] = vertex.uv;
+    [
+        m00 * u + m01 * v + transform.offset[0],
+        m10 * u + m11 * v + transform.offset[1],
+    ]
+}
+
+fn upload_mesh(
+    device: &dyn DeviceApi,
+    pool: &mut GeometryPool,
+    mesh: &CpuMesh,
+    uv_transform: Option<UvTransform>,
+) -> Result<MeshId, UploadError> {
+    let baked: Vec<SurfaceVertex>;
+    let surface: &[SurfaceVertex] = match uv_transform.filter(|transform| *transform != UvTransform::IDENTITY) {
+        Some(transform) => {
+            baked = mesh
+                .surface
+                .iter()
+                .map(|vertex| SurfaceVertex {
+                    uv: transformed_uv(vertex, transform),
+                    ..*vertex
+                })
+                .collect();
+            &baked
+        }
+        None => &mesh.surface,
+    };
+    let data = MeshData::new(
+        "gltf primitive",
+        vec![bytemuck::cast_slice(&mesh.positions), bytemuck::cast_slice(surface)],
+        IndexData::U32(&mesh.indices),
+    );
+    pool.upload(device, &data)
+        .map_err(|error| fail("mesh upload", error.to_diagnostic()))
+}
+
 fn upload_meshes(
     device: &dyn DeviceApi,
     scene: &LoadedScene,
     pool: &mut GeometryPool,
+    bake_uv_transforms: bool,
 ) -> Result<Vec<MeshId>, UploadError> {
     scene
         .meshes
         .iter()
         .map(|mesh| {
-            let data = MeshData::new(
-                "gltf primitive",
-                vec![
-                    bytemuck::cast_slice(&mesh.positions),
-                    bytemuck::cast_slice(&mesh.surface),
-                ],
-                IndexData::U32(&mesh.indices),
-            );
-            pool.upload(device, &data)
-                .map_err(|error| fail("mesh upload", error.to_diagnostic()))
+            let transform = bake_uv_transforms.then(|| material_uv_transform(&scene.materials[mesh.material]));
+            upload_mesh(device, pool, mesh, transform)
         })
         .collect()
 }
 
-/// Uploads everything the viewer draws. Textures are uploaded here, one `load` each: the loader submits its own
-/// commands, so this runs before the first frame.
-pub fn upload_scene(device: &dyn DeviceApi, scene: &LoadedScene) -> Result<ViewerAssets, UploadError> {
-    let mut cache = TextureCache::new(device, scene);
-    let groups = create_material_groups(device, scene, &mut cache)?;
-    let TextureCache {
-        mut loader, textures, ..
-    } = cache;
-    loader.release(device);
+// Opaque and masked instances of the snapshot as shadow casters; `material_ids` maps the scene's material handles.
+fn shadow_casters(
+    world: &RenderWorld,
+    pool: &GeometryPool,
+    materials: &MaterialTable,
+    material_ids: &[MaterialId],
+) -> Vec<ShadowCaster> {
+    let instances = world.instances();
+    let mut casters = Vec::new();
+    for slot in instances.iter_alive() {
+        let transparent = material_ids
+            .get(instances.materials()[slot].raw().index() as usize)
+            .and_then(|id| materials.variant(*id))
+            .is_none_or(|variant| variant.alpha == AlphaKind::Transparent);
+        if transparent {
+            continue;
+        }
+        let Ok(caster) = ShadowCaster::from_mesh(pool, instances.meshes()[slot].to_id(), instances.transforms()[slot])
+        else {
+            continue;
+        };
+        casters.push(
+            instances
+                .world_bounds(slot)
+                .filter(Aabb::is_bounded)
+                .map_or(caster, |bounds| caster.with_bounds(bounds)),
+        );
+    }
+    casters
+}
 
-    let mut materials = MaterialTable::new("materials", FRAMES_IN_FLIGHT);
-    let material_ids: Vec<MaterialId> = scene
-        .materials
+fn first_sun_direction(world: &RenderWorld) -> Option<Vec3> {
+    world
+        .lights()
         .iter()
-        .map(|material| {
-            materials
-                .add(&standard_with_slots(material))
-                .map_err(|error| fail("material", error.to_diagnostic()))
-        })
-        .collect::<Result<_, _>>()?;
-    let material_buffer = materials
-        .sync(device, &mut DeferredRelease::new(u64::from(FRAMES_IN_FLIGHT)), 0)
-        .map_err(|error| fail("material upload", error))?;
+        .find(|(_, light)| matches!(light.kind, LightKind::Directional))
+        .map(|(_, light)| light.direction())
+}
 
-    let mut pool = GeometryPool::new(device, "scene", VertexLayout::standard(), PoolDesc::default());
-    let mesh_ids = upload_meshes(device, scene, &mut pool)?;
-
+fn build_scene(
+    scene: &LoadedScene,
+    mesh_ids: &[MeshId],
+    material_ids: &[MaterialId],
+) -> Result<(Scene, Vec<SceneCameraEntry>), UploadError> {
     let local_bounds: Vec<Aabb> = scene
         .meshes
         .iter()
@@ -385,26 +499,194 @@ pub fn upload_scene(device: &dyn DeviceApi, scene: &LoadedScene) -> Result<Viewe
                 .collect::<Result<Vec<_>, pathon_scene::SceneError>>()
         })
         .map_err(|error| fail("scene", error.to_diagnostic()))?;
+    Ok((world, cameras))
+}
 
-    Ok(ViewerAssets {
+fn stats(scene: &LoadedScene, textures: usize) -> UploadStats {
+    UploadStats {
+        meshes: scene.meshes.len(),
+        textures,
+        materials: scene.materials.len(),
+        instances: scene.instances.len(),
+        lights: scene.lights.len(),
+        triangles: scene.triangle_count(),
+    }
+}
+
+fn scene_bounds(scene: &LoadedScene) -> (Vec3, Vec3) {
+    scene.bounds().unwrap_or((Vec3::splat(-1.0), Vec3::splat(1.0)))
+}
+
+/// Uploads everything the viewer draws, for the lighting `mode`. Textures are uploaded here, one `load` each: the
+/// loader submits its own commands, so this runs before the first frame. `texture_path` is the preference of the
+/// pbr stack's `TextureBinder` (bindless where the device allows, unless forced otherwise).
+pub fn upload_scene(
+    device: &dyn DeviceApi,
+    scene: &LoadedScene,
+    mode: LightingMode,
+    texture_path: PathPreference,
+) -> Result<UploadedScene, UploadError> {
+    match mode {
+        LightingMode::Simple => upload_simple(device, scene),
+        LightingMode::Pbr => upload_pbr(device, scene, texture_path),
+    }
+}
+
+fn upload_simple(device: &dyn DeviceApi, scene: &LoadedScene) -> Result<UploadedScene, UploadError> {
+    let mut cache = TextureCache::new(device, scene);
+    let groups = create_material_groups(device, scene, &mut cache)?;
+    let TextureCache {
+        mut loader, textures, ..
+    } = cache;
+    loader.release(device);
+
+    let mut materials = MaterialTable::new("materials", FRAMES_IN_FLIGHT);
+    let material_ids: Vec<MaterialId> = scene
+        .materials
+        .iter()
+        .map(|material| {
+            // Each material has its own bind group of five maps, so the slot a material reads is the role itself.
+            let standard = standard_with_slots(material, &mut |role| {
+                Ok(material.textures[role as usize].map(|_| TextureSlot(role as u32)))
+            })?;
+            materials
+                .add(&standard)
+                .map_err(|error| fail("material", error.to_diagnostic()))
+        })
+        .collect::<Result<_, _>>()?;
+    let material_buffer = materials
+        .sync(device, &mut DeferredRelease::new(u64::from(FRAMES_IN_FLIGHT)), 0)
+        .map_err(|error| fail("material upload", error))?;
+
+    let mut pool = GeometryPool::new(device, "scene", VertexLayout::standard(), PoolDesc::default());
+    let mesh_ids = upload_meshes(device, scene, &mut pool, false)?;
+    let (world, cameras) = build_scene(scene, &mesh_ids, &material_ids)?;
+    let snapshot = world.snapshot();
+    let bounds = scene_bounds(scene);
+    let assets = ViewerAssets {
+        stats: stats(scene, textures.len()),
+        textures,
+        shadow_casters: Vec::new(),
+        sun_direction: first_sun_direction(&snapshot),
+        snapshot: snapshot.clone(),
+        cameras,
+        main_camera: scene.main_camera,
+        bounds,
+    };
+    let simple = SimpleScene {
         pool,
         materials,
         material_ids,
         material_buffer,
         material_layout: groups.layout,
         material_groups: groups.groups,
-        stats: UploadStats {
-            meshes: scene.meshes.len(),
-            textures: textures.len(),
-            materials: scene.materials.len(),
-            instances: scene.instances.len(),
-            lights: scene.lights.len(),
-            triangles: scene.triangle_count(),
+        snapshot,
+        bounds,
+    };
+    Ok(UploadedScene {
+        assets,
+        gpu: SceneGpu::Simple(Arc::new(simple)),
+    })
+}
+
+// Registers each (image, colour space) once and hands out the binder value of the texture.
+struct BinderTextures<'device> {
+    cache: TextureCache<'device>,
+    binder: TextureBinder,
+    handles: HashMap<(usize, ColorSpace), TextureHandle>,
+}
+
+impl BinderTextures<'_> {
+    fn slot(&mut self, image: usize, space: ColorSpace) -> Result<TextureSlot, UploadError> {
+        let handle = match self.handles.get(&(image, space)) {
+            Some(handle) => *handle,
+            None => {
+                let view = self.cache.view(image, space)?;
+                let handle = self
+                    .binder
+                    .register(view, SamplerPreset::LinearRepeat)
+                    .map_err(|error| fail("texture binder", error.to_diagnostic()))?;
+                self.handles.insert((image, space), handle);
+                handle
+            }
+        };
+        let value = self
+            .binder
+            .shader_value(handle)
+            .map_err(|error| fail("texture binder", error.to_diagnostic()))?;
+        Ok(TextureSlot(value))
+    }
+}
+
+fn upload_pbr(
+    device: &dyn DeviceApi,
+    scene: &LoadedScene,
+    texture_path: PathPreference,
+) -> Result<UploadedScene, UploadError> {
+    let binder = TextureBinder::new(
+        device,
+        &BinderDesc {
+            preference: texture_path,
+            ..BinderDesc::default()
         },
-        textures,
-        snapshot: world.snapshot(),
+    )
+    .map_err(|error| fail("texture binder", error.to_diagnostic()))?;
+    log::info!("texture path: {:?}", binder.path());
+    let diverging = materials_with_diverging_transforms(scene);
+    if diverging > 0 {
+        log::info!("{diverging} materials have a different UV transform per map; the base colour one is used");
+    }
+    let mut textures = BinderTextures {
+        cache: TextureCache::new(device, scene),
+        binder,
+        handles: HashMap::new(),
+    };
+
+    let mut materials = MaterialTable::new("materials", FRAMES_IN_FLIGHT);
+    let material_ids: Vec<MaterialId> = scene
+        .materials
+        .iter()
+        .map(|material| {
+            let standard = standard_with_slots(material, &mut |role| {
+                material.textures[role as usize]
+                    .map(|texture| textures.slot(texture.image, color_space(role)))
+                    .transpose()
+            })?;
+            materials
+                .add(&standard)
+                .map_err(|error| fail("material", error.to_diagnostic()))
+        })
+        .collect::<Result<_, _>>()?;
+    let BinderTextures {
+        cache, binder: texture_binder, ..
+    } = textures;
+    let TextureCache {
+        mut loader,
+        textures: uploaded,
+        ..
+    } = cache;
+    loader.release(device);
+
+    let mut pool = GeometryPool::new(device, "scene", VertexLayout::standard(), PoolDesc::default());
+    let mesh_ids = upload_meshes(device, scene, &mut pool, true)?;
+    let (world, cameras) = build_scene(scene, &mesh_ids, &material_ids)?;
+    let snapshot = world.snapshot();
+    let assets = ViewerAssets {
+        shadow_casters: shadow_casters(&snapshot, &pool, &materials, &material_ids),
+        sun_direction: first_sun_direction(&snapshot),
+        stats: stats(scene, uploaded.len()),
+        textures: uploaded,
+        snapshot,
         cameras,
         main_camera: scene.main_camera,
-        bounds: scene.bounds().unwrap_or((Vec3::splat(-1.0), Vec3::splat(1.0))),
+        bounds: scene_bounds(scene),
+    };
+    Ok(UploadedScene {
+        assets,
+        gpu: SceneGpu::Pbr(PbrScene {
+            pool,
+            materials,
+            binder: texture_binder,
+        }),
     })
 }

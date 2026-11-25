@@ -8,9 +8,9 @@ use pathon::api::Camera;
 use pathon::{FrameInput, FrameReport, RenderError, Renderer, TargetId, ViewInput};
 
 use super::camera::{FlyCamera, overview};
-use super::pack::ViewerPack;
-use super::settings::ViewerSettings;
-use super::upload::{SharedAssets, UploadError, ViewerAssets, upload_scene};
+use super::settings::{LightingMode, ViewerSettings};
+use super::stack::{ViewerConfig, apply_settings, fill_shadow_casters};
+use super::upload::{SceneGpu, SharedSimple, UploadError, ViewerAssets, upload_scene};
 use crate::gltf_loader::LoadedScene;
 
 const DEFAULT_VERTICAL_FOV: f32 = std::f32::consts::FRAC_PI_3;
@@ -23,19 +23,17 @@ pub struct Session {
     pub assets: Arc<ViewerAssets>,
     pub camera: FlyCamera,
     pub settings: ViewerSettings,
+    pub lighting: LightingMode,
     started: Instant,
     last_frame: Instant,
 }
 
-pub fn viewer_builder() -> pathon::RendererBuilder {
-    Renderer::builder().with_feature(ViewerPack::new())
-}
-
 impl Session {
-    /// Uploads `scene` through the device of `renderer`, which must have been built with [`viewer_builder`].
-    pub fn new(mut renderer: Renderer, scene: &LoadedScene) -> Result<Self, UploadError> {
+    /// Uploads `scene` through the device of `renderer`, which must have been built by `config.builder()`.
+    pub fn new(mut renderer: Renderer, scene: &LoadedScene, config: &ViewerConfig) -> Result<Self, UploadError> {
         let started = Instant::now();
-        let assets = Arc::new(upload_scene(renderer.device().as_ref(), scene)?);
+        let uploaded = upload_scene(renderer.device().as_ref(), scene, config.lighting, config.texture_path)?;
+        let assets = Arc::new(uploaded.assets);
         let stats = assets.stats;
         log::info!(
             "uploaded in {:.1} s: {} meshes ({} triangles), {} textures, {} materials, {} instances, {} lights",
@@ -47,7 +45,19 @@ impl Session {
             stats.instances,
             stats.lights,
         );
-        renderer.shared_mut().insert(SharedAssets(Arc::clone(&assets)));
+        match uploaded.gpu {
+            SceneGpu::Simple(simple) => {
+                renderer.shared_mut().insert(SharedSimple(simple));
+            }
+            SceneGpu::Pbr(pbr) => {
+                let shared = renderer.shared_mut();
+                shared.insert(pbr.pool);
+                shared.insert(pbr.materials);
+                shared.insert(pbr.binder);
+                shared.insert(assets.snapshot.clone());
+                fill_shadow_casters(&mut renderer, &assets);
+            }
+        }
         let (min, max) = assets.bounds;
         let speed = (max - min).length() / SECONDS_TO_CROSS_THE_SCENE;
         let mut camera = overview(assets.bounds, DEFAULT_VERTICAL_FOV);
@@ -57,6 +67,7 @@ impl Session {
             assets,
             camera,
             settings: ViewerSettings::default(),
+            lighting: config.lighting,
             started: Instant::now(),
             last_frame: Instant::now(),
         };
@@ -102,21 +113,40 @@ impl Session {
             }],
         };
         self.last_frame = now;
-        self.renderer.shared_mut().insert(self.settings);
-        self.renderer.render_frame(&input)
+        self.render_input(&input)
+    }
+
+    /// Renders `input` with the current settings; `delta_seconds` is up to the caller (the benchmark fixes it).
+    pub fn render_input(&mut self, input: &FrameInput) -> Result<FrameReport, RenderError> {
+        apply_settings(&mut self.renderer, &self.settings, self.assets.sun_direction);
+        self.renderer.render_frame(input)
     }
 
     pub fn describe(&self) -> String {
         let position = self.camera.position;
+        let exposure = if self.settings.auto_exposure {
+            format!("auto {:+.1} EV", self.settings.exposure_stops())
+        } else {
+            format!("1/{:.0}", 1.0 / self.settings.exposure)
+        };
+        let light = match self.lighting {
+            LightingMode::Simple => format!(
+                "simple, ambient {:.0}/{:.0} lx",
+                self.settings.ambient_sky_lux, self.settings.ambient_ground_lux
+            ),
+            LightingMode::Pbr => format!(
+                "pbr, environment x{:.0}, sky x{:.0}, bloom {}",
+                self.settings.environment_intensity,
+                self.settings.sky_intensity,
+                if self.settings.bloom { "on" } else { "off" },
+            ),
+        };
         format!(
-            "camera at ({:.2}, {:.2}, {:.2}) fov {:.0} deg, exposure 1/{:.0}, ambient {:.0}/{:.0} lx, sun shadows {}",
+            "camera at ({:.2}, {:.2}, {:.2}) fov {:.0} deg, exposure {exposure}, {light}, sun shadows {}",
             position.x,
             position.y,
             position.z,
             self.camera.vertical_fov.to_degrees(),
-            1.0 / self.settings.exposure,
-            self.settings.ambient_sky_lux,
-            self.settings.ambient_ground_lux,
             if self.settings.sun_shadows { "on" } else { "off" },
         )
     }

@@ -10,10 +10,12 @@ use pathon::rhi::{Access, DeviceApi, Format, PhysicalSize};
 use pathon_golden::{GoldenImage, read_texture};
 
 use super::camera::FlyCamera;
-use super::session::{Session, viewer_builder};
+use super::session::Session;
+use super::settings::ViewerSettings;
+use super::stack::ViewerConfig;
 use crate::gltf_loader::LoadedScene;
 
-const SCREENSHOT_FORMAT: Format = Format::Rgba8UnormSrgb;
+pub(super) const SCREENSHOT_FORMAT: Format = Format::Rgba8UnormSrgb;
 
 #[derive(Clone, Debug)]
 pub struct ScreenshotRequest {
@@ -27,6 +29,11 @@ pub struct ScreenshotRequest {
     pub vertical_fov_degrees: Option<f32>,
     pub exposure_stops: f32,
     pub sun_shadows: bool,
+    pub auto_exposure: bool,
+    pub bloom: bool,
+    /// Replace the defaults of `ViewerSettings` when set.
+    pub environment_intensity: Option<f32>,
+    pub sky_intensity: Option<f32>,
 }
 
 impl Default for ScreenshotRequest {
@@ -40,7 +47,50 @@ impl Default for ScreenshotRequest {
             vertical_fov_degrees: None,
             exposure_stops: 0.0,
             sun_shadows: true,
+            auto_exposure: false,
+            bloom: true,
+            environment_intensity: None,
+            sky_intensity: None,
         }
+    }
+}
+
+impl ScreenshotRequest {
+    /// The settings a session starts from, with this request's changes.
+    pub fn settings(&self) -> ViewerSettings {
+        let mut settings = ViewerSettings::default();
+        settings.adjust_exposure(self.exposure_stops * 2.0);
+        settings.sun_shadows = self.sun_shadows;
+        settings.auto_exposure = self.auto_exposure;
+        settings.bloom = self.bloom;
+        settings.environment_intensity = self.environment_intensity.unwrap_or(settings.environment_intensity);
+        settings.sky_intensity = self.sky_intensity.unwrap_or(settings.sky_intensity);
+        settings
+    }
+
+    /// Puts the free camera of `session` where the request wants it.
+    pub fn place_camera(&self, session: &mut Session) -> Result<(), String> {
+        if let Some(index) = self.camera
+            && !session.use_scene_camera(index)
+        {
+            return Err(format!("the file has no camera {index}"));
+        }
+        if let Some((eye, target)) = self.eye_and_target {
+            session.camera = FlyCamera::new(eye, target - eye, session.camera.vertical_fov, session.camera.speed);
+        }
+        if let Some(degrees) = self.vertical_fov_degrees {
+            session.camera.vertical_fov = degrees.to_radians();
+        }
+        Ok(())
+    }
+
+    pub fn render_size(&self) -> PhysicalSize {
+        let factor = self.supersample.max(1);
+        PhysicalSize::new(self.width * factor, self.height * factor)
+    }
+
+    pub fn aspect_ratio(&self) -> f32 {
+        self.width as f32 / self.height.max(1) as f32
     }
 }
 
@@ -112,35 +162,28 @@ pub fn write_png(path: &Path, image: &GoldenImage) -> Result<(), String> {
 }
 
 /// Renders `scene` once and returns the picture (already averaged down when supersampling).
-pub fn render_screenshot(scene: &LoadedScene, request: &ScreenshotRequest) -> Result<GoldenImage, String> {
-    let renderer = viewer_builder().build().map_err(|error| error.to_string())?;
+pub fn render_screenshot(
+    scene: &LoadedScene,
+    config: &ViewerConfig,
+    request: &ScreenshotRequest,
+) -> Result<GoldenImage, String> {
+    let renderer = config.builder().build().map_err(|error| error.to_string())?;
     log::info!("adapter: {}", renderer.device().caps().adapter.name);
-    let mut session = Session::new(renderer, scene).map_err(|error| error.to_string())?;
-    if let Some(index) = request.camera
-        && !session.use_scene_camera(index)
-    {
-        return Err(format!("the file has no camera {index}"));
-    }
-    if let Some((eye, target)) = request.eye_and_target {
-        session.camera = FlyCamera::new(eye, target - eye, session.camera.vertical_fov, session.camera.speed);
-    }
-    if let Some(degrees) = request.vertical_fov_degrees {
-        session.camera.vertical_fov = degrees.to_radians();
-    }
-    session.settings.adjust_exposure(request.exposure_stops * 2.0);
-    session.settings.sun_shadows = request.sun_shadows;
+    let mut session = Session::new(renderer, scene, config).map_err(|error| error.to_string())?;
+    request.place_camera(&mut session)?;
+    session.settings = request.settings();
 
-    let factor = request.supersample.max(1);
-    let size = PhysicalSize::new(request.width * factor, request.height * factor);
     let target = session
         .renderer
-        .add_offscreen_target(size, SCREENSHOT_FORMAT)
+        .add_offscreen_target(request.render_size(), SCREENSHOT_FORMAT)
         .map_err(|error| error.to_string())?;
-    let aspect = request.width as f32 / request.height.max(1) as f32;
-    let report = session.render(target, aspect).map_err(|error| error.to_string())?;
+    let report = session
+        .render(target, request.aspect_ratio())
+        .map_err(|error| error.to_string())?;
     for diagnostic in &report.diagnostics {
         log::warn!("{diagnostic}");
     }
+    // The first frame of a target jumps straight to the automatic exposure, so one frame is the settled picture.
     let texture = session
         .renderer
         .target_texture(target)
@@ -148,7 +191,7 @@ pub fn render_screenshot(scene: &LoadedScene, request: &ScreenshotRequest) -> Re
     let picture = read_texture(session.renderer.device().as_ref(), texture, Access::SAMPLED)
         .map_err(|error| error.to_string())?;
     log::info!("{}", session.describe());
-    downsample(&picture, factor)
+    downsample(&picture, request.supersample.max(1))
 }
 
 #[cfg(test)]

@@ -54,3 +54,6 @@ impl Lcg {
 }
 
 pub fn _unused(_: BufferCopy) {}
+
+pub mod probe;
+pub mod scene;

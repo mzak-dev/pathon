@@ -2044,6 +2044,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "pathon-debug"
+version = "0.0.1"
+dependencies = [
+ "bytemuck",
+ "pathon-api",
+ "pathon-core",
+ "pathon-golden",
+ "pathon-rhi",
+ "pathon-test",
+]
+
+[[package]]
 name = "pathon-devtools"
 version = "0.0.1"
 dependencies = [

@@ -14,6 +14,7 @@ Crate `examples/` gra rolę hosta, więc wolno mu używać wgpu i winit wprost (
 | `scene_extract` | M4-02 | — | host z własnym `Vec` obiektów kopiuje je do render worlda (`Scene::extract`): spawn, ruch części obiektów, despawn; log pokazuje listę zmian do wgrania, `previous_model`, mapowanie `MeshId` ↔ `MeshHandle` i odrzucony stary uchwyt ([pathon-scene](crates/pathon-scene.md)); bez GPU i okna |
 | `texture_load` | M4-13 | — | tekstura sRGB przez `TextureLoader`: wybór formatu według `Caps` i mipmapy w compute; szachownica pokazuje uśrednianie w świetle liniowym (każdy mip 188, nie 128), wynik jako log ([pathon-texture](crates/pathon-texture.md)); bez rendera i okna, na samym `Device` |
 | `material_sphere` | M4-03 | — | siatka 5 × 3 kul z materiałem standardowym (dielektryk, metal, lakier z clearcoatem; chropowatość rośnie w kolumnach), jedno światło kierunkowe i stały ambient zamiast IBL; wynik do pliku PNG (argument, domyślnie `material_sphere.png`), `cargo run -p pathon-examples --bin material_sphere` ([pathon-material](crates/pathon-material.md)); bez rendera i okna, na samym `Device` |
+| `gltf_viewer` | M4-10 | C | scena testowa glTF (classroom z [scenes.md](scenes.md)) w oknie z kamerą swobodną albo jedna klatka offscreen do PNG (`--screenshot`); loader glTF, wgranie do `pathon-mesh` / `-texture` / `-material` / `-scene` i własna paczka rysująca (cień słońca, forward ze światłami punktowymi, tonemapping ACES); opis niżej |
 | `host_foreign_device` | M2-19 | B | host tworzy urządzenie i swapchain; pathon przyjmuje urządzenie, renderuje do tekstury hosta, host kopiuje ją na ekran |
 
 ```sh
@@ -25,6 +26,40 @@ Przykłady okienkowe zatrzymują się same, gdy ustawisz `PATHON_EXIT_AFTER_FRAM
 ```sh
 PATHON_EXIT_AFTER_FRAMES=120 cargo run -p pathon-examples --bin clear
 ```
+
+## Viewer sceny testowej (`gltf_viewer`)
+
+Loader glTF 2.0 (`examples/src/gltf_loader*`, crate `gltf` plus `png` i `zune-jpeg`) żyje wyłącznie w `examples/`: rdzeń i paczki nie znają plików. Loader czyta `.glb` / `.gltf` (bufory i obrazy z `data:`, z pliku obok albo z fragmentu GLB) i nie dotyka GPU:
+
+| Co | Dokąd trafia |
+| --- | --- |
+| prymitywy trójkątów | `CpuMesh` w układzie `VertexLayout::standard()`; brakujące normalne liczone z ścian, brakujące tangenty z gradientów UV (Lengyel, `w` = znak bitangenta, zgodnie z konwencją glTF: +V w dół) |
+| obrazy PNG / JPEG | dekodowane równolegle (`std::thread::scope`) do RGBA8; dekodery tylko tu, `pathon-texture` bierze surowe teksele |
+| materiały | `StandardMaterial`: metallic-roughness, `KHR_materials_{emissive_strength, ior, specular, transmission, volume, clearcoat}`, `KHR_texture_transform` (macierz 2×2 + offset na teksturę; normalna i okluzja pożyczają transformację base color, bo crate `gltf` nie wystawia jej dla tych typów) |
+| węzły | spłaszczone do macierzy świata, jedna instancja na prymityw; światła i kamery bez skali |
+| `KHR_lights_punctual` | `pathon_scene::Light`: lux dla kierunkowych, kandele × 4π → lumeny dla punktowych i reflektorów |
+| `<plik>.scene.json` obok pliku | tylko flaga `main` kamery (domyślna kamera) |
+
+`viewer::upload` wgrywa to przez crate'y pathon: meshe do `GeometryPool`, obrazy przez `TextureLoader` (widok sRGB dla kolorów, mipmapy w compute), materiały do `MaterialTable`, instancje, światła i kamery do `Scene::extract`. Paczka `ViewerPack` czyta migawkę sceny z `Shared` i rysuje trzema passami: cień słońca (mapa 4096², PCF 3×3, kierunkowe światło jest jedno), forward (`material::standard::{load_surface, evaluate}` dla każdego światła sceny, ambient półsferyczny w miejsce IBL, materiały przezroczyste i szkło sortowane od tyłu z blendem premultiplied) i tonemapping ACES do celu. Ekspozycja domyślnie 1/683 ([scenes.md](scenes.md)), emisja materiałów mnożona przez 683 (Blender podaje ją w watach, światła w lumenach).
+
+**Tymczasowe elementy**, które zastępują kolejne zadania: tekstury przez bind group na materiał (hook `texture_source`, profil „Web”; M4-04 podstawi `binding_array` na Desktopie), ambient zamiast IBL (M4-06), jeden cień słońca zamiast kaskad (M4-07), tonemapping w shaderze viewera (M4-09), forward ze światłami w pętli (M4-05 daje klastry). Szkło (`transmission`) jest rysowane jako blend, bez załamania.
+
+```sh
+cargo run --release -p pathon-examples --bin gltf_viewer -- test-assets/classroom/classroom-lite.glb
+PATHON_TEST_SCENE=test-assets/classroom/classroom.glb cargo run --release -p pathon-examples --bin gltf_viewer
+```
+
+Sterowanie: WASD albo strzałki (ruch), Q / E (dół, góra), Shift (szybko), przeciągnięcie myszą (rozglądanie), kółko (prędkość), 1–9 (kamery z pliku), `+` / `-` (ekspozycja o pół stopnia), `[` / `]` (ambient), T (cień słońca), I (stan do logu), Esc (koniec).
+
+Tryb bez okna renderuje jedną klatkę offscreen (`Rgba8UnormSrgb`) i zapisuje PNG; tak powstały zrzuty w `docs/scenes/`:
+
+```sh
+cargo run --release -p pathon-examples --bin gltf_viewer -- test-assets/classroom/classroom-lite.glb   --screenshot docs/scenes/classroom-lite-0.png --camera 0 --size 960x540 --supersample 2
+```
+
+`--camera N` to numer z logu (kolejność z pliku; `renderCam` jest główną), `--ev` przesuwa ekspozycję o stopnie, `--no-shadows` wyłącza cień słońca, `--supersample N` renderuje N razy większy obraz i uśrednia go w świetle liniowym.
+
+Testy loadera (`cargo test -p pathon-examples --lib`) budują scenę syntetyczną w pamięci (trójkąt, materiał z teksturą PNG w base64, światło, kamera) i liczą zasoby; `PATHON_TEST_SCENE=…/classroom-lite.glb` dokłada test prawdziwej sceny (bez zmiennej test się pomija z komunikatem).
 
 ## Przykład webowy
 

@@ -1926,12 +1926,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "pathon-bench"
+version = "0.0.1"
+dependencies = [
+ "toml",
+]
+
+[[package]]
+name = "pathon-bindless"
+version = "0.0.1"
+dependencies = [
+ "bytemuck",
+ "pathon-api",
+ "pathon-golden",
+ "pathon-material",
+ "pathon-mesh",
+ "pathon-rhi",
+ "pathon-shader",
+ "pathon-texture",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "pathon-core"
 version = "0.0.1"
 dependencies = [
  "bytemuck",
  "divan",
  "pathon-api",
+ "pathon-bench",
  "pathon-diag",
  "pathon-golden",
  "pathon-graph",
@@ -1987,10 +2010,13 @@ dependencies = [
  "gltf",
  "log",
  "pathon",
+ "pathon-bindless",
  "pathon-devtools",
  "pathon-golden",
+ "pathon-ibl",
  "pathon-material",
  "pathon-mesh",
+ "pathon-post",
  "pathon-profile",
  "pathon-rhi-wgpu",
  "pathon-scene",
@@ -2026,6 +2052,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "pathon-ibl"
+version = "0.0.1"
+dependencies = [
+ "bytemuck",
+ "pathon-api",
+ "pathon-core",
+ "pathon-golden",
+ "pathon-material",
+ "pathon-rhi",
+ "pathon-shader",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "pathon-material"
 version = "0.0.1"
 dependencies = [
@@ -2043,6 +2083,7 @@ version = "0.0.1"
 dependencies = [
  "bytemuck",
  "pathon-api",
+ "pathon-bench",
  "pathon-rhi",
  "thiserror 2.0.21",
 ]
@@ -2064,6 +2105,17 @@ dependencies = [
  "wasm-bindgen",
  "web-sys",
  "winit",
+]
+
+[[package]]
+name = "pathon-post"
+version = "0.0.1"
+dependencies = [
+ "bytemuck",
+ "pathon-api",
+ "pathon-core",
+ "pathon-golden",
+ "pathon-rhi",
 ]
 
 [[package]]
@@ -2132,6 +2184,7 @@ dependencies = [
  "bitflags 2.13.2",
  "divan",
  "pathon-api",
+ "pathon-bench",
  "thiserror 2.0.21",
 ]
 
@@ -3959,7 +4012,10 @@ checksum = "b9cc00251562a284751c9973bace760d86c0276c471b4be569fe6b068ee97a56"
 name = "xtask"
 version = "0.0.1"
 dependencies = [
+ "pathon-bench",
+ "serde",
  "serde_json",
+ "toml",
 ]
 
 [[package]]

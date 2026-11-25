@@ -1,7 +1,8 @@
 // What the host changes between frames; it reaches the pack through `Renderer::shared_mut`.
 
 /// Blender renders the classroom at exposure 0 with lights converted at 683 lm/W (docs/scenes.md), so 1/683 is its
-/// exposure. The viewer starts one stop above: ACES takes the mid-tones down where Blender's Standard transform does not.
+/// exposure. The viewer starts one stop above: ACES takes the mid-tones down where Blender's Standard transform does
+/// not.
 pub const DEFAULT_EXPOSURE: f32 = 2.0 / 683.0;
 const EXPOSURE_STEP_STOPS: f32 = 0.5;
 

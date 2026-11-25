@@ -9,7 +9,8 @@ const fn code(code: &'static str, title: &'static str) -> CodeInfo {
 }
 
 // R: RHI, G: frame graph, F: render features (packs), P: platform, M: meshes and geometry pool, S: shaders,
-// T: profiling, N: scene, X: textures, Y: materials, H: HDR output. Every entry needs docs/diag/<code>.md.
+// T: profiling, N: scene, X: textures, Y: materials, H: HDR output,
+// K: hot reload of shaders. Every entry needs docs/diag/<code>.md.
 pub const CODES: &[CodeInfo] = &[
     code("R0001", "no adapter or device could be created"),
     code("R0002", "adapter lacks required features"),
@@ -89,6 +90,13 @@ pub const CODES: &[CodeInfo] = &[
     code("S0111", "shader composition error"),
     code("S0201", "stored pipeline cache not used"),
     code("S0202", "pipeline cache could not be saved"),
+    code("K0001", "shader file outside the watched directory"),
+    code("K0002", "shader file larger than the hot reload limit"),
+    code("K0003", "shader file is not readable UTF-8 text"),
+    code("K0004", "shader file name cannot name a shader or module"),
+    code("K0005", "shader source nested or imported too deeply"),
+    code("K0006", "shader reload rejected, previous version kept"),
+    code("K0007", "file watcher unavailable or lost events"),
 ];
 
 pub fn is_registered(code: &str) -> bool {

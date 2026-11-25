@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 use pathon_rhi_types::{
     ComputePipelineDesc, ComputePipelineId, DeviceApi, RenderPipelineDesc, RenderPipelineId, Resource, RhiError,
-    ShaderStage,
+    ShaderModuleId, ShaderStage,
 };
 
 /// Remembers pipelines by their description; one cache serves one device.
@@ -42,6 +42,30 @@ impl PipelineCache {
         self.compute.insert(key.into_owned(), id);
         Ok(id)
     }
+
+    /// Forgets every pipeline built from one of `modules` (the ids `ShaderLibrary::add_module` and friends hand back
+    /// when a source changes) and returns them for the caller to destroy once the GPU is done with them.
+    pub fn evict_modules(&mut self, modules: &[ShaderModuleId]) -> Vec<Resource> {
+        if modules.is_empty() {
+            return Vec::new();
+        }
+        let mut evicted = Vec::new();
+        self.render.retain(|desc, id| {
+            let uses_module = render_uses_module(desc, modules);
+            if uses_module {
+                evicted.push(Resource::from(*id));
+            }
+            !uses_module
+        });
+        self.compute.retain(|desc, id| {
+            let uses_module = modules.contains(&desc.shader.module);
+            if uses_module {
+                evicted.push(Resource::from(*id));
+            }
+            !uses_module
+        });
+        evicted
+    }
 }
 
 impl PipelineCache {
@@ -67,6 +91,14 @@ impl PipelineCache {
         let compute = self.compute.drain().map(|(_, id)| Resource::from(id));
         render.chain(compute).collect()
     }
+}
+
+pub(crate) fn render_uses_module(desc: &RenderPipelineDesc, modules: &[ShaderModuleId]) -> bool {
+    modules.contains(&desc.vertex.module)
+        || desc
+            .fragment
+            .as_ref()
+            .is_some_and(|stage| modules.contains(&stage.module))
 }
 
 // Borrowed when the constants are already sorted, so a lookup that hits does not clone the description.
@@ -95,4 +127,51 @@ fn constants_sorted(stage: &ShaderStage) -> bool {
 
 fn sort_constants(stage: &mut ShaderStage) {
     stage.constants.sort_by_key(|(name, _)| *name);
+}
+
+#[cfg(test)]
+mod tests {
+    use pathon_rhi::Device;
+    use pathon_rhi_types::ShaderModuleDesc;
+
+    use super::*;
+
+    fn compute_desc(module: ShaderModuleId) -> ComputePipelineDesc {
+        ComputePipelineDesc {
+            label: "evicted",
+            bind_group_layouts: vec![],
+            shader: ShaderStage {
+                module,
+                entry_point: "main",
+                constants: vec![],
+            },
+            immediate_size: 0,
+        }
+    }
+
+    #[test]
+    fn evicting_a_module_forgets_only_the_pipelines_built_from_it() {
+        let device = Device::null();
+        let kept = device
+            .create_shader_module(&ShaderModuleDesc {
+                label: "kept",
+                wgsl: "@compute @workgroup_size(1) fn main() {}",
+            })
+            .expect("module");
+        let dropped = device
+            .create_shader_module(&ShaderModuleDesc {
+                label: "dropped",
+                wgsl: "@compute @workgroup_size(1) fn main() {}",
+            })
+            .expect("module");
+        let mut cache = PipelineCache::new();
+        let kept_pipeline = cache.compute(&device, &compute_desc(kept)).expect("pipeline");
+        let dropped_pipeline = cache.compute(&device, &compute_desc(dropped)).expect("pipeline");
+
+        let evicted = cache.evict_modules(&[dropped]);
+
+        assert_eq!(evicted, [Resource::from(dropped_pipeline)]);
+        assert_eq!(cache.cached_compute(&compute_desc(kept)), Some(kept_pipeline));
+        assert_eq!(cache.cached_compute(&compute_desc(dropped)), None);
+    }
 }

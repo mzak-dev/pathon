@@ -11,6 +11,7 @@ mod locate;
 mod overrides;
 mod pipeline_cache;
 mod reflect;
+mod snapshot;
 mod text;
 
 use std::collections::BTreeMap;
@@ -28,6 +29,7 @@ pub use overrides::check_pipeline_constants;
 use pathon_rhi_types::RhiError;
 pub use pipeline_cache::PipelineCache;
 pub use reflect::reflect_bind_groups;
+pub use snapshot::LibrarySnapshot;
 use wesl::resolver::VirtualResolver;
 use wesl::syntax::ModulePath;
 use wesl::{Compiler, Feature, Features};

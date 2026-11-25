@@ -19,6 +19,7 @@ pathon-core = { path = "crates/pathon-core" }
 pathon-diag = { path = "crates/pathon-diag" }
 pathon-golden = { path = "crates/pathon-golden" }
 pathon-graph = { path = "crates/pathon-graph" }
+pathon-hot = { path = "tools/pathon-hot" }
 pathon-material = { path = "crates/pathon-material" }
 pathon-mesh = { path = "crates/pathon-mesh" }
 pathon-platform = { path = "crates/pathon-platform" }
@@ -42,6 +43,8 @@ divan = "0.1"
 glam = { version = "0.34", features = ["bytemuck"] }
 log = "0.4"
 naga = { version = "30", default-features = false, features = ["wgsl-in"] }
+# Native only (pathon-hot); browsers have no files to watch.
+notify = "8"
 # Without "underline-color": its weak `ratatui-termwiz?/` feature makes cargo metadata list termwiz (WTFPL) as resolved.
 ratatui = { version = "0.30", default-features = false, features = ["crossterm", "layout-cache"] }
 png = "0.18"

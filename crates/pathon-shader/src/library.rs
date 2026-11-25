@@ -1,8 +1,9 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 
 use pathon_rhi_types::{DeviceApi, ShaderModuleDesc, ShaderModuleId};
 
+use crate::snapshot::LibrarySnapshot;
 use crate::{Composed, ShaderComposer, ShaderDiagnostic, ShaderError, ShaderFeatures};
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -15,8 +16,8 @@ pub struct ShaderKey {
 ///
 /// Registering a new module path or root name leaves every cached module alone. Replacing a module or root with
 /// different source evicts all cached modules and composed sources (any root may import the module) and hands the
-/// module ids back, because the library has no device to destroy them with; pipelines in `PipelineCache` built from
-/// them stay until M3-06.
+/// module ids back, because the library has no device to destroy them with; pipelines built from them stay in
+/// `PipelineCache` until `PipelineCache::evict_modules` is given those ids (`pathon-hot` does that, ADR-0040).
 #[derive(Debug, Default)]
 pub struct ShaderLibrary {
     composer: Arc<ShaderComposer>,
@@ -28,10 +29,19 @@ pub struct ShaderLibrary {
     generation: u64,
 }
 
-#[derive(Debug)]
-struct Root {
-    source: Arc<str>,
-    file: Arc<str>,
+#[derive(Clone, Debug)]
+pub(crate) struct Root {
+    pub(crate) source: Arc<str>,
+    pub(crate) file: Arc<str>,
+}
+
+impl Root {
+    pub(crate) fn new(source: &str, file: &str) -> Self {
+        Self {
+            source: Arc::from(source),
+            file: Arc::from(file),
+        }
+    }
 }
 
 /// Everything composing one permutation needs, detached from the library so it can run on another thread.
@@ -78,11 +88,7 @@ impl ShaderLibrary {
 
     /// Like [`Self::add_root`], with the file the source came from, which diagnostics show instead of the root name.
     pub fn add_root_file(&mut self, name: &str, source: &str, file: &str) -> Vec<ShaderModuleId> {
-        let root = Root {
-            source: Arc::from(source),
-            file: Arc::from(file),
-        };
-        let previous = self.roots.insert(name.to_owned(), root);
+        let previous = self.roots.insert(name.to_owned(), Root::new(source, file));
         self.evict_if_changed(previous.as_ref().map(|root| &*root.source), source)
     }
 
@@ -127,6 +133,14 @@ impl ShaderLibrary {
             .map_err(ShaderError::Rhi)?;
         self.modules.insert(key.clone(), id);
         Ok(id)
+    }
+
+    /// What the library composes from and has built, to try a change on another thread before applying it.
+    #[must_use]
+    pub fn snapshot(&self) -> LibrarySnapshot {
+        let keys: HashSet<&ShaderKey> = self.modules.keys().chain(self.composed.keys()).collect();
+        let keys = keys.into_iter().cloned().collect();
+        LibrarySnapshot::new(Arc::clone(&self.composer), self.roots.clone(), keys)
     }
 
     /// Warnings (S0106) found while composing since the last call; log them with `to_diagnostic`.

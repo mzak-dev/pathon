@@ -9,7 +9,7 @@ const fn code(code: &'static str, title: &'static str) -> CodeInfo {
 }
 
 // R: RHI, G: frame graph, F: render features (packs), P: platform, M: meshes and geometry pool, S: shaders,
-// T: profiling, N: scene, X: textures, Y: materials, H: HDR output, Q: post, B: bindless textures, I: IBL. Every entry
+// T: profiling, N: scene, X: textures, Y: materials, H: HDR output, Q: post, B: bindless textures, I: IBL, L: PBR lighting. Every entry
 // needs docs/diag/<code>.md.
 pub const CODES: &[CodeInfo] = &[
     code("R0001", "no adapter or device could be created"),
@@ -107,6 +107,12 @@ pub const CODES: &[CodeInfo] = &[
     code("I0002", "invalid environment image"),
     code("I0003", "device cannot build image-based lighting"),
     code("I0004", "environment image larger than the device allows"),
+    code("L0001", "invalid PBR settings"),
+    code("L0002", "geometry pool vertex layout does not fit the PBR shaders"),
+    code("L0003", "instance skipped: its mesh or material is unknown"),
+    code("L0004", "PBR input missing from Shared"),
+    code("L0005", "light cluster index list overflowed"),
+    code("L0006", "device cannot run the PBR passes"),
 ];
 
 pub fn is_registered(code: &str) -> bool {

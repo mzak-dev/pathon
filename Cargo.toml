@@ -23,6 +23,7 @@ pathon-ibl = { path = "crates/pathon-ibl" }
 pathon-graph = { path = "crates/pathon-graph" }
 pathon-material = { path = "crates/pathon-material" }
 pathon-mesh = { path = "crates/pathon-mesh" }
+pathon-pbr = { path = "crates/pathon-pbr" }
 pathon-platform = { path = "crates/pathon-platform" }
 pathon-platform-winit = { path = "crates/pathon-platform-winit" }
 pathon-post = { path = "crates/pathon-post" }

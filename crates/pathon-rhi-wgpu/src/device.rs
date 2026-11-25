@@ -652,6 +652,7 @@ impl DeviceApi for WgpuDevice {
 
     fn create_render_pipeline(&self, desc: &RenderPipelineDesc) -> Result<RenderPipelineId, RhiError> {
         self.caps.check_immediate_size(desc.label, desc.immediate_size)?;
+        desc.primitive.check_features(&self.caps)?;
         desc.vertex.check_constants(desc.label)?;
         if let Some(fragment) = &desc.fragment {
             fragment.check_constants(desc.label)?;
@@ -742,6 +743,7 @@ impl DeviceApi for WgpuDevice {
                     topology: convert::topology_to_wgpu(desc.primitive.topology),
                     front_face: convert::front_face_to_wgpu(desc.primitive.front_face),
                     cull_mode: convert::cull_mode_to_wgpu(desc.primitive.cull_mode),
+                    polygon_mode: convert::polygon_mode_to_wgpu(desc.primitive.polygon_mode),
                     ..wgpu::PrimitiveState::default()
                 },
                 depth_stencil,

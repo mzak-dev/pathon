@@ -1,7 +1,7 @@
 use pathon_rhi_types::{
     AddressMode, Backend, BindingType, BlendComponent, BlendFactor, BlendOperation, BlendState, BufferUsage,
     ColorWrites, CompareFunction, CullMode, DeviceType, DisplayHdr, Features, FilterMode, Format, FormatCaps,
-    FrontFace, IndexFormat, Limits, PresentMode, PrimitiveTopology, RhiError, SamplerBindingType, ShaderStages,
+    FrontFace, IndexFormat, Limits, PolygonMode, PresentMode, PrimitiveTopology, RhiError, SamplerBindingType, ShaderStages,
     StorageAccess, SurfaceCaps, SurfaceColorSpace, SurfaceColorSpaces, SurfaceFormatCaps, TextureAspect,
     TextureDimension, TextureSampleType, TextureUsage, TextureViewDimension, VertexFormat, VertexStepMode,
 };
@@ -485,6 +485,13 @@ pub(crate) fn cull_mode_to_wgpu(mode: CullMode) -> Option<wgpu::Face> {
     }
 }
 
+pub(crate) fn polygon_mode_to_wgpu(mode: PolygonMode) -> wgpu::PolygonMode {
+    match mode {
+        PolygonMode::Fill => wgpu::PolygonMode::Fill,
+        PolygonMode::Line => wgpu::PolygonMode::Line,
+    }
+}
+
 pub(crate) fn index_format_to_wgpu(format: IndexFormat) -> wgpu::IndexFormat {
     match format {
         IndexFormat::Uint16 => wgpu::IndexFormat::Uint16,
@@ -642,6 +649,21 @@ mod tests {
         assert_eq!(
             display_hdr_from_wgpu(&wgpu::DisplayHdrInfo::default()),
             DisplayHdr::default()
+        );
+    }
+
+    #[test]
+    fn polygon_modes_map_to_the_wgpu_ones_and_line_to_its_feature() {
+        assert_eq!(polygon_mode_to_wgpu(PolygonMode::Fill), wgpu::PolygonMode::Fill);
+        assert_eq!(polygon_mode_to_wgpu(PolygonMode::Line), wgpu::PolygonMode::Line);
+        assert_eq!(PolygonMode::default(), PolygonMode::Fill);
+        assert_eq!(
+            features_to_wgpu(Features::POLYGON_MODE_LINE),
+            wgpu::Features::POLYGON_MODE_LINE
+        );
+        assert_eq!(
+            features_from_wgpu(wgpu::Features::POLYGON_MODE_LINE),
+            Features::POLYGON_MODE_LINE
         );
     }
 

@@ -48,7 +48,8 @@ pub use indirect::{
 pub use maybe_send::{MaybeSend, MaybeSendSync};
 pub use pipeline::{
     BlendComponent, BlendFactor, BlendOperation, BlendState, ColorTargetState, ColorWrites, ComputePipelineDesc,
-    CullMode, DepthState, FrontFace, IndexFormat, OverrideValue, PolygonMode, PrimitiveState, PrimitiveTopology, RenderPipelineDesc,
-    ShaderModuleDesc, ShaderStage, VertexAttribute, VertexBufferLayout, VertexFormat, VertexStepMode,
+    CullMode, DepthBias, DepthState, FrontFace, IndexFormat, OverrideValue, PolygonMode, PrimitiveState, PrimitiveTopology,
+    RenderPipelineDesc, ShaderModuleDesc, ShaderStage, VertexAttribute, VertexBufferLayout, VertexFormat,
+    VertexStepMode,
 };
 pub use surface::{PhysicalSize, PresentMode, SurfaceConfig, SurfaceFrame, SurfaceTarget, WindowSource};

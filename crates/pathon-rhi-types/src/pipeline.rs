@@ -276,11 +276,51 @@ impl ColorTargetState {
     }
 }
 
+// Added to the depth of every fragment of a primitive, in the sign of the depth buffer: with reverse-Z a bias that
+// moves geometry away from the viewer is negative. `constant` counts smallest depth steps, `slope_scale` multiplies the
+// primitive's depth slope, `clamp` limits the sum (0 = no limit). The floats are stored as bits, like `OverrideValue`,
+// so a description stays `Eq + Hash`.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
+pub struct DepthBias {
+    pub constant: i32,
+    slope_scale_bits: u32,
+    clamp_bits: u32,
+}
+
+impl DepthBias {
+    pub const NONE: Self = Self {
+        constant: 0,
+        slope_scale_bits: 0,
+        clamp_bits: 0,
+    };
+
+    pub const fn new(constant: i32, slope_scale: f32, clamp: f32) -> Self {
+        Self {
+            constant,
+            slope_scale_bits: slope_scale.to_bits(),
+            clamp_bits: clamp.to_bits(),
+        }
+    }
+
+    pub const fn slope_scale(self) -> f32 {
+        f32::from_bits(self.slope_scale_bits)
+    }
+
+    pub const fn clamp(self) -> f32 {
+        f32::from_bits(self.clamp_bits)
+    }
+
+    pub const fn is_finite(self) -> bool {
+        self.slope_scale().is_finite() && self.clamp().is_finite()
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct DepthState {
     pub format: Format,
     pub write_enabled: bool,
     pub compare: CompareFunction,
+    pub bias: DepthBias,
 }
 
 impl DepthState {
@@ -290,7 +330,13 @@ impl DepthState {
             format,
             write_enabled: true,
             compare: CompareFunction::GreaterEqual,
+            bias: DepthBias::NONE,
         }
+    }
+
+    #[must_use]
+    pub const fn with_bias(self, bias: DepthBias) -> Self {
+        Self { bias, ..self }
     }
 }
 
@@ -332,6 +378,23 @@ mod tests {
         assert_eq!(OverrideValue::from(true).get(), 1.0);
         assert_eq!(OverrideValue::from(false).get(), 0.0);
         assert_eq!(OverrideValue::from(f64::NAN), OverrideValue::from(f64::NAN));
+    }
+
+    #[test]
+    fn depth_bias_round_trips_and_hashes_by_bits() {
+        let bias = DepthBias::new(-2, -1.5, 0.25);
+        assert_eq!((bias.constant, bias.slope_scale(), bias.clamp()), (-2, -1.5, 0.25));
+        assert!(bias.is_finite());
+        assert!(!DepthBias::new(0, f32::NAN, 0.0).is_finite());
+        assert_eq!(DepthBias::default(), DepthBias::NONE);
+        let states: HashSet<DepthState> = [
+            DepthState::reverse_z(Format::Depth32Float).with_bias(bias),
+            DepthState::reverse_z(Format::Depth32Float).with_bias(bias),
+            DepthState::reverse_z(Format::Depth32Float),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(states.len(), 2);
     }
 
     #[test]

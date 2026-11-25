@@ -160,6 +160,7 @@ Rdzeń nie ma własnej pętli, okna, wątku ani ECS, więc ten sam silnik i te s
 | [`pathon-diag`](docs/crates/pathon-diag.md) | diagnostyka z kodem i [stroną dla każdego kodu](docs/diag/) |
 | [`pathon-shader`](docs/crates/pathon-shader.md) | importy WGSL przez wesl: moduły `package::…`, złożone źródło dla RHI |
 | [`pathon-devtools`](docs/devtools.md) | TUI (ratatui) do podglądu klatki na żywo, poza procesem renderera |
+| [`pathon-hot`](docs/crates/pathon-hot.md) | hot-reload shaderów z dysku (notify), błędny shader zostawia poprzednią wersję |
 
 ## Testy
 
@@ -186,3 +187,5 @@ Szczegóły: [plan implementacji](docs/plan-implementacji.md) · decyzje: [docs/
 ## Licencja
 
 MIT OR Apache-2.0, do wyboru.
+
+Kod i dane przeniesione z cudzych projektów (m.in. z Filamenta, [ADR-0047](docs/adr/0047-uzywanie-kodu-filamenta.md)) wymienia [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

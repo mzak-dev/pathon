@@ -4,8 +4,8 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use pathon_rhi_types::{
     Access, AdapterInfo, Backend, BindGroupDesc, BindGroupId, BindGroupLayoutDesc, BindGroupLayoutEntry,
     BindGroupLayoutId, BindingResource, BindingType, BufferDesc, BufferId, BufferUsage, Caps, CommandList,
-    ComputePipelineDesc, ComputePipelineId, DeviceApi, DeviceType, DisplayHdr, Extent3d, Features, Format, FormatCaps,
-    FormatKind, Limits, PipelineCacheData, Pool, Profile, QuerySetDesc, QuerySetId, RenderPipelineDesc,
+    ComputePipelineDesc, ComputePipelineId, DepthState, DeviceApi, DeviceType, DisplayHdr, Extent3d, Features, Format,
+    FormatCaps, FormatKind, Limits, PipelineCacheData, Pool, Profile, QuerySetDesc, QuerySetId, RenderPipelineDesc,
     RenderPipelineId, Resource, RhiError, SamplerDesc, SamplerId, ShaderModuleDesc, ShaderModuleId, ShaderStages,
     StorageAccess, SubresourceRange, SurfaceCaps, SurfaceColorSpace, SurfaceColorSpaces, SurfaceConfig,
     SurfaceFormatCaps, SurfaceFrame, SurfaceId, SurfaceOutput, SurfaceTarget, TexelLayout, TextureCopy, TextureDesc,
@@ -569,6 +569,9 @@ impl DeviceApi for NullDevice {
         if let Some(fragment) = &desc.fragment {
             fragment.check_constants(desc.label)?;
         }
+        if let Some(depth) = &desc.depth {
+            check_depth_state(desc.label, depth)?;
+        }
         let mut state = self.lock();
         for layout in &desc.bind_group_layouts {
             if !state.layouts.contains(*layout) {
@@ -797,4 +800,23 @@ fn check_binding_usage(state: &State, label: &str, binding_use: BindingUse) -> R
             ),
         ))
     }
+}
+
+fn check_depth_state(label: &str, depth: &DepthState) -> Result<(), RhiError> {
+    if depth.format.kind() == FormatKind::Color {
+        return Err(RhiError::validation(
+            "R0109",
+            format!(
+                "pipeline '{label}': depth state uses the colour format {:?}",
+                depth.format
+            ),
+        ));
+    }
+    if !depth.bias.is_finite() {
+        return Err(RhiError::validation(
+            "R0109",
+            format!("pipeline '{label}': depth bias slope scale and clamp must be finite"),
+        ));
+    }
+    Ok(())
 }

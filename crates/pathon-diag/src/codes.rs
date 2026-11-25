@@ -9,8 +9,8 @@ const fn code(code: &'static str, title: &'static str) -> CodeInfo {
 }
 
 // R: RHI, G: frame graph, F: render features (packs), P: platform, M: meshes and geometry pool, S: shaders,
-// T: profiling, N: scene, X: textures, Y: materials, H: HDR output, Q: post, B: bindless textures, I: IBL. Every entry
-// needs docs/diag/<code>.md.
+// T: profiling, N: scene, X: textures, Y: materials, H: HDR output, Q: post, B: bindless textures, I: IBL, D: shadows,
+// L: PBR lighting, K: hot reload of shaders, W: skinning and morph targets. Every entry needs docs/diag/<code>.md.
 pub const CODES: &[CodeInfo] = &[
     code("R0001", "no adapter or device could be created"),
     code("R0002", "adapter lacks required features"),
@@ -29,7 +29,7 @@ pub const CODES: &[CodeInfo] = &[
     code("R0106", "surface frame presented without reaching PRESENT"),
     code("R0107", "bind group does not match its layout"),
     code("R0108", "buffer access out of bounds"),
-    code("R0109", "invalid texture or view description"),
+    code("R0109", "invalid texture, view or depth state description"),
     code("R0110", "empty shader module"),
     code("R0111", "surface used out of order"),
     code("R0112", "texture range outside its mips or layers"),
@@ -107,6 +107,25 @@ pub const CODES: &[CodeInfo] = &[
     code("I0002", "invalid environment image"),
     code("I0003", "device cannot build image-based lighting"),
     code("I0004", "environment image larger than the device allows"),
+    code("D0001", "shadow setting out of range repaired"),
+    code("D0002", "shadow light direction is not usable"),
+    code("D0003", "camera projection unsupported by shadow cascades"),
+    code("L0001", "invalid PBR settings"),
+    code("L0002", "geometry pool vertex layout does not fit the PBR shaders"),
+    code("L0003", "instance skipped: its mesh or material is unknown"),
+    code("L0004", "PBR input missing from Shared"),
+    code("L0005", "light cluster index list overflowed"),
+    code("L0006", "device cannot run the PBR passes"),
+    code("K0001", "shader file outside the watched directory"),
+    code("K0002", "shader file larger than the hot reload limit"),
+    code("K0003", "shader file is not readable UTF-8 text"),
+    code("K0004", "shader file name cannot name a shader or module"),
+    code("K0005", "shader source nested or imported too deeply"),
+    code("K0006", "shader reload rejected, previous version kept"),
+    code("K0007", "file watcher unavailable or lost events"),
+    code("W0001", "skinned instance does not fit its buffers"),
+    code("W0002", "invalid morph target data"),
+    code("W0003", "deformed output buffers do not fit the device"),
 ];
 
 pub fn is_registered(code: &str) -> bool {

@@ -725,7 +725,11 @@ impl DeviceApi for WgpuDevice {
                     depth_write_enabled: Some(depth.write_enabled),
                     depth_compare: Some(convert::compare_to_wgpu(depth.compare)),
                     stencil: wgpu::StencilState::default(),
-                    bias: wgpu::DepthBiasState::default(),
+                    bias: wgpu::DepthBiasState {
+                        constant: depth.bias.constant,
+                        slope_scale: depth.bias.slope_scale(),
+                        clamp: depth.bias.clamp(),
+                    },
                 })
             })
             .transpose()?;

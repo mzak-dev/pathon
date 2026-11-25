@@ -1630,3 +1630,53 @@ fn line_polygon_mode_needs_its_feature() {
     let with = NullDevice::with_features(Features::POLYGON_MODE_LINE);
     pipeline_with_polygon_mode(&with, PolygonMode::Line).expect("line with the feature");
 }
+
+fn depth_pipeline(device: &NullDevice, depth: pathon_rhi_types::DepthState) -> Result<(), RhiError> {
+    let module = device
+        .create_shader_module(&ShaderModuleDesc {
+            label: "depth",
+            wgsl: "@vertex fn vs() -> @builtin(position) vec4<f32> { return vec4<f32>(0.0); }",
+        })
+        .expect("module");
+    device
+        .create_render_pipeline(&RenderPipelineDesc {
+            label: "depth",
+            bind_group_layouts: vec![],
+            vertex: ShaderStage {
+                module,
+                entry_point: "vs",
+                constants: vec![],
+            },
+            vertex_buffers: vec![],
+            fragment: None,
+            color_targets: vec![],
+            primitive: PrimitiveState::default(),
+            depth: Some(depth),
+            sample_count: 1,
+            immediate_size: 0,
+        })
+        .map(|_| ())
+}
+
+#[test]
+fn a_depth_only_pipeline_with_a_finite_bias_is_accepted() {
+    let device = NullDevice::new();
+    let state = pathon_rhi_types::DepthState::reverse_z(Format::Depth32Float)
+        .with_bias(pathon_rhi_types::DepthBias::new(-2, -2.0, 0.0));
+    depth_pipeline(&device, state).expect("valid depth state");
+}
+
+#[test]
+fn a_non_finite_depth_bias_is_r0109() {
+    let device = NullDevice::new();
+    let state = pathon_rhi_types::DepthState::reverse_z(Format::Depth32Float)
+        .with_bias(pathon_rhi_types::DepthBias::new(0, f32::INFINITY, 0.0));
+    assert_eq!(code(depth_pipeline(&device, state)), "R0109");
+}
+
+#[test]
+fn a_colour_format_as_depth_state_is_r0109() {
+    let device = NullDevice::new();
+    let state = pathon_rhi_types::DepthState::reverse_z(Format::Rgba8Unorm);
+    assert_eq!(code(depth_pipeline(&device, state)), "R0109");
+}

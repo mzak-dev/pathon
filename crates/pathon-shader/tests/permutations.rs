@@ -373,6 +373,87 @@ mod shader_library {
         assert_ne!(library.module(&device, &key("main", &[])).expect("new"), old);
     }
 
+    const USES_ANSWER: &str =
+        "import package::answer::answer;\n@compute @workgroup_size(1) fn main() { _ = answer(); }";
+    const USES_MIDDLE: &str = "import package::middle::twice;\n@compute @workgroup_size(1) fn main() { _ = twice(); }";
+    const STANDALONE: &str = "@compute @workgroup_size(1) fn main() {}";
+
+    #[test]
+    fn replacing_a_module_evicts_only_the_roots_that_reach_it() {
+        let device = Device::null();
+        let mut library = ShaderLibrary::new();
+        library
+            .add_module("answer", "fn answer() -> u32 { return 1u; }")
+            .expect("module");
+        library
+            .add_module(
+                "middle",
+                "import package::answer::answer;\nfn twice() -> u32 { return answer() * 2u; }",
+            )
+            .expect("module");
+        library.add_root("direct", USES_ANSWER);
+        library.add_root("indirect", USES_MIDDLE);
+        library.add_root("alone", STANDALONE);
+        let direct = library.module(&device, &key("direct", &[])).expect("direct");
+        let indirect = library.module(&device, &key("indirect", &[])).expect("indirect");
+        let alone = library.module(&device, &key("alone", &[])).expect("alone");
+
+        let mut evicted = library
+            .add_module("answer", "fn answer() -> u32 { return 5u; }")
+            .expect("replaced");
+        evicted.sort_by_key(|id| format!("{id:?}"));
+        let mut expected = [direct, indirect];
+        expected.sort_by_key(|id| format!("{id:?}"));
+
+        assert_eq!(evicted, expected);
+        assert_eq!(library.module(&device, &key("alone", &[])).expect("kept"), alone);
+        assert_ne!(library.module(&device, &key("direct", &[])).expect("rebuilt"), direct);
+    }
+
+    #[test]
+    fn replacing_or_removing_a_root_evicts_only_that_root() {
+        let device = Device::null();
+        let mut library = ShaderLibrary::new();
+        library.add_root("first", STANDALONE);
+        library.add_root("second", "@compute @workgroup_size(2) fn main() {}");
+        let first = library.module(&device, &key("first", &[])).expect("first");
+        let second = library.module(&device, &key("second", &[])).expect("second");
+
+        assert_eq!(
+            library.add_root("first", "@compute @workgroup_size(3) fn main() {}"),
+            [first]
+        );
+        assert_eq!(library.remove_root("second"), [second]);
+        assert_eq!(library.remove_root("second"), no_evictions());
+    }
+
+    #[test]
+    fn a_relative_import_makes_a_module_change_evict_every_root() {
+        let device = Device::null();
+        let mut library = ShaderLibrary::new();
+        library
+            .add_module("base", "fn base() -> u32 { return 1u; }")
+            .expect("module");
+        library
+            .add_module(
+                "a::user",
+                "import super::super::base::base;\nfn user() -> u32 { return base(); }",
+            )
+            .expect("module");
+        library.add_root("alone", STANDALONE);
+        let alone = library.module(&device, &key("alone", &[])).expect("alone");
+
+        let evicted = library
+            .add_module("base", "fn base() -> u32 { return 2u; }")
+            .expect("replaced");
+
+        assert_eq!(
+            evicted,
+            [alone],
+            "the text cannot say who uses `base`, so everything goes"
+        );
+    }
+
     #[test]
     fn a_module_creation_error_is_wrapped_and_the_same_key_succeeds_afterwards() {
         let device = FlakyDevice::new();

@@ -120,6 +120,20 @@ impl<'a> Sources<'a> {
         }
     }
 
+    /// Where `needle` first appears as a whole word, in the blamed file when it is there and else in the one file that
+    /// has it: wesl blames the importing file for an undefined name inside a module.
+    pub(crate) fn find_word_near(&self, blamed: Option<&SourceFile<'a>>, needle: &str) -> Option<SourceLocation> {
+        let in_blamed = blamed.and_then(|file| Self::find_word(file, needle, 0).map(|range| (file, range)));
+        let (file, range) = in_blamed.or_else(|| {
+            let mut holders = std::iter::once(&self.root)
+                .chain(self.modules.values())
+                .filter_map(|file| Self::find_word(file, needle, 0).map(|range| (file, range)));
+            let first = holders.next()?;
+            holders.next().is_none().then_some(first)
+        })?;
+        Some(Self::location(file, &range, true))
+    }
+
     /// The first occurrence of `needle` as a whole word in `file`, for errors wesl reports without a position.
     pub(crate) fn find_word(file: &SourceFile<'_>, needle: &str, from: usize) -> Option<Range<usize>> {
         let source = file.source;

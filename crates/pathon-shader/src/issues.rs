@@ -395,8 +395,7 @@ fn validate_error(error: &ValidateError, detail: Option<&Detail>, sources: &Sour
                 .at(declaration_location(detail, sources, 1))
         }
         ValidateError::UndefinedSymbol(name) => {
-            let location = detail_file(detail, sources)
-                .and_then(|file| Sources::find_word(file, name, 0).map(|range| Sources::location(file, &range, true)));
+            let location = sources.find_word_near(detail_file(detail, sources), name);
             ShaderDiagnostic::error(UNKNOWN_NAME, format!("cannot find `{name}` in this scope")).at(location)
         }
         other => generic(&other.to_string(), detail, sources),

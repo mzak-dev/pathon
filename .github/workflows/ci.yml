@@ -55,7 +55,7 @@ jobs:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
       - name: Core builds for the web (single thread, no platform)
-        run: cargo check --target wasm32-unknown-unknown -p pathon-core -p pathon-test -p pathon-shader -p pathon-mesh -p pathon-profile -p pathon-scene -p pathon -p pathon-texture -p pathon-material -p pathon-post -p pathon-bindless -p pathon-ibl --no-default-features
+        run: cargo check --target wasm32-unknown-unknown -p pathon-core -p pathon-test -p pathon-shader -p pathon-mesh -p pathon-profile -p pathon-scene -p pathon -p pathon-texture -p pathon-material -p pathon-post -p pathon-bindless -p pathon-ibl -p pathon-shadow -p pathon-pbr -p pathon-skin --no-default-features
       - name: Lint the web runner, platform and example
         run: cargo clippy --target wasm32-unknown-unknown -p pathon -p pathon-platform-winit -p pathon-example-web -- -D warnings
       - uses: taiki-e/install-action@v2
@@ -182,11 +182,15 @@ jobs:
         shell: bash
         run: |
           cargo test -p pathon-golden --features gpu-tests -- --test-threads=1 --nocapture
+          cargo test -p pathon-examples --features gpu-tests --test hot_reload -- --test-threads=1 --nocapture
           cargo test -p pathon-core --features gpu-tests --test vertical_slice_gpu unlit_cube_matches_its_golden_image -- --test-threads=1 --nocapture
           cargo test -p pathon-texture --features gpu-tests --test bc7_fallback -- --test-threads=1 --nocapture
           cargo test -p pathon-post --features gpu-tests --test chain_gpu -- --test-threads=1 --nocapture
           cargo test -p pathon-bindless --features gpu-tests --test same_scene -- --test-threads=1 --nocapture
           cargo test -p pathon-ibl --features gpu-tests --test golden_metals -- --test-threads=1 --nocapture
+          cargo test -p pathon-shadow --features gpu-tests --test golden_shadows -- --test-threads=1 --nocapture
+          cargo test -p pathon-pbr --features gpu-tests --test golden_scene -- --test-threads=1 --nocapture
+          cargo test -p pathon-skin --features gpu-tests --test golden_arm -- --test-threads=1 --nocapture
       - name: Golden image artifacts
         if: failure()
         uses: actions/upload-artifact@v4

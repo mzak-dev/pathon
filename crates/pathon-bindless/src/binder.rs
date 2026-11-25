@@ -257,6 +257,23 @@ impl TextureBinder {
         Ok(group)
     }
 
+    /// [`Self::bind_group`] for a consumer that holds the shader values a material stores (`MaterialData`) and not the
+    /// handles: values that are `NO_TEXTURE`, free or duplicated are skipped.
+    pub fn bind_group_for_values(
+        &mut self,
+        device: &dyn DeviceApi,
+        material: u32,
+        values: &[u32],
+    ) -> Result<BindGroupId, BindlessError> {
+        let mut handles: Vec<TextureHandle> = Vec::new();
+        for handle in values.iter().filter_map(|value| self.table.handle_for_value(*value)) {
+            if !handles.contains(&handle) {
+                handles.push(handle);
+            }
+        }
+        self.bind_group(device, material, &handles)
+    }
+
     /// Drops the per-material group of a removed material (its texture handles stay registered).
     pub fn forget_material(&mut self, material: u32) {
         if let Some(set) = self.materials.remove(&material) {

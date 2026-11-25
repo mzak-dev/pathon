@@ -18,11 +18,11 @@ Sloty to nazwane tekstury, przez które paczki wymieniają dane w obrębie widok
 | `Slot::DEPTH_PYRAMID` | `R32Float` + mipy | render | tak | Hi-Z (min głębi) dla SSR i cullingu okluzji |
 | `Slot::NORMALS` | `Rg16Float` | render | nie | normalne świata, oct-encoded |
 | `Slot::MOTION` | `Rg16Float` | render | nie | ruch w pikselach do poprzedniej klatki |
-| `Slot::MATERIAL_ID` | `R32Uint` | render | nie | indeks materiału w tablicy materiałów |
+| `Slot::MATERIAL_ID` | `R32Uint` | render | nie | indeks materiału w tablicy materiałów; `u32::MAX` tam, gdzie nic nie narysowano |
 | `Slot::ROUGHNESS` | `R8Unorm` | render | tak | chropowatość perceptualna (SSR, DLSS RR) |
-| `Slot::ALBEDO` | `Rgba8Unorm` | render | tak | albedo liniowe |
+| `Slot::ALBEDO` | `Rgba8Unorm` | render | tak | albedo liniowe w RGB, `metallic` w alfa (pisze `pathon-pbr`) |
 | `Slot::REACTIVE` | `R8Unorm` | render | tak | maska reaktywności dla upscalerów |
-| `Slot::DIFFUSE` | `Rgba16Float` | render | nie | światło rozproszone (podział dla SSS) |
+| `Slot::DIFFUSE` | `Rgba16Float` | render | nie | światło rozproszone (podział dla SSS); `pathon-pbr` pisze go, gdy ktoś poprosi (`request`), i wtedy `diffuse + specular = hdr` |
 | `Slot::SPECULAR` | `Rgba16Float` | render | nie | światło odbite |
 | `Slot::HDR` | `Rgba16Float` | render | nie | kolor sceny, liniowy, bez ekspozycji |
 | `Slot::AO` | `R8Unorm` | render | nie | ambient occlusion |

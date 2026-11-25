@@ -12,7 +12,8 @@ use pathon_rhi_types::{
 };
 
 use crate::library::ShaderLibrary;
-use crate::pipeline_cache::{PipelineCache, normalized_compute, normalized_render};
+use crate::pipeline_cache::{PipelineCache, normalized_compute, normalized_render, render_uses_module};
+use crate::snapshot::LibrarySnapshot;
 use crate::{Composed, ShaderDiagnostic, ShaderError, ShaderKey, check_pipeline_constants};
 
 /// What a pack gets back for something it asked the compiler to build.
@@ -320,6 +321,9 @@ pub struct BackgroundCompiler {
     requested: HashSet<Target>,
     failed: HashSet<Target>,
     failures: Vec<BuildFailure>,
+    // Modules whose pipelines were evicted: nothing may be built from them, and a build that finishes late is
+    // destroyed.
+    evicted_modules: HashSet<ShaderModuleId>,
     running: usize,
     max_in_flight: usize,
     inline_jobs_per_pump: usize,
@@ -357,6 +361,7 @@ impl BackgroundCompiler {
             requested: HashSet::new(),
             failed: HashSet::new(),
             failures: Vec::new(),
+            evicted_modules: HashSet::new(),
             running: 0,
             max_in_flight,
             inline_jobs_per_pump: config.inline_jobs_per_pump,
@@ -413,6 +418,22 @@ impl BackgroundCompiler {
         let evicted = self.library.remove_root(name);
         self.forget_module_failures_if_evicted(generation);
         evicted
+    }
+
+    /// What this compiler composes from and has built, to try a source change on another thread before applying it
+    /// (`pathon-hot`, ADR-0040).
+    #[must_use]
+    pub fn snapshot(&self) -> LibrarySnapshot {
+        self.library.snapshot()
+    }
+
+    /// Forgets the pipelines built from `modules` (what `add_module`, `add_root` and the file and remove variants hand
+    /// back) and returns them to be destroyed with `RecordCtx::release_later` once nothing draws with them. Builds
+    /// from those modules that are still running are destroyed when they finish, and no new ones start: ask for the
+    /// shader key again.
+    pub fn evict_pipelines(&mut self, modules: &[ShaderModuleId]) -> Vec<Resource> {
+        self.evicted_modules.extend(modules.iter().copied());
+        self.pipelines.evict_modules(modules)
     }
 
     /// Warnings (S0106) of finished permutations since the last call; each is reported once.
@@ -488,6 +509,7 @@ impl BackgroundCompiler {
     /// Hands back every module and pipeline this compiler holds, to be destroyed with `RecordCtx::release_later`
     /// (ADR-0022): the GPU may still be using them. Keys must be asked for again afterwards.
     pub fn release_all(&mut self) -> Vec<Resource> {
+        self.evicted_modules.clear();
         let mut resources: Vec<Resource> = self.library.drain_modules().into_iter().map(Resource::from).collect();
         resources.extend(self.pipelines.drain_resources());
         resources
@@ -528,28 +550,32 @@ impl BackgroundCompiler {
             }
         };
         let key = key.clone();
-        Some(
-            self.worker
-                .job(target.clone(), self.library.generation(), move |device, cancelled| {
-                    let composed = compose.run()?;
-                    if cancelled.load(Ordering::Acquire) {
-                        return Err(Interrupted::Cancelled);
-                    }
-                    let id = device
-                        .create_shader_module(&ShaderModuleDesc {
-                            label: "permutation",
-                            wgsl: &composed.wgsl,
-                        })
-                        .map_err(ShaderError::Rhi)?;
-                    Ok(Built::Module { key, composed, id })
-                }),
-        )
+        Some(self.worker.job(
+            target.clone(),
+            self.library.root_generation(&key.root),
+            move |device, cancelled| {
+                let composed = compose.run()?;
+                if cancelled.load(Ordering::Acquire) {
+                    return Err(Interrupted::Cancelled);
+                }
+                let id = device
+                    .create_shader_module(&ShaderModuleDesc {
+                        label: "permutation",
+                        wgsl: &composed.wgsl,
+                    })
+                    .map_err(ShaderError::Rhi)?;
+                Ok(Built::Module { key, composed, id })
+            },
+        ))
     }
 
     fn enqueue_render(&mut self, target: &Target) -> Option<BackgroundJob> {
         let Target::Render(desc) = target else {
             return None;
         };
+        if render_uses_module(desc, &self.evicted_module_list()) {
+            return None;
+        }
         let desc = desc.clone();
         let vertex_wgsl = self.library.wgsl_of_module(desc.vertex.module);
         let fragment_wgsl = desc
@@ -575,6 +601,9 @@ impl BackgroundCompiler {
         let Target::Compute(desc) = target else {
             return None;
         };
+        if self.evicted_modules.contains(&desc.shader.module) {
+            return None;
+        }
         let desc = desc.clone();
         let wgsl = self.library.wgsl_of_module(desc.shader.module);
         Some(self.worker.job(target.clone(), 0, move |device, cancelled| {
@@ -640,7 +669,7 @@ impl BackgroundCompiler {
         } = finished;
         self.running = self.running.saturating_sub(1);
         self.requested.remove(&target);
-        let outdated = matches!(target, Target::Module(_)) && generation != self.library.generation();
+        let outdated = self.is_outdated(&target, generation);
         match result {
             Ok(built) if outdated => self.worker.device.destroy(built.resource()),
             Ok(Built::Module { key, composed, id }) => self.library.store(key, composed, id),
@@ -648,6 +677,19 @@ impl BackgroundCompiler {
             Ok(Built::Compute { desc, id }) => self.pipelines.store_compute(desc, id),
             Err(_) if outdated => {}
             Err(error) => self.record_failure(target, error),
+        }
+    }
+
+    fn evicted_module_list(&self) -> Vec<ShaderModuleId> {
+        self.evicted_modules.iter().copied().collect()
+    }
+
+    // A module result from before a source changed, or a pipeline whose module was evicted meanwhile.
+    fn is_outdated(&self, target: &Target, generation: u64) -> bool {
+        match target {
+            Target::Module(key) => generation != self.library.root_generation(&key.root),
+            Target::Render(desc) => render_uses_module(desc, &self.evicted_module_list()),
+            Target::Compute(desc) => self.evicted_modules.contains(&desc.shader.module),
         }
     }
 

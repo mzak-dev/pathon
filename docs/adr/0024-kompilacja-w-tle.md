@@ -38,7 +38,7 @@ Zapytanie zwraca `Lookup<T>` (`Ready(T)`, `Pending`, `Failed`), a paczka stosuje
 ### Błędy, anulowanie, zasoby
 
 - Nieudane składanie albo tworzenie (także panika w zadaniu, przechwycona `catch_unwind`) to wpis w `take_failures()`: `BuildFailure { subject, error }` z `diagnostic()` (kody **S0001** moduł, **S0002** potok). Wpis jest raz, klucz zostaje `Failed` bez ponawiania co klatkę, dopóki `retry_failed()` albo zmiana źródła (`add_module` / `add_root` z inną treścią) go nie zwolni.
-- Zmiana źródła podnosi generację biblioteki: wynik zadania ze starej generacji jest niszczony, a klucz zamawiany od nowa. Potoki z unieważnionych modułów zostają do M3-06 (ADR-0023).
+- Zmiana źródła podnosi generację biblioteki: wynik zadania ze starej generacji jest niszczony, a klucz zamawiany od nowa. Generacja jest liczona per shader główny od M3-06, a potoki z unieważnionych modułów zwalnia `BackgroundCompiler::evict_pipelines` ([ADR-0040](0040-hot-reload-shaderow.md)).
 - **Drop kompilatora nie czeka na zadania** (brak deadlocka, wątki są odłączone): ustawia flagę anulowania, kolejka zakolejkowanych zadań przepada, a każdy zasób, który zadanie dokończy po dropie albo który leży nieodebrany w kanale, niszczy `Drop` przesyłki (RAII) na uchwycie urządzenia. Zasoby gotowe i odebrane (kesze) oddaje `release_all()` do `RecordCtx::release_later` (ADR-0022), bo GPU mogło już ich użyć.
 - Kolejność blokad: żadnych; wątki robocze trzymają tylko własne dane i nadawcę, więc nie ma cyklu oczekiwania.
 

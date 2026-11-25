@@ -6,9 +6,9 @@
 //   PATHON_TEST_SCENE=test-assets/classroom/classroom-lite.glb cargo run --release -p pathon-examples --bin gltf_viewer
 //
 // Options: --screenshot out.png [--camera N | --eye x,y,z --target x,y,z [--fov DEG]] [--size WxH]
-//          [--supersample N] [--ev STOPS] [--no-shadows] [--auto-exposure] [--no-bloom] [--neutral]
+//          [--supersample N] [--ev STOPS] [--no-shadows] [--auto-exposure] [--no-bloom] [--neutral] [--brute-force-lights]
 //          [--env file.hdr | --env none] [--environment-intensity X] [--sky-intensity X]
-//          [--simple] [--per-material] [--bench FRAMES]
+//          [--simple] [--per-material] [--bench FRAMES] [--backend vulkan|dx12|metal]
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -18,6 +18,7 @@ use std::time::Instant;
 use pathon::WinitPlatform;
 use pathon::api::glam::Vec3;
 use pathon::platform::Platform;
+use pathon::rhi::Backend;
 use pathon_bindless::PathPreference;
 use pathon_examples::gltf_loader::load_path;
 use pathon_examples::viewer::bench::{format_report, run_benchmark};
@@ -46,6 +47,7 @@ struct Options {
     environment: EnvironmentChoice,
     texture_path: PathPreference,
     tonemapper: Tonemapper,
+    backend: Option<Backend>,
 }
 
 fn parse_size(text: &str) -> Result<(u32, u32), String> {
@@ -86,6 +88,7 @@ fn parse_options(args: impl Iterator<Item = String>) -> Result<Options, String> 
         environment: EnvironmentChoice::Default,
         texture_path: PathPreference::Auto,
         tonemapper: Tonemapper::AcesFitted,
+        backend: None,
     };
     let (mut eye, mut target, mut fov_degrees) = (None, None, None);
     while let Some(arg) = args.next() {
@@ -104,11 +107,20 @@ fn parse_options(args: impl Iterator<Item = String>) -> Result<Options, String> 
             "--no-shadows" => request.sun_shadows = false,
             "--auto-exposure" => request.auto_exposure = true,
             "--no-bloom" => request.bloom = false,
+            "--brute-force-lights" => request.brute_force_lights = true,
             "--environment-intensity" => {
                 request.environment_intensity = Some(parse_number("--environment-intensity", &value(&arg)?)?);
             }
             "--sky-intensity" => request.sky_intensity = Some(parse_number("--sky-intensity", &value(&arg)?)?),
             "--neutral" => options.tonemapper = Tonemapper::PbrNeutral,
+            "--backend" => {
+                options.backend = Some(match value("--backend")?.as_str() {
+                    "vulkan" => Backend::Vulkan,
+                    "dx12" => Backend::Dx12,
+                    "metal" => Backend::Metal,
+                    other => return Err(format!("unknown backend {other}")),
+                });
+            }
             "--simple" => options.lighting = LightingMode::Simple,
             "--per-material" => options.texture_path = PathPreference::PerMaterial,
             "--env" => {
@@ -160,7 +172,7 @@ fn viewer_config(options: &Options) -> Result<ViewerConfig, String> {
         texture_path: options.texture_path,
         tonemapper: options.tonemapper,
         gpu_timestamps: false,
-        backend: None,
+        backend: options.backend,
     })
 }
 

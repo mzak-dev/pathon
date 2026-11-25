@@ -18,7 +18,7 @@ impl Default for ClusterSettings {
             slices: 24,
             near: 0.1,
             far: 100.0,
-            max_light_indices: 1 << 20,
+            max_light_indices: 1 << 24,
         }
     }
 }

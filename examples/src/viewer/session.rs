@@ -54,7 +54,7 @@ impl Session {
                 shared.insert(pbr.pool);
                 shared.insert(pbr.materials);
                 shared.insert(pbr.binder);
-                shared.insert(assets.snapshot.clone());
+                shared.insert(Arc::clone(&assets.snapshot));
                 fill_shadow_casters(&mut renderer, &assets);
             }
         }

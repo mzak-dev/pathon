@@ -15,6 +15,10 @@ pub const DEFAULT_EXPOSURE: f32 = 2.0 / 683.0;
 const EXPOSURE_STEP_STOPS: f32 = 0.5;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "each bool is one key of the viewer; an enum per key would only rename it"
+)]
 pub struct ViewerSettings {
     /// Linear multiplier of the scene radiance before the tonemapper. With automatic exposure it is only the
     /// compensation: `log2(exposure / DEFAULT_EXPOSURE)` stops on top of what the histogram chose.
@@ -32,6 +36,8 @@ pub struct ViewerSettings {
     pub environment_intensity: f32,
     /// Scale of the environment as the backdrop seen through the windows.
     pub sky_intensity: f32,
+    /// Tests every light in every pixel instead of the clusters, to compare the two.
+    pub brute_force_lights: bool,
 }
 
 impl Default for ViewerSettings {
@@ -44,8 +50,9 @@ impl Default for ViewerSettings {
             ambient_ground_lux: 150.0,
             emissive_scale: 683.0,
             sun_shadows: true,
-            environment_intensity: 400.0,
+            environment_intensity: 300.0,
             sky_intensity: 6000.0,
+            brute_force_lights: false,
         }
     }
 }

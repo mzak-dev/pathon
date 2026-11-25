@@ -4,6 +4,7 @@
 // gaps between passes are not counted).
 
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
@@ -27,11 +28,34 @@ struct PassSums {
 }
 
 #[derive(Default)]
+struct CpuSpans {
+    open: Vec<(&'static str, Instant)>,
+    nanoseconds: BTreeMap<&'static str, f64>,
+}
+
+#[derive(Default)]
 struct SumSink {
     sums: Mutex<PassSums>,
+    cpu: Mutex<CpuSpans>,
 }
 
 impl ProfileSink for SumSink {
+    fn pass_begin(&self, pass: &'static str) {
+        self.cpu
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .open
+            .push((pass, Instant::now()));
+    }
+
+    fn pass_end(&self, pass: &'static str) {
+        let mut cpu = self.cpu.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some((name, began)) = cpu.open.pop() {
+            debug_assert_eq!(name, pass);
+            *cpu.nanoseconds.entry(name).or_default() += began.elapsed().as_secs_f64() * 1.0e9;
+        }
+    }
+
     fn gpu_timings(&self, _frame: u64, period_ns: f32, passes: &[GpuPassTiming]) {
         let mut sums = self.sums.lock().unwrap_or_else(PoisonError::into_inner);
         for timing in passes {
@@ -61,6 +85,8 @@ pub struct BenchReport {
     /// Time `render_frame` takes on the CPU (recording and submitting), averaged.
     pub cpu_milliseconds: f64,
     pub passes: Vec<PassTime>,
+    /// CPU time spent recording the commands of each graph pass (the closure of the pass), per frame.
+    pub cpu_passes: Vec<(&'static str, f64)>,
 }
 
 impl BenchReport {
@@ -139,6 +165,14 @@ pub fn run_benchmark(
             milliseconds: total / f64::from(count.max(1)) / 1.0e6,
         })
         .collect();
+    let cpu_passes = sink
+        .cpu
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .nanoseconds
+        .iter()
+        .map(|(pass, total)| (*pass, total / f64::from(PROFILED_FRAMES) / 1.0e6))
+        .collect();
     let frames_f = f64::from(frames.max(1));
     Ok(BenchReport {
         frames,
@@ -149,6 +183,7 @@ pub fn run_benchmark(
         frame_milliseconds: wall.as_secs_f64() * 1000.0 / frames_f,
         cpu_milliseconds: cpu.as_secs_f64() * 1000.0 / frames_f,
         passes,
+        cpu_passes,
     })
 }
 
@@ -168,10 +203,14 @@ pub fn format_report(report: &BenchReport) -> String {
         report.gpu_milliseconds(),
     );
     for pass in &report.passes {
-        text.push_str(&format!(
-            "  {:<24} {:<24} {:>7.3} ms\n",
+        let _ = writeln!(
+            text,
+            "  GPU {:<24} {:<24} {:>7.3} ms",
             pass.pass, pass.label, pass.milliseconds
-        ));
+        );
+    }
+    for (pass, milliseconds) in &report.cpu_passes {
+        let _ = writeln!(text, "  CPU {pass:<24} {milliseconds:>7.3} ms");
     }
     text
 }

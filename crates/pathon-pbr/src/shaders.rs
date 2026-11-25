@@ -39,6 +39,8 @@ pub const TEXTURE_GROUP: u32 = 1;
 pub const HDR_FORMAT: Format = Format::Rgba16Float;
 pub(crate) const DEPTH_FORMAT: Format = Format::Depth32Float;
 
+type ReflectionKey = (ShaderKey, Vec<String>, usize);
+
 /// The WESL modules and roots of the pack, the pipelines built from them and the bind group layouts reflection found.
 /// Pipelines are made on first use of a permutation: a material the scene never draws costs nothing.
 #[derive(Debug)]
@@ -46,6 +48,8 @@ pub struct PbrShaders {
     library: ShaderLibrary,
     pipelines: PipelineCache,
     layouts: HashMap<BindGroupLayoutDesc, BindGroupLayoutId>,
+    // Reflection parses the composed WGSL, so a permutation is reflected once, not on every frame that draws it.
+    reflected: HashMap<ReflectionKey, BindGroupLayoutId>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -114,6 +118,7 @@ impl PbrShaders {
             library,
             pipelines: PipelineCache::new(),
             layouts: HashMap::new(),
+            reflected: HashMap::new(),
         })
     }
 
@@ -138,6 +143,11 @@ impl PbrShaders {
         entries: &[&str],
         adjust: fn(&mut BindGroupLayoutDesc),
     ) -> Result<BindGroupLayoutId, RhiError> {
+        let entry_names = entries.iter().map(|entry| (*entry).to_owned()).collect();
+        let memo_key = (key.clone(), entry_names, adjust as usize);
+        if let Some(layout) = self.reflected.get(&memo_key) {
+            return Ok(*layout);
+        }
         let wgsl = self.library.wgsl(key).map_err(|error| shader_error(&error))?;
         let mut groups = reflect_bind_groups(&wgsl, entries).map_err(|error| shader_error(&error))?;
         let mut group_zero = if groups.is_empty() {
@@ -149,7 +159,9 @@ impl PbrShaders {
             groups.swap_remove(0)
         };
         adjust(&mut group_zero);
-        self.group_layout(device, &group_zero)
+        let layout = self.group_layout(device, &group_zero)?;
+        self.reflected.insert(memo_key, layout);
+        Ok(layout)
     }
 
     pub fn prepass_pipeline(
@@ -350,7 +362,7 @@ fn shadow_declarations() -> String {
     ShadowBindings::starting_at(SHADOW_FIRST_BINDING)
         .wgsl_declarations(0)
         .lines()
-        .map(|line| format!("@if({SHADOWS_FLAG}) {line}\n"))
+        .map(|line| ["@if(", SHADOWS_FLAG, ") ", line, "\n"].concat())
         .collect()
 }
 

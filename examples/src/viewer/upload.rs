@@ -31,6 +31,11 @@ const FRAMES_IN_FLIGHT: u32 = 2;
 const ANISOTROPY: u16 = 8;
 const IMAGE_LABEL: &str = "gltf image";
 const WHITE_TEXEL: [u8; 4] = [255; 4];
+/// Emission in files from Blender is in watts and the lights are photometric (docs/scenes.md): 683 lm/W brings the
+/// two to one scale, and the exposure of 1/683 then shows an emitter at its authored brightness.
+const EMISSIVE_SCALE: f32 = 683.0;
+/// Glass keeps `1 - GLASS_OPACITY_LOSS * transmission` of its alpha, as in the simple lighting.
+const GLASS_OPACITY_LOSS: f32 = 0.9;
 /// Per role two `vec4`s: the 2x2 matrix of the UV transform, then its offset.
 const UV_TRANSFORM_VECTORS: usize = TextureRole::COUNT * 2;
 
@@ -132,7 +137,7 @@ pub struct PbrScene {
 #[derive(Debug)]
 pub enum SceneGpu {
     Simple(Arc<SimpleScene>),
-    Pbr(PbrScene),
+    Pbr(Box<PbrScene>),
 }
 
 #[derive(Debug)]
@@ -568,7 +573,7 @@ fn upload_simple(device: &dyn DeviceApi, scene: &LoadedScene) -> Result<Uploaded
         textures,
         shadow_casters: Vec::new(),
         sun_direction: first_sun_direction(&snapshot),
-        snapshot: snapshot.clone(),
+        snapshot: Arc::clone(&snapshot),
         cameras,
         main_camera: scene.main_camera,
         bounds,
@@ -598,17 +603,16 @@ struct BinderTextures<'device> {
 
 impl BinderTextures<'_> {
     fn slot(&mut self, image: usize, space: ColorSpace) -> Result<TextureSlot, UploadError> {
-        let handle = match self.handles.get(&(image, space)) {
-            Some(handle) => *handle,
-            None => {
-                let view = self.cache.view(image, space)?;
-                let handle = self
-                    .binder
-                    .register(view, SamplerPreset::LinearRepeat)
-                    .map_err(|error| fail("texture binder", error.to_diagnostic()))?;
-                self.handles.insert((image, space), handle);
-                handle
-            }
+        let handle = if let Some(handle) = self.handles.get(&(image, space)) {
+            *handle
+        } else {
+            let view = self.cache.view(image, space)?;
+            let handle = self
+                .binder
+                .register(view, SamplerPreset::LinearRepeat)
+                .map_err(|error| fail("texture binder", error.to_diagnostic()))?;
+            self.handles.insert((image, space), handle);
+            handle
         };
         let value = self
             .binder
@@ -647,11 +651,14 @@ fn upload_pbr(
         .materials
         .iter()
         .map(|material| {
-            let standard = standard_with_slots(material, &mut |role| {
+            let mut standard = standard_with_slots(material, &mut |role| {
                 material.textures[role as usize]
                     .map(|texture| textures.slot(texture.image, color_space(role)))
                     .transpose()
             })?;
+            standard.emissive_strength *= EMISSIVE_SCALE;
+            // No refraction in `PbrPack` (M4-15): glass is a blended surface that lets most of the scene through.
+            standard.base_color[3] *= 1.0 - GLASS_OPACITY_LOSS * standard.transmission;
             materials
                 .add(&standard)
                 .map_err(|error| fail("material", error.to_diagnostic()))
@@ -683,10 +690,10 @@ fn upload_pbr(
     };
     Ok(UploadedScene {
         assets,
-        gpu: SceneGpu::Pbr(PbrScene {
+        gpu: SceneGpu::Pbr(Box::new(PbrScene {
             pool,
             materials,
             binder: texture_binder,
-        }),
+        })),
     })
 }

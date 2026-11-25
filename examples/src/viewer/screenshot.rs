@@ -18,6 +18,10 @@ use crate::gltf_loader::LoadedScene;
 pub(super) const SCREENSHOT_FORMAT: Format = Format::Rgba8UnormSrgb;
 
 #[derive(Clone, Debug)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "each bool is one command line switch; an enum per switch would only rename it"
+)]
 pub struct ScreenshotRequest {
     pub width: u32,
     pub height: u32,
@@ -34,6 +38,7 @@ pub struct ScreenshotRequest {
     /// Replace the defaults of `ViewerSettings` when set.
     pub environment_intensity: Option<f32>,
     pub sky_intensity: Option<f32>,
+    pub brute_force_lights: bool,
 }
 
 impl Default for ScreenshotRequest {
@@ -51,6 +56,7 @@ impl Default for ScreenshotRequest {
             bloom: true,
             environment_intensity: None,
             sky_intensity: None,
+            brute_force_lights: false,
         }
     }
 }
@@ -63,6 +69,7 @@ impl ScreenshotRequest {
         settings.sun_shadows = self.sun_shadows;
         settings.auto_exposure = self.auto_exposure;
         settings.bloom = self.bloom;
+        settings.brute_force_lights = self.brute_force_lights;
         settings.environment_intensity = self.environment_intensity.unwrap_or(settings.environment_intensity);
         settings.sky_intensity = self.sky_intensity.unwrap_or(settings.sky_intensity);
         settings

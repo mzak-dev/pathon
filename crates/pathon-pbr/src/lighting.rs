@@ -120,7 +120,16 @@ fn record_lighting(
 
     // Cluster buffers and the compute pass that fills them.
     let grid = frame.grid;
-    let max_indices = u64::from(frame.settings.clusters.max_light_indices);
+    // No cluster can hold more entries than there are lights: the list never needs more than clusters x lights, so a
+    // generous setting costs memory only when the scene could use it.
+    let clustered_lights = u32::try_from(frame.lights.clustered().len()).expect("fewer than 2^32 lights");
+    let list_capacity = frame
+        .settings
+        .clusters
+        .max_light_indices
+        .min(grid.count().saturating_mul(clustered_lights))
+        .max(1);
+    let max_indices = u64::from(list_capacity);
     let ranges = ctx.graph().create_buffer(
         "pbr cluster ranges",
         GraphBufferDesc::new(u64::from(grid.count()) * RANGE_SIZE, BufferUsage::STORAGE),
@@ -139,8 +148,8 @@ fn record_lighting(
         frame.matrices.world_to_view,
         view.render_size,
         frame.lights.directional,
-        u32::try_from(frame.lights.clustered().len()).expect("fewer than 2^32 lights"),
-        frame.settings.clusters.max_light_indices,
+        clustered_lights,
+        list_capacity,
     );
     let (params_slice, retired) = pbr
         .arena
@@ -212,7 +221,7 @@ fn record_lighting(
         let depth_view = pass.view(depth_read)?;
         let ranges = pass.buffer(ranges_read);
         let indices = pass.buffer(indices_read);
-        let shadows = shadow_bindings(pass, shadow_read)?;
+        let shadows = shadow_bindings(pass, shadow_read.as_ref())?;
         let groups = frame_groups(
             pass,
             &opaque_pipelines,
@@ -262,7 +271,7 @@ fn record_lighting(
         let depth_view = pass.view(depth_read)?;
         let ranges = pass.buffer(ranges_read);
         let indices = pass.buffer(indices_read);
-        let shadows = shadow_bindings(pass, shadow_read)?;
+        let shadows = shadow_bindings(pass, shadow_read.as_ref())?;
         let groups = frame_groups(
             pass,
             &variants,
@@ -319,9 +328,10 @@ struct FrameBindings {
 
 fn shadow_bindings(
     pass: &mut pathon_api::graph::PassContext<'_>,
-    read: Option<(pathon_api::graph::TextureHandle, ShadowFrame)>,
+    read: Option<&(pathon_api::graph::TextureHandle, ShadowFrame)>,
 ) -> Result<Option<(ShadowFrame, TextureViewId)>, RhiError> {
-    read.map(|(map, frame)| Ok((frame, pass.view_with(map, &ShadowBindings::map_view_desc())?)))
+    read.copied()
+        .map(|(map, frame)| Ok((frame, pass.view_with(map, &ShadowBindings::map_view_desc())?)))
         .transpose()
 }
 

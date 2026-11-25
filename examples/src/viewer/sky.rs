@@ -1,6 +1,7 @@
 // What `PbrPack` leaves out (it draws no sky): the environment of `IblPack` as the backdrop of the windows. A stand-in
 // for a sky pack, written as a host feature because the viewer needs it today; it runs after the pbr passes, writes
 // only the pixels no geometry touched (reverse-Z depth 0) and so also replaces whatever blended glass drew over them.
+// It reads the depth slot as a texture rather than testing it: see sky.wgsl.
 
 use pathon::api::glam::Mat4;
 use pathon::api::graph::{PassDesc, Stage};
@@ -8,9 +9,9 @@ use pathon::api::resources::UniformRing;
 use pathon::api::{RecordCtx, RenderFeature, Slot};
 use pathon::rhi::{
     Access, BindGroupDesc, BindGroupEntry, BindGroupLayoutDesc, BindGroupLayoutEntry, BindGroupLayoutId,
-    BindingResource, BindingType, ColorAttachment, ColorTargetState, CompareFunction, DepthAccess, DepthAttachment,
-    DepthBias, DepthState, DeviceApi, Format, LoadOp, PrimitiveState, RenderPassDesc, RenderPipelineDesc,
-    RenderPipelineId, RhiError, SamplerBindingType, ShaderModuleDesc, ShaderStage, ShaderStages, StoreOp,
+    BindingResource, BindingType, ColorAttachment, ColorTargetState,
+    DeviceApi, Format, PrimitiveState, RenderPassDesc, RenderPipelineDesc,
+    RenderPipelineId, RhiError, SamplerBindingType, ShaderModuleDesc, ShaderStage, ShaderStages,
     TextureSampleType, TextureViewDimension,
 };
 use pathon_ibl::IblEnvironment;
@@ -19,7 +20,6 @@ use super::settings::ViewerSettings;
 
 const SOURCE: &str = include_str!("sky.wgsl");
 const HDR_FORMAT: Format = Format::Rgba16Float;
-const DEPTH_FORMAT: Format = Format::Depth32Float;
 const UNIFORM_RING_BYTES: u64 = 4 << 10;
 
 #[repr(C)]
@@ -68,6 +68,15 @@ impl Gpu {
                     ShaderStages::FRAGMENT,
                     BindingType::Sampler(SamplerBindingType::Filtering),
                 ),
+                entry(
+                    3,
+                    ShaderStages::FRAGMENT,
+                    BindingType::SampledTexture {
+                        sample_type: TextureSampleType::Depth,
+                        dimension: TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                ),
             ],
         })?;
         let pipeline = device.create_render_pipeline(&RenderPipelineDesc {
@@ -86,12 +95,7 @@ impl Gpu {
             }),
             color_targets: vec![ColorTargetState::opaque(HDR_FORMAT)],
             primitive: PrimitiveState::default(),
-            depth: Some(DepthState {
-                format: DEPTH_FORMAT,
-                write_enabled: false,
-                compare: CompareFunction::Equal,
-                bias: DepthBias::NONE,
-            }),
+            depth: None,
             sample_count: 1,
             immediate_size: 0,
         })?;
@@ -166,7 +170,7 @@ impl RenderFeature for SkyFeature {
         let (layout, pipeline) = (gpu.layout, gpu.pipeline);
 
         let mut pass = ctx.graph().add_pass(PassDesc::new("viewer sky", Stage::Transparent));
-        let depth = pass.read(depth, Access::DEPTH_READ);
+        let depth = pass.read(depth, Access::SAMPLED.union(Access::DEPTH_READ));
         let hdr = pass.modify(hdr, Access::COLOR_ATTACHMENT);
         pass.record(move |pass| {
             let (hdr_view, depth_view) = (pass.view(hdr)?, pass.view(depth)?);
@@ -186,18 +190,16 @@ impl RenderFeature for SkyFeature {
                         binding: 2,
                         resource: BindingResource::Sampler(environment.sampler),
                     },
+                    BindGroupEntry {
+                        binding: 3,
+                        resource: BindingResource::TextureView(depth_view),
+                    },
                 ],
             })?;
             let mut render = pass.commands().render_pass(RenderPassDesc {
                 label: "viewer sky",
                 color: vec![ColorAttachment::load(hdr_view)],
-                depth: Some(DepthAttachment {
-                    view: depth_view,
-                    load: LoadOp::Load,
-                    store: StoreOp::Store,
-                    access: DepthAccess::ReadOnly,
-                    clear_stencil: None,
-                }),
+                depth: None,
                 timestamps: None,
             });
             render.set_pipeline(pipeline);

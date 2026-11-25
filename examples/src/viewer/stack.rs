@@ -13,7 +13,7 @@ use pathon::api::glam::Vec3;
 use pathon::rhi::{DeviceRequest, Features};
 use pathon_bindless::{BINDLESS_FEATURES, PathPreference};
 use pathon_ibl::{EquirectImage, IblPack, IblSettings, IblSource, SyntheticSky};
-use pathon_pbr::{PbrPack, PbrSettings};
+use pathon_pbr::{LightAssignment, PbrPack, PbrSettings};
 use pathon_post::{ExposureMode, PostPack, PostSettings, Tonemapper};
 use pathon_shadow::{DirectionalShadowLight, ShadowPack, ShadowScene, ShadowSettings};
 
@@ -123,6 +123,11 @@ pub fn apply_settings(renderer: &mut Renderer, settings: &ViewerSettings, sun_di
     shared.insert(*settings);
     if let Some(pbr) = shared.get_mut::<PbrSettings>() {
         pbr.environment_intensity = settings.environment_intensity;
+        pbr.light_assignment = if settings.brute_force_lights {
+            LightAssignment::BruteForce
+        } else {
+            LightAssignment::Clustered
+        };
     }
     if let Some(scene) = shared.get_mut::<ShadowScene>() {
         scene.light = sun_direction

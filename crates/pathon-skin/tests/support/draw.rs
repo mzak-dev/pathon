@@ -4,7 +4,6 @@ use pathon_api::rhi::{
     TextureUsage, TextureViewDesc, Viewport,
 };
 use pathon_golden::GoldenImage;
-
 use pathon_skin::DeformedSurface;
 
 use super::Rig;

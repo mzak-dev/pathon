@@ -1,9 +1,7 @@
-// Assigns every point and spot light to the view-space clusters its range sphere touches. One thread per cluster,
-// two passes over the lights (count, then write), one 32-bit atomic per cluster to reserve its slice of the index
+// Assigns every point and spot light to the view-space clusters its range sphere touches (clustered shading: Olsson, Billeter and
+// Assarsson 2012, "Clustered Deferred and Forward Shading"; exponential depth slices as in Persson 2015 and Avalanche Studios' practice).
+// One thread per cluster, two passes over the lights (count, then write), one 32-bit atomic per cluster to reserve its slice of the index
 // list: no 64-bit atomics, so the same shader runs on the Web profile. The per-cluster list is in light order.
-//
-// The cluster layout (tiles x tiles x exponential depth slices) follows the froxel grid of Filament
-// (filament/src/Froxelizer.cpp); the assignment is done on the GPU instead of the CPU.
 import package::pbr::lights::GpuLight;
 
 struct ClusterParams {

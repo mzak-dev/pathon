@@ -112,8 +112,8 @@ fn shade(in: Varying, front_facing: bool) -> Shaded {
         ibl_sampler,
         IblInput(surface.normal, view, surface.diffuse_color, surface.f0, surface.f90, surface.roughness),
     );
-    // Filament: ambient occlusion darkens the diffuse environment, and the specular one through Lagarde's term, both
-    // with multi-bounce so bright surfaces do not go black in creases.
+    // Ambient occlusion darkens the diffuse environment, and the specular one through Lagarde's term (2014), both with
+    // the multi-bounce correction of Jimenez et al. (2016) so bright surfaces do not go black in creases.
     let specular_occlusion = specular_ao_lagarde(n_dot_v, surface.occlusion, surface.roughness);
     diffuse += environment.diffuse * gtao_multi_bounce(surface.occlusion, surface.diffuse_color)
         * frame.environment_intensity;

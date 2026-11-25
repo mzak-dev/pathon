@@ -1,5 +1,4 @@
-// Derived from Filament (Apache-2.0), Copyright (c) Google LLC — shaders/src/surface_ambient_occlusion.fs
-// (SpecularAO_Lagarde, gtaoMultiBounce); changes: WGSL, multi-bounce always on, no bent normals.
+// Ambient occlusion terms for the image-based lighting, from the published formulas.
 
 // Lagarde and de Rousiers 2014, "Moving Frostbite to PBR": how much of the reflected environment survives an ambient
 // occlusion `visibility` for this view angle and roughness.

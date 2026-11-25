@@ -47,7 +47,7 @@ impl GpuLight {
                 outer_angle,
             } => {
                 let (position, range) = positioned(light);
-                // Filament: the cone window is a smoothstep-like ramp between the cosines of the two half angles.
+                // glTF KHR_lights_punctual: the cone window is a ramp between the cosines of the two half angles.
                 let scale = 1.0 / (inner_angle.cos() - outer_angle.cos()).max(1.0e-4);
                 let offset = -outer_angle.cos() * scale;
                 Self {

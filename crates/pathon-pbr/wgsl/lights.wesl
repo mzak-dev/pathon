@@ -1,6 +1,8 @@
-// Derived from Filament (Apache-2.0), Copyright (c) Google LLC — shaders/src/surface_light_punctual.fs (distance
-// falloff window, spot cone attenuation); changes: WGSL, one light array for directional, point and spot lights,
-// radiance in physical units (lux for directional, candela for point and spot) instead of pre-exposed intensity.
+// Light attenuation for physical units: directional lights give lux, point and spot lights give candela, so the radiance a light adds is
+// colour * intensity * window(d) / max(d^2, eps).
+// window: Karis 2013, "Real Shading in Unreal Engine 4": saturate(1 - (d / range)^4)^2, which is exactly zero at the range, so a cluster
+// can drop the light there without a visible edge.
+// spot cone: glTF KHR_lights_punctual: saturate(cos * scale + offset)^2 with scale = 1 / max(0.001, cos(inner) - cos(outer)).
 import package::material::surface::LightSample;
 
 const KIND_DIRECTIONAL: f32 = 0.0;

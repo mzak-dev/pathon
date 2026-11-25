@@ -2017,6 +2017,7 @@ dependencies = [
  "pathon-ibl",
  "pathon-material",
  "pathon-mesh",
+ "pathon-pbr",
  "pathon-post",
  "pathon-profile",
  "pathon-rhi-wgpu",
@@ -2088,6 +2089,25 @@ dependencies = [
  "pathon-bench",
  "pathon-rhi",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "pathon-pbr"
+version = "0.0.1"
+dependencies = [
+ "bytemuck",
+ "pathon-api",
+ "pathon-bindless",
+ "pathon-core",
+ "pathon-golden",
+ "pathon-ibl",
+ "pathon-material",
+ "pathon-mesh",
+ "pathon-post",
+ "pathon-rhi",
+ "pathon-scene",
+ "pathon-shader",
+ "pathon-texture",
 ]
 
 [[package]]

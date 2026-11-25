@@ -1,7 +1,7 @@
 use std::fmt;
 
 use pathon_api::resources::{DeferredRelease, GpuArray};
-use pathon_api::rhi::{BufferId, DeviceApi, RhiError};
+use pathon_api::rhi::{BufferId, DeviceApi, Id, RawHandle, RhiError};
 
 use crate::{MaterialData, MaterialError, MaterialVariant, StandardMaterial};
 
@@ -13,6 +13,19 @@ pub struct MaterialId(u32);
 impl MaterialId {
     pub fn index(self) -> u32 {
         self.0
+    }
+}
+
+/// The id as the scene stores it (`MaterialHandle::from_id` in `pathon-scene`): the index, with no generation.
+impl Id for MaterialId {
+    const KIND: &'static str = "material";
+
+    fn from_raw(raw: RawHandle) -> Self {
+        Self(raw.index())
+    }
+
+    fn raw(self) -> RawHandle {
+        RawHandle::new(self.0, 0)
     }
 }
 
@@ -109,6 +122,15 @@ impl MaterialTable {
     pub fn variant(&self, id: MaterialId) -> Option<MaterialVariant> {
         self.check_live(id).ok()?;
         Some(self.entries[id.0 as usize].variant)
+    }
+
+    /// The permutation of the material at `index` (the element of the shader array), if the slot is live.
+    pub fn variant_at(&self, index: u32) -> Option<MaterialVariant> {
+        self.variant(MaterialId(index))
+    }
+
+    pub fn data_at(&self, index: u32) -> Option<&MaterialData> {
+        self.get(MaterialId(index))
     }
 
     /// Slots including those waiting for reuse; the length of the array shaders see.

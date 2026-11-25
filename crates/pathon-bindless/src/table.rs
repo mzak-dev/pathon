@@ -123,6 +123,18 @@ impl TextureTable {
         self.entry(handle).map(|(view, _)| view)
     }
 
+    /// The live handle of the texture a shader value (`shader_value`, or a material's texture field) names: lets a
+    /// consumer that only holds `MaterialData` find the textures of a material. `None` for `NO_TEXTURE`, a free slot
+    /// or a value outside the table.
+    pub fn handle_for_value(&self, value: u32) -> Option<TextureHandle> {
+        let (index, _) = decode_shader_value(value)?;
+        let slot = self.slots.get(index as usize)?;
+        slot.texture.map(|_| TextureHandle {
+            index,
+            generation: slot.generation,
+        })
+    }
+
     pub fn is_live(&self, handle: TextureHandle) -> bool {
         self.entry(handle).is_ok()
     }

@@ -2103,6 +2103,7 @@ dependencies = [
  "pathon-scene",
  "pathon-shader",
  "pathon-shadow",
+ "pathon-skin",
  "pathon-test",
  "pathon-texture",
  "png",
@@ -2328,6 +2329,20 @@ dependencies = [
  "pathon-rhi",
  "pathon-scene",
  "pathon-shader",
+]
+
+[[package]]
+name = "pathon-skin"
+version = "0.0.1"
+dependencies = [
+ "bytemuck",
+ "pathon-api",
+ "pathon-core",
+ "pathon-golden",
+ "pathon-mesh",
+ "pathon-rhi",
+ "pathon-shader",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

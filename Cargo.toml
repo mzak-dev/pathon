@@ -37,6 +37,7 @@ pathon-rhi-wgpu = { path = "crates/pathon-rhi-wgpu" }
 pathon-scene = { path = "crates/pathon-scene" }
 pathon-shadow = { path = "crates/pathon-shadow" }
 pathon-shader = { path = "crates/pathon-shader" }
+pathon-skin = { path = "crates/pathon-skin" }
 pathon-test = { path = "crates/pathon-test" }
 pathon-texture = { path = "crates/pathon-texture" }
 pathon-devtools = { path = "tools/pathon-devtools" }

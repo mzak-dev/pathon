@@ -2,6 +2,8 @@
 // motion in pixels (moving object, moving camera), material ids, roughness and albedo on demand and the Hi-Z pyramid
 // against a CPU reference. The null half validates every barrier and binding; the GPU half reads the slots back.
 
+#![cfg_attr(not(feature = "gpu-tests"), allow(unused_imports, dead_code))]
+
 mod support;
 
 use pathon_api::Slot;

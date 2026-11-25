@@ -4,13 +4,13 @@ use pathon_api::glam::Mat4;
 use pathon_api::graph::{GraphTextureDesc, PassDesc, Stage};
 use pathon_api::resources::{UniformRing, UniformSlice};
 use pathon_api::rhi::{
-    Access, BindGroupDesc, BindGroupEntry, BindGroupLayoutDesc, BindGroupLayoutEntry, BindGroupLayoutId,
-    BindingResource, BindingType, BufferDesc, BufferId, BufferUsage, Caps, DepthAttachment, DepthBias, DepthState,
-    DeviceApi, DrawIndexedIndirectArgs, Features, Format, FormatCaps, PrimitiveState, RenderPassDesc,
-    RenderPipelineDesc, RenderPipelineId, RhiError, SamplerDesc, SamplerId, ShaderModuleDesc, ShaderStage,
-    ShaderStages, StorageAccess, TextureViewDesc, VertexAttribute, VertexBufferLayout, VertexFormat, VertexStepMode,
+    Access, AddressMode, BindGroupDesc, BindGroupEntry, BindGroupLayoutDesc, BindGroupLayoutEntry, BindGroupLayoutId,
+    BindingResource, BindingType, BufferDesc, BufferId, BufferUsage, Caps, CompareFunction, DepthAttachment, DepthBias,
+    DepthState, DeviceApi, DrawIndexedIndirectArgs, Features, FilterMode, Format, FormatCaps, PrimitiveState,
+    RenderPassDesc, RenderPipelineDesc, RenderPipelineId, RhiError, SamplerDesc, SamplerId, ShaderModuleDesc,
+    ShaderStage, ShaderStages, StorageAccess, TextureViewDesc, VertexAttribute, VertexBufferLayout, VertexFormat,
+    VertexStepMode,
 };
-use pathon_api::rhi::{AddressMode, CompareFunction, FilterMode};
 use pathon_api::{Diagnostic, Negotiation, RecordCtx, RenderFeature, Requirements, Role, SetupCtx};
 
 use crate::cascade::{CameraFrustum, LightBasis};

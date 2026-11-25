@@ -1,6 +1,8 @@
 // Light assignment against a CPU brute force on random scenes (up to 1000 lights, perspective and orthographic). The
 // null half validates every command and binding everywhere; the GPU half (`--features gpu-tests`) reads the lists back.
 
+#![cfg_attr(not(feature = "gpu-tests"), allow(unused_imports, dead_code))]
+
 mod support;
 
 use pathon_api::glam::{Mat4, Vec3};

@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use pathon_api::rhi::{
     BindGroupLayoutDesc, BindGroupLayoutId, BlendState, ColorTargetState, CompareFunction, ComputePipelineDesc,
-    ComputePipelineId, CullMode, DepthState, DeviceApi, Format, PrimitiveState, RenderPipelineDesc, RenderPipelineId,
-    RhiError, ShaderStage, VertexBufferLayout,
+    ComputePipelineId, CullMode, DepthBias, DepthState, DeviceApi, Format, PrimitiveState, RenderPipelineDesc,
+    RenderPipelineId, RhiError, ShaderStage, VertexBufferLayout,
 };
 use pathon_ibl::IblBindings;
 use pathon_material::{AlphaKind, MaterialHooks, MaterialVariant};
@@ -217,6 +217,7 @@ impl PbrShaders {
             format: DEPTH_FORMAT,
             write_enabled: false,
             compare: CompareFunction::GreaterEqual,
+            bias: DepthBias::NONE,
         };
         let pipeline = self.pipelines.render(
             device,

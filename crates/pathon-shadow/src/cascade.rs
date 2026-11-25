@@ -1,5 +1,5 @@
-// The CPU side of cascaded shadow maps: where the camera's depth range is cut, and the orthographic box that covers each
-// slice. Light space has axes (right, up, forward) with forward the direction the light travels, so `t` grows away
+// The CPU side of cascaded shadow maps: where the camera's depth range is cut, and the orthographic box that covers
+// each slice. Light space has axes (right, up, forward) with forward the direction the light travels, so `t` grows away
 // from the light; the depth map stores reverse-Z, `(t_far - t) / (t_far - t_near)`, like every other depth in pathon.
 //
 // Splits are the practical scheme of Zhang et al. (2006). Stable fitting is Valient's (2008): a bounding sphere of the

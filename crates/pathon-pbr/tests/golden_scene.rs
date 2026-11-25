@@ -2,6 +2,8 @@
 // invariants of the colour pass: no NaN, diffuse + specular = hdr, clustered lights = every light tested.
 // `PATHON_TEST_BACKEND=vulkan|dx12|metal` picks the backend.
 
+#![cfg_attr(not(feature = "gpu-tests"), allow(unused_imports, dead_code))]
+
 mod support;
 
 use std::sync::Arc;

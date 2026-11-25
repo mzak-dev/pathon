@@ -30,6 +30,14 @@ pub fn srgb_oetf(linear: f32) -> f32 {
     }
 }
 
+pub fn srgb_eotf(display: f32) -> f32 {
+    if display <= 0.040_45 {
+        display / 12.92
+    } else {
+        ((display + 0.055) / 1.055).powf(2.4)
+    }
+}
+
 /// The colour a material id gets in the preview.
 pub fn material_color(id: u32) -> Vec3 {
     let state = id.wrapping_mul(747_796_405).wrapping_add(2_891_336_453);

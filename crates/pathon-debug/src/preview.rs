@@ -11,6 +11,7 @@ use pathon_api::rhi::{
 };
 use pathon_api::{Diagnostic, Negotiation, PrepareCtx, RecordCtx, RenderFeature, SetupCtx, Slot};
 
+use crate::reference;
 use crate::gpu::{PerRecordUniforms, ReportOnce, joined_wgsl, linearizes_for, settings, texture_entry, uniform_entry};
 use crate::settings::{Corner, DebugSettings, PreviewLayout, PreviewMode, PreviewSlot, SlotPreview, SourceKind};
 
@@ -22,7 +23,18 @@ const UINT_WGSL: &str = include_str!("preview_uint.wgsl");
 
 const CORNER_MARGIN: u32 = 8;
 const GRID_GAP: u32 = 2;
-const GRID_BACKGROUND: Color = Color::rgba(0.04, 0.04, 0.04, 1.0);
+const GRID_BACKGROUND: f32 = 0.04;
+
+// A clear value does not go through the shader: targets that decode their bytes as linear need it decoded here too.
+fn grid_background(target: Format) -> Color {
+    let level = if linearizes_for(target) {
+        reference::srgb_eotf(GRID_BACKGROUND)
+    } else {
+        GRID_BACKGROUND
+    };
+    let level = f64::from(level);
+    Color::rgba(level, level, level, 1.0)
+}
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -371,7 +383,7 @@ impl RenderFeature for SlotPreviewFeature {
 
         let load = match preview.layout {
             PreviewLayout::Fullscreen => LoadOp::Clear(Color::BLACK),
-            PreviewLayout::Grid => LoadOp::Clear(GRID_BACKGROUND),
+            PreviewLayout::Grid => LoadOp::Clear(grid_background(target)),
             PreviewLayout::Corner(_) => LoadOp::Load,
         };
         let mut pass = ctx.graph().add_pass(PassDesc::new("debug slot preview", Stage::Overlay));

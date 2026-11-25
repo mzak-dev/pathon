@@ -11,8 +11,8 @@ use pathon_api::rhi::{
 };
 use pathon_api::{Diagnostic, Negotiation, PrepareCtx, RecordCtx, RenderFeature, SetupCtx, Slot};
 
-use crate::reference;
 use crate::gpu::{PerRecordUniforms, ReportOnce, joined_wgsl, linearizes_for, settings, texture_entry, uniform_entry};
+use crate::reference;
 use crate::settings::{Corner, DebugSettings, PreviewLayout, PreviewMode, PreviewSlot, SlotPreview, SourceKind};
 
 const COMMON_WGSL: &str = include_str!("preview_common.wgsl");
@@ -281,8 +281,8 @@ impl RenderFeature for SlotPreviewFeature {
             let mut entries = vec![uniform_entry(0, fragment)];
             if let Some((snippet, sample_types)) = &kind {
                 parts.extend([*snippet, SHADE_WGSL]);
-                for (index, sample_type) in sample_types.iter().enumerate() {
-                    entries.push(texture_entry(index as u32 + 1, fragment, *sample_type));
+                for (binding, sample_type) in (1_u32..).zip(sample_types) {
+                    entries.push(texture_entry(binding, fragment, *sample_type));
                 }
             }
             let module = device.create_shader_module(&ShaderModuleDesc {
@@ -297,10 +297,16 @@ impl RenderFeature for SlotPreviewFeature {
                 "debug preview float",
                 Some((
                     FLOAT_WGSL,
-                    vec![TextureSampleType::UnfilterableFloat, TextureSampleType::UnfilterableFloat],
+                    vec![
+                        TextureSampleType::UnfilterableFloat,
+                        TextureSampleType::UnfilterableFloat,
+                    ],
                 )),
             )?,
-            depth: make("debug preview depth", Some((DEPTH_WGSL, vec![TextureSampleType::Depth])))?,
+            depth: make(
+                "debug preview depth",
+                Some((DEPTH_WGSL, vec![TextureSampleType::Depth])),
+            )?,
             uint: make("debug preview uint", Some((UINT_WGSL, vec![TextureSampleType::Uint])))?,
             missing: make("debug preview missing", None)?,
         });
@@ -310,7 +316,11 @@ impl RenderFeature for SlotPreviewFeature {
     }
 
     fn prepare_view(&mut self, ctx: &mut PrepareCtx<'_>) {
-        let Some(preview) = ctx.shared().get::<DebugSettings>().and_then(|settings| settings.preview.clone()) else {
+        let Some(preview) = ctx
+            .shared()
+            .get::<DebugSettings>()
+            .and_then(|settings| settings.preview.clone())
+        else {
             return;
         };
         for slot in preview.visible_slots() {
@@ -333,7 +343,8 @@ impl RenderFeature for SlotPreviewFeature {
                 } else {
                     format!("slot preview settings repaired: {}", problems.join("; "))
                 };
-                Diagnostic::warning("U0003", message).with_hint("keep SlotPreview inside the documented ranges and list at least one slot")
+                Diagnostic::warning("U0003", message)
+                    .with_hint("keep SlotPreview inside the documented ranges and list at least one slot")
             });
         let Some(output) = ctx.slot(Slot::OUTPUT) else {
             return Ok(());
@@ -341,19 +352,27 @@ impl RenderFeature for SlotPreviewFeature {
         if no_slots {
             return Ok(());
         }
-        let gpu = self.gpu.ok_or(RhiError::Unsupported("slot preview used before setup"))?;
+        let gpu = self
+            .gpu
+            .ok_or(RhiError::Unsupported("slot preview used before setup"))?;
         let target = ctx
             .graph()
             .texture_format(output)
             .ok_or(RhiError::InvalidHandle("output"))?;
         let view = ctx.view();
-        let (output_size, inverse_projection, record_epoch) = (view.output_size, view.camera.projection.inverse(), view.record_epoch);
+        let (output_size, inverse_projection, record_epoch) =
+            (view.output_size, view.camera.projection.inverse(), view.record_epoch);
         let exposure_slot = if preview.exposure_from_slot {
             ctx.slot(Slot::EXPOSURE)
         } else {
             None
         };
-        let rects = cell_rects(preview.layout, preview.visible_slots().len(), output_size, preview.corner_size);
+        let rects = cell_rects(
+            preview.layout,
+            preview.visible_slots().len(),
+            output_size,
+            preview.corner_size,
+        );
 
         let mut cells = Vec::with_capacity(rects.len());
         for (slot, rect) in preview.visible_slots().iter().zip(rects) {
@@ -386,7 +405,9 @@ impl RenderFeature for SlotPreviewFeature {
             PreviewLayout::Grid => LoadOp::Clear(grid_background(target)),
             PreviewLayout::Corner(_) => LoadOp::Load,
         };
-        let mut pass = ctx.graph().add_pass(PassDesc::new("debug slot preview", Stage::Overlay));
+        let mut pass = ctx
+            .graph()
+            .add_pass(PassDesc::new("debug slot preview", Stage::Overlay));
         for cell in &mut cells {
             let access = if cell.kind == Some(SourceKind::Depth) {
                 Access::SAMPLED | Access::DEPTH_READ

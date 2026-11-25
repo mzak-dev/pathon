@@ -168,7 +168,7 @@ pub struct PrimitiveState {
 
 impl PrimitiveState {
     // Backends call this before creating a pipeline, so every one of them refuses the same way.
-    pub fn check_features(&self, caps: &crate::caps::Caps) -> Result<(), RhiError> {
+    pub fn check_features(self, caps: &crate::caps::Caps) -> Result<(), RhiError> {
         match self.polygon_mode {
             PolygonMode::Fill => Ok(()),
             PolygonMode::Line if caps.has(crate::caps::Features::POLYGON_MODE_LINE) => Ok(()),

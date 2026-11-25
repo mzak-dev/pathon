@@ -60,7 +60,11 @@ fn lines_wireframes_and_a_grid_of_every_slot_record_without_a_diagnostic() {
     settings(&mut renderer).preview = Some(SlotPreview::grid(PreviewSlot::ALL.to_vec()));
     let positions = [Vec3::ZERO, Vec3::X, Vec3::Y];
     let debug = draw(&mut renderer);
-    debug.aabb(Vec3::splat(-0.5), Vec3::splat(0.5), LineStyle::new(DebugColor::YELLOW).depth_tested());
+    debug.aabb(
+        Vec3::splat(-0.5),
+        Vec3::splat(0.5),
+        LineStyle::new(DebugColor::YELLOW).depth_tested(),
+    );
     debug.sphere(Vec3::ZERO, 0.4, DebugColor::CYAN);
     debug.axes(Mat4::IDENTITY, 1.0, 2.0);
     debug.wireframe(&positions, &[0, 1, 2], Mat4::IDENTITY, DebugColor::WHITE);
@@ -73,7 +77,10 @@ fn lines_wireframes_and_a_grid_of_every_slot_record_without_a_diagnostic() {
 
 #[test]
 fn two_views_of_one_frame_get_their_own_line_regions() {
-    let mut renderer = builder(desktop()).with_pack(DebugPack::new()).build().expect("renderer");
+    let mut renderer = builder(desktop())
+        .with_pack(DebugPack::new())
+        .build()
+        .expect("renderer");
     let (first, second) = (target(&mut renderer), target(&mut renderer));
     draw(&mut renderer).sphere(Vec3::ZERO, 1.0, DebugColor::GREEN);
     let input = FrameInput {
@@ -88,7 +95,12 @@ fn two_views_of_one_frame_get_their_own_line_regions() {
 
     let report = renderer.render_frame(&input).expect("frame");
 
-    assert!(report.diagnostics.iter().all(|diagnostic| diagnostic.severity != Severity::Error));
+    assert!(
+        report
+            .diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic.severity != Severity::Error)
+    );
     assert_eq!(report.views.len(), 2);
 }
 
@@ -105,7 +117,10 @@ fn the_wireframe_pack_falls_back_without_line_polygon_mode_and_runs_fully_with_i
     };
 
     assert!(matches!(status_of(desktop()), FeatureStatus::Fallback { .. }));
-    assert_eq!(status_of(desktop() | Features::POLYGON_MODE_LINE), FeatureStatus::Active);
+    assert_eq!(
+        status_of(desktop() | Features::POLYGON_MODE_LINE),
+        FeatureStatus::Active
+    );
 }
 
 #[test]
@@ -160,11 +175,17 @@ fn the_preview_asks_for_on_demand_slots_and_never_makes_them() {
         let mut renderer = builder.build().expect("renderer");
         let target = target(&mut renderer);
         settings(&mut renderer).preview = Some(SlotPreview::fullscreen(PreviewSlot::Roughness));
-        codes(&frame(&mut renderer, target)).into_iter().map(str::to_owned).collect::<Vec<_>>()
+        codes(&frame(&mut renderer, target))
+            .into_iter()
+            .map(str::to_owned)
+            .collect::<Vec<_>>()
     };
 
     assert_eq!(preview(false), ["U0001"], "no producer, no slot");
-    assert!(preview(true).is_empty(), "the producer wrote it because the preview asked");
+    assert!(
+        preview(true).is_empty(),
+        "the producer wrote it because the preview asked"
+    );
 }
 
 #[test]
@@ -178,7 +199,10 @@ fn a_full_draw_list_drops_and_reports_u0002_once() {
         draw(&mut renderer).line(Vec3::ZERO, Vec3::X, DebugColor::WHITE);
     }
 
-    let first = codes(&frame(&mut renderer, target)).into_iter().map(str::to_owned).collect::<Vec<_>>();
+    let first = codes(&frame(&mut renderer, target))
+        .into_iter()
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
     let second = codes(&frame(&mut renderer, target)).len();
 
     assert_eq!(first, ["U0002"]);
@@ -205,7 +229,10 @@ fn broken_preview_settings_are_repaired_and_reported_as_u0003() {
 
 #[test]
 fn lines_with_a_lifetime_outlive_frames_and_the_rest_leave_after_one() {
-    let mut renderer = builder(desktop()).with_pack(DebugPack::new()).build().expect("renderer");
+    let mut renderer = builder(desktop())
+        .with_pack(DebugPack::new())
+        .build()
+        .expect("renderer");
     let target = target(&mut renderer);
     let debug = draw(&mut renderer);
     debug.line(Vec3::ZERO, Vec3::X, DebugColor::WHITE);
@@ -218,5 +245,9 @@ fn lines_with_a_lifetime_outlive_frames_and_the_rest_leave_after_one() {
         })
         .collect();
 
-    assert_eq!(counts, [2, 1, 1, 0], "counted after each frame: the second line shows for three frames");
+    assert_eq!(
+        counts,
+        [2, 1, 1, 0],
+        "counted after each frame: the second line shows for three frames"
+    );
 }

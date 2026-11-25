@@ -48,6 +48,11 @@ pub fn material_color(id: u32) -> Vec3 {
 }
 
 /// The ramp of the depth preview: black, purple, red, orange, pale yellow.
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "clamped to the four ramp segments"
+)]
 pub fn heat(value: f32) -> Vec3 {
     const STOPS: [Vec3; 5] = [
         Vec3::new(0.0, 0.0, 0.0),
@@ -57,7 +62,7 @@ pub fn heat(value: f32) -> Vec3 {
         Vec3::new(1.0, 1.0, 0.8),
     ];
     let position = value.clamp(0.0, 1.0) * 4.0;
-    let index = (position.floor() as usize).min(3);
+    let index = position.floor().clamp(0.0, 3.0) as usize;
     STOPS[index].lerp(STOPS[index + 1], position - index as f32)
 }
 
@@ -68,7 +73,11 @@ pub fn motion_color(motion: Vec2, full_length: f32) -> Vec3 {
         return Vec3::ZERO;
     }
     let hue = (motion.y.atan2(motion.x) / std::f32::consts::TAU).rem_euclid(1.0) * 6.0;
-    let rgb = Vec3::new((hue - 3.0).abs() - 1.0, 2.0 - (hue - 2.0).abs(), 2.0 - (hue - 4.0).abs());
+    let rgb = Vec3::new(
+        (hue - 3.0).abs() - 1.0,
+        2.0 - (hue - 2.0).abs(),
+        2.0 - (hue - 4.0).abs(),
+    );
     rgb.clamp(Vec3::ZERO, Vec3::ONE) * (length / full_length).clamp(0.0, 1.0)
 }
 

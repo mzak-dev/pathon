@@ -275,7 +275,7 @@ impl DebugDraw {
         let color = pack_color(style.color.sanitized().to_array());
         let thickness = style.thickness_pixels();
         let mut vertices = Vec::with_capacity(triangle_count * 3);
-        for triangle in indices.chunks_exact(3) {
+        for triangle in indices.as_chunks::<3>().0 {
             let corners: Option<Vec<Vec3>> = triangle
                 .iter()
                 .map(|index| positions.get(*index as usize).copied())
@@ -348,7 +348,11 @@ mod tests {
         draw.line(Vec3::ZERO, Vec3::X, DebugColor::RED);
 
         assert_eq!(collected(&mut draw, 0), 1);
-        assert_eq!(collected(&mut draw, 0), 1, "a second record attempt of the same frame draws it again");
+        assert_eq!(
+            collected(&mut draw, 0),
+            1,
+            "a second record attempt of the same frame draws it again"
+        );
         assert_eq!(collected(&mut draw, 1), 0);
         assert!(draw.is_empty());
     }
@@ -434,7 +438,12 @@ mod tests {
         let mut draw = DebugDraw::new();
         draw.axes(Mat4::from_translation(Vec3::new(0.0, 5.0, 0.0)), 2.0, 3.0);
 
-        let shafts: Vec<_> = draw.lines().take(1).chain(draw.lines().skip(5).take(1)).chain(draw.lines().skip(10).take(1)).collect();
+        let shafts: Vec<_> = draw
+            .lines()
+            .take(1)
+            .chain(draw.lines().skip(5).take(1))
+            .chain(draw.lines().skip(10).take(1))
+            .collect();
 
         assert_eq!(shafts[0].end, Vec3::new(2.0, 5.0, 0.0));
         assert_eq!(shafts[0].style.color, DebugColor::RED);
@@ -450,7 +459,12 @@ mod tests {
         let mut draw = DebugDraw::new();
         let positions = [Vec3::ZERO, Vec3::X, Vec3::Y, Vec3::ONE];
 
-        draw.wireframe(&positions, &[0, 1, 2, 1, 3, 9, 1, 2, 3], Mat4::from_translation(Vec3::Z), DebugColor::CYAN);
+        draw.wireframe(
+            &positions,
+            &[0, 1, 2, 1, 3, 9, 1, 2, 3],
+            Mat4::from_translation(Vec3::Z),
+            DebugColor::CYAN,
+        );
 
         assert_eq!(draw.wire_triangle_count(), 2);
         let mut vertices = Vec::new();
@@ -463,7 +477,12 @@ mod tests {
     #[test]
     fn wireframes_expire_like_lines() {
         let mut draw = DebugDraw::new();
-        draw.wireframe(&[Vec3::ZERO, Vec3::X, Vec3::Y], &[0, 1, 2], Mat4::IDENTITY, DebugColor::WHITE);
+        draw.wireframe(
+            &[Vec3::ZERO, Vec3::X, Vec3::Y],
+            &[0, 1, 2],
+            Mat4::IDENTITY,
+            DebugColor::WHITE,
+        );
         let mut vertices = Vec::new();
 
         draw.collect_wire_vertices(0, &mut vertices);
@@ -476,7 +495,12 @@ mod tests {
     #[test]
     fn a_wireframe_past_the_capacity_is_dropped_whole() {
         let mut draw = DebugDraw::with_capacity(8, 1);
-        draw.wireframe(&[Vec3::ZERO, Vec3::X, Vec3::Y, Vec3::ONE], &[0, 1, 2, 1, 2, 3], Mat4::IDENTITY, DebugColor::WHITE);
+        draw.wireframe(
+            &[Vec3::ZERO, Vec3::X, Vec3::Y, Vec3::ONE],
+            &[0, 1, 2, 1, 2, 3],
+            Mat4::IDENTITY,
+            DebugColor::WHITE,
+        );
 
         assert_eq!(draw.wire_triangle_count(), 0);
         assert_eq!(draw.take_dropped_wireframes(), 1);

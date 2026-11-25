@@ -182,7 +182,13 @@ impl SlotPreview {
         repair(
             "corner_size outside 0.05..=1",
             self.corner_size.is_finite() && (0.05..=1.0).contains(&self.corner_size),
-            &mut || settings.corner_size = if self.corner_size.is_finite() { self.corner_size.clamp(0.05, 1.0) } else { 0.3 },
+            &mut || {
+                settings.corner_size = if self.corner_size.is_finite() {
+                    self.corner_size.clamp(0.05, 1.0)
+                } else {
+                    0.3
+                }
+            },
         );
         let (near, far) = self.depth_range;
         repair(
@@ -284,7 +290,7 @@ mod tests {
         assert_eq!(preview.visible_slots(), [PreviewSlot::Depth]);
         preview.layout = PreviewLayout::Grid;
         assert_eq!(preview.visible_slots(), slots);
-        assert!(SlotPreview::fullscreen(PreviewSlot::Hdr).slots.len() == 1);
+        assert_eq!(SlotPreview::fullscreen(PreviewSlot::Hdr).slots.len(), 1);
     }
 
     #[test]
@@ -302,6 +308,9 @@ mod tests {
         assert_eq!(repaired.depth_range, (0.1, 20.0));
         assert_eq!(repaired.motion_scale, 8.0);
         assert_eq!(repaired.exposure, 1.0);
-        assert!(SlotPreview::fullscreen(PreviewSlot::Hdr).sanitized().1.is_empty());
+        assert_eq!(
+            SlotPreview::fullscreen(PreviewSlot::Hdr).sanitized().1,
+            [] as [String; 0]
+        );
     }
 }

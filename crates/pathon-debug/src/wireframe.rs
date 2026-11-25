@@ -101,7 +101,11 @@ impl WireframeFeature {
                 ..ColorTargetState::opaque(key.target)
             }],
             primitive: PrimitiveState {
-                polygon_mode: if key.hardware { PolygonMode::Line } else { PolygonMode::Fill },
+                polygon_mode: if key.hardware {
+                    PolygonMode::Line
+                } else {
+                    PolygonMode::Fill
+                },
                 ..PrimitiveState::default()
             },
             depth: None,
@@ -180,8 +184,11 @@ impl RenderFeature for WireframeFeature {
             None => 0,
         };
         self.reports.when("wireframes dropped", dropped > 0, ctx, || {
-            Diagnostic::warning("U0002", format!("{dropped} debug wireframes dropped: DebugDraw is full"))
-                .with_hint("raise the limit with DebugDraw::with_capacity or draw fewer triangles")
+            Diagnostic::warning(
+                "U0002",
+                format!("{dropped} debug wireframes dropped: DebugDraw is full"),
+            )
+            .with_hint("raise the limit with DebugDraw::with_capacity or draw fewer triangles")
         });
         let Some(output) = ctx.slot(Slot::OUTPUT) else {
             return Ok(());

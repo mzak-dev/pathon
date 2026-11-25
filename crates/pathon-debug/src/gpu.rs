@@ -173,7 +173,13 @@ pub(crate) struct ReportOnce {
 
 impl ReportOnce {
     /// Reports `diagnostic` the first time `active` is true after it was false.
-    pub(crate) fn when(&mut self, key: &'static str, active: bool, ctx: &mut RecordCtx<'_>, diagnostic: impl FnOnce() -> Diagnostic) {
+    pub(crate) fn when(
+        &mut self,
+        key: &'static str,
+        active: bool,
+        ctx: &mut RecordCtx<'_>,
+        diagnostic: impl FnOnce() -> Diagnostic,
+    ) {
         let reported = self.reported.entry(key).or_default();
         if active && !*reported {
             ctx.report(diagnostic());

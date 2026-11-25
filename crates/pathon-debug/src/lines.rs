@@ -117,7 +117,11 @@ impl RenderFeature for LinesFeature {
         let device = ctx.device();
         let visibility = ShaderStages::VERTEX | ShaderStages::FRAGMENT;
         let make = |label: &'static str, depth: bool| -> Result<Variant, RhiError> {
-            let wgsl = joined_wgsl(&[FRAME_WGSL, if depth { DEPTH_ON_WGSL } else { DEPTH_OFF_WGSL }, LINES_WGSL]);
+            let wgsl = joined_wgsl(&[
+                FRAME_WGSL,
+                if depth { DEPTH_ON_WGSL } else { DEPTH_OFF_WGSL },
+                LINES_WGSL,
+            ]);
             let module = device.create_shader_module(&ShaderModuleDesc { label, wgsl: &wgsl })?;
             let mut entries = vec![uniform_entry(0, visibility)];
             if depth {
@@ -157,7 +161,9 @@ impl RenderFeature for LinesFeature {
 
         let wants_depth = self.scratch.iter().any(|line| line.flags & LINE_FLAG_DEPTH_TEST != 0);
         let depth = if wants_depth { ctx.slot(Slot::DEPTH) } else { None };
-        let variants = self.variants.ok_or(RhiError::Unsupported("debug lines used before setup"))?;
+        let variants = self
+            .variants
+            .ok_or(RhiError::Unsupported("debug lines used before setup"))?;
         let variant = variants[usize::from(depth.is_some())];
         let target = ctx
             .graph()
@@ -188,7 +194,9 @@ impl RenderFeature for LinesFeature {
         let (buffer, offset) = self.arena.write(ctx, bytemuck::cast_slice(&self.scratch))?;
         let instance_count = u32::try_from(self.scratch.len()).unwrap_or(u32::MAX);
 
-        let mut pass = ctx.graph().add_pass(PassDesc::new("debug lines", Stage::Overlay).priority(20));
+        let mut pass = ctx
+            .graph()
+            .add_pass(PassDesc::new("debug lines", Stage::Overlay).priority(20));
         let depth = depth.map(|depth| pass.read(depth, Access::SAMPLED | Access::DEPTH_READ));
         let output = pass.modify(output, Access::COLOR_ATTACHMENT);
         pass.record(move |pass| {

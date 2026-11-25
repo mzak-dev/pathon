@@ -59,3 +59,7 @@ Pierwotna decyzja zostawiła M3-05 pytanie „gdzie i pod jakim kluczem”. Rozs
 - **Klucz** to ścieżka (jeden plik = jeden blob), nie nazwa adaptera: adapter jest znany dopiero po utworzeniu urządzenia, a blob trzeba podać w `DeviceRequest`. Zamiast tego plik zapamiętuje adapter, który go zapisał, a `CacheSeed::adapter_mismatch` wyjaśnia po utworzeniu urządzenia, dlaczego backend go zignorował; host z kilkoma adapterami podaje ścieżkę na adapter.
 - **Zapis:** `save` przy zamknięciu, `save_if_due(device, now)` okresowo (zegar podaje host, bo `Instant::now` panikuje na wasm), pomijany dla pustego bloba (sterowniki software) i dla takiego samego jak w store. Zapis robi I/O, więc host woła go z wątku pomocniczego.
 - **Pomiar** ([docs/bench/pipeline-cache.md](../bench/pipeline-cache.md)): z wyłączonym cache sterownika drugi start 8 potoków jest 3,5–5,7× szybszy od pierwszego i 3–7× szybszy od startu bez cache; z włączonym cache sterownika AMD (domyślnie) drugi start jest równie szybki bez naszego bloba, więc zysk w tej konfiguracji daje sterownik. Własny blob ma sens tam, gdzie cache sterownika nie działa.
+
+## Uzupełnienie (M4-14, 25.11.2026): `polygon_mode`
+
+`PrimitiveState::polygon_mode` (`PolygonMode { Fill, Line }`) doszło razem z pierwszym użytkownikiem, `pathon-debug` ([ADR-0046](0046-pathon-debug-linie-wireframe-i-podglad-slotow.md)). `Line` wymaga `Features::POLYGON_MODE_LINE`: bez niej tworzenie potoku kończy się `RhiError::MissingFeatures` na każdym backendzie. `Point` zostaje do pierwszego użytkownika.

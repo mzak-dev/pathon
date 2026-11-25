@@ -98,7 +98,8 @@ mod tests {
 
     #[test]
     fn a_transformed_cuboid_moves_its_corners() {
-        let corners = cuboid_corners(Mat4::from_translation(Vec3::new(10.0, 0.0, 0.0)) * Mat4::from_scale(Vec3::splat(2.0)));
+        let corners =
+            cuboid_corners(Mat4::from_translation(Vec3::new(10.0, 0.0, 0.0)) * Mat4::from_scale(Vec3::splat(2.0)));
         assert_eq!(corners[0], Vec3::new(9.0, -1.0, -1.0));
         assert_eq!(corners[7], Vec3::new(11.0, 1.0, 1.0));
     }
@@ -113,7 +114,7 @@ mod tests {
             assert!(((point - center).length() - 2.0).abs() < 1e-5);
             assert!((point - center).dot(normal).abs() < 1e-5);
         }
-        assert!(circle_points(center, Vec3::ZERO, 1.0, 8).is_empty());
+        assert_eq!(circle_points(center, Vec3::ZERO, 1.0, 8), []);
     }
 
     #[test]
@@ -139,6 +140,10 @@ mod tests {
             assert!((depth - 0.05).abs() < 1e-4, "{depth}");
         }
         // 90 degrees of vertical field of view: the half height equals the depth, the half width is twice that.
-        assert!((far[2].y - 10.0).abs() < 1e-3 && (far[2].x - 20.0).abs() < 1e-3, "{:?}", far[2]);
+        assert!(
+            (far[2].y - 10.0).abs() < 1e-3 && (far[2].x - 20.0).abs() < 1e-3,
+            "{:?}",
+            far[2]
+        );
     }
 }

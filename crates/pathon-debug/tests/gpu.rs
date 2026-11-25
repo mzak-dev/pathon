@@ -2,7 +2,6 @@
 #![expect(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
-    clippy::cast_possible_wrap,
     reason = "test images are small and their coordinates fit every integer type"
 )]
 
@@ -89,7 +88,11 @@ impl Scene {
             .filter(|diagnostic| diagnostic.severity == Severity::Error)
             .collect();
         assert!(errors.is_empty(), "{errors:?}");
-        report.diagnostics.iter().map(|diagnostic| diagnostic.code.to_owned()).collect()
+        report
+            .diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.code.to_owned())
+            .collect()
     }
 
     fn image(&self) -> GoldenImage {
@@ -105,7 +108,9 @@ fn pixel_rgb(image: &GoldenImage, x: u32, y: u32) -> [u8; 3] {
 
 fn expect_rgb(image: &GoldenImage, x: u32, y: u32, expected: Vec3, tolerance: u8, what: &str) {
     let actual = pixel_rgb(image, x, y);
-    let wanted = expected.to_array().map(|channel| (channel.clamp(0.0, 1.0) * 255.0).round() as u8);
+    let wanted = expected
+        .to_array()
+        .map(|channel| (channel.clamp(0.0, 1.0) * 255.0).round() as u8);
     let close = actual.iter().zip(wanted).all(|(a, w)| a.abs_diff(w) <= tolerance);
     assert!(close, "{what} at ({x}, {y}): got {actual:?}, wanted {wanted:?}");
 }
@@ -113,14 +118,15 @@ fn expect_rgb(image: &GoldenImage, x: u32, y: u32, expected: Vec3, tolerance: u8
 fn project(camera: &Camera, point: Vec3, size: u32) -> Vec2 {
     let clip = camera.view_projection() * point.extend(1.0);
     let ndc = clip.truncate() / clip.w;
-    Vec2::new(
-        (ndc.x * 0.5 + 0.5) * size as f32,
-        (0.5 - ndc.y * 0.5) * size as f32,
-    )
+    Vec2::new((ndc.x * 0.5 + 0.5) * size as f32, (0.5 - ndc.y * 0.5) * size as f32)
 }
 
 fn luminance(image: &GoldenImage, x: u32, y: u32) -> u32 {
-    pixel_rgb(image, x, y).iter().map(|channel| u32::from(*channel)).max().unwrap_or(0)
+    pixel_rgb(image, x, y)
+        .iter()
+        .map(|channel| u32::from(*channel))
+        .max()
+        .unwrap_or(0)
 }
 
 // ---- lines ----
@@ -209,12 +215,14 @@ fn lines_land_on_the_pixels_their_projection_and_thickness_predict() {
         },
     ];
     for line in &lines {
-        scene
-            .draw()
-            .line(line.start, line.end, LineStyle::new(line.color).thickness(line.thickness));
+        scene.draw().line(
+            line.start,
+            line.end,
+            LineStyle::new(line.color).thickness(line.thickness),
+        );
     }
 
-    assert!(scene.render().is_empty());
+    assert_eq!(scene.render(), [] as [String; 0]);
     let image = scene.image();
 
     assert_matches_expected(&image, &expected_pixels(&lines, SIZE), 3);
@@ -240,9 +248,8 @@ fn thickness_is_in_pixels_whatever_the_distance() {
     scene.render();
     let image = scene.image();
 
-    let energy = |x: u32, rows: std::ops::Range<u32>| -> f32 {
-        rows.map(|y| f32::from(image.pixel(x, y)[0]) / 255.0).sum()
-    };
+    let energy =
+        |x: u32, rows: std::ops::Range<u32>| -> f32 { rows.map(|y| f32::from(image.pixel(x, y)[0]) / 255.0).sum() };
     let (near, far) = (energy(64, 0..64), energy(64, 64..128));
     assert!((near - 4.0).abs() < 0.1, "near line is {near} px wide");
     assert!((far - 4.0).abs() < 0.1, "far line is {far} px wide");
@@ -284,7 +291,11 @@ fn a_box_is_drawn_along_its_twelve_projected_edges() {
         }
     }
     assert_eq!(checked, 12 * 9);
-    assert_eq!(luminance(&image, SIZE / 2, SIZE / 2), 0, "the middle of the box is empty");
+    assert_eq!(
+        luminance(&image, SIZE / 2, SIZE / 2),
+        0,
+        "the middle of the box is empty"
+    );
     assert_golden("debug_aabb", &image, Tolerance::cross_backend());
 }
 
@@ -336,7 +347,14 @@ fn grid_mesh(cells: u32, half_extent: f32) -> (Vec<Vec3>, Vec<u32>) {
     for row in 0..cells {
         for column in 0..cells {
             let first = row * side + column;
-            indices.extend([first, first + 1, first + side, first + 1, first + side + 1, first + side]);
+            indices.extend([
+                first,
+                first + 1,
+                first + side,
+                first + 1,
+                first + side + 1,
+                first + side,
+            ]);
         }
     }
     (positions, indices)
@@ -369,7 +387,8 @@ fn lit_pixels(image: &GoldenImage) -> Vec<(u32, u32)> {
 fn near_a_lit_pixel(image: &GoldenImage, x: u32, y: u32) -> bool {
     const REACH: u32 = 2;
     (y.saturating_sub(REACH)..=(y + REACH).min(image.height() - 1)).any(|row| {
-        (x.saturating_sub(REACH)..=(x + REACH).min(image.width() - 1)).any(|column| luminance(image, column, row) >= 100)
+        (x.saturating_sub(REACH)..=(x + REACH).min(image.width() - 1))
+            .any(|column| luminance(image, column, row) >= 100)
     })
 }
 
@@ -380,7 +399,11 @@ fn the_barycentric_wireframe_draws_the_grid_and_matches_its_golden() {
     };
 
     let lit = lit_pixels(&image);
-    assert!(lit.len() > 600, "a six by six grid has long edges: {} lit pixels", lit.len());
+    assert!(
+        lit.len() > 600,
+        "a six by six grid has long edges: {} lit pixels",
+        lit.len()
+    );
     assert_eq!(luminance(&image, 2, 2), 0, "outside the mesh");
     // fwidth is coarse on some backends, so the antialiased fringe may differ a little.
     assert_golden("debug_wireframe_barycentric", &image, Tolerance::new(40, 0.05));
@@ -403,13 +426,24 @@ fn polygon_mode_line_and_the_barycentric_fallback_draw_the_same_lines() {
     assert_golden("debug_wireframe_lines", &hardware, Tolerance::new(100, 0.10));
     let (hardware_lit, fallback_lit) = (lit_pixels(&hardware), lit_pixels(&barycentric));
     for (x, y) in &hardware_lit {
-        assert!(near_a_lit_pixel(&barycentric, *x, *y), "line pixel ({x}, {y}) has no fallback pixel next to it");
+        assert!(
+            near_a_lit_pixel(&barycentric, *x, *y),
+            "line pixel ({x}, {y}) has no fallback pixel next to it"
+        );
     }
     for (x, y) in &fallback_lit {
-        assert!(near_a_lit_pixel(&hardware, *x, *y), "fallback pixel ({x}, {y}) has no line pixel next to it");
+        assert!(
+            near_a_lit_pixel(&hardware, *x, *y),
+            "fallback pixel ({x}, {y}) has no line pixel next to it"
+        );
     }
     let ratio = fallback_lit.len() as f32 / hardware_lit.len() as f32;
-    assert!((0.7..=1.6).contains(&ratio), "{} line pixels, {} fallback pixels", hardware_lit.len(), fallback_lit.len());
+    assert!(
+        (0.7..=1.6).contains(&ratio),
+        "{} line pixels, {} fallback pixels",
+        hardware_lit.len(),
+        fallback_lit.len()
+    );
 }
 
 #[test]
@@ -418,7 +452,11 @@ fn barycentric_thickness_widens_the_edge_by_the_reference_coverage() {
         return;
     };
     // One big triangle; its left edge is vertical at x = -1 (pixel 36.9), so the distance to it is known per column.
-    let positions = [Vec3::new(-1.0, -1.0, 0.0), Vec3::new(1.0, -1.0, 0.0), Vec3::new(-1.0, 1.0, 0.0)];
+    let positions = [
+        Vec3::new(-1.0, -1.0, 0.0),
+        Vec3::new(1.0, -1.0, 0.0),
+        Vec3::new(-1.0, 1.0, 0.0),
+    ];
     scene.draw().wireframe(
         &positions,
         &[0, 1, 2],
@@ -434,7 +472,10 @@ fn barycentric_thickness_widens_the_edge_by_the_reference_coverage() {
         let distance = column as f32 + 0.5 - edge_x;
         let expected = barycentric_coverage(4.0, distance);
         let actual = f32::from(image.pixel(column, 64)[0]) / 255.0;
-        assert!((actual - expected).abs() < 0.05, "column {column}: {actual} vs {expected}");
+        assert!(
+            (actual - expected).abs() < 0.05,
+            "column {column}: {actual} vs {expected}"
+        );
     }
 }
 
@@ -451,7 +492,11 @@ fn uv_of(x: u32, y: u32, size: u32) -> Vec2 {
 }
 
 fn encoded(linear: Vec3) -> Vec3 {
-    Vec3::new(srgb_oetf(linear.x.clamp(0.0, 1.0)), srgb_oetf(linear.y.clamp(0.0, 1.0)), srgb_oetf(linear.z.clamp(0.0, 1.0)))
+    Vec3::new(
+        srgb_oetf(linear.x.clamp(0.0, 1.0)),
+        srgb_oetf(linear.y.clamp(0.0, 1.0)),
+        srgb_oetf(linear.z.clamp(0.0, 1.0)),
+    )
 }
 
 fn golden_name(slot: PreviewSlot) -> &'static str {
@@ -492,7 +537,12 @@ fn every_base_slot_has_a_preview_that_matches_its_golden_image() {
 }
 
 fn fullscreen_image(slot: PreviewSlot) -> Option<GoldenImage> {
-    let mut scene = preview_scene("fullscreen_image", PREVIEW_SIZE, Format::Rgba8Unorm, SlotPreview::fullscreen(slot))?;
+    let mut scene = preview_scene(
+        "fullscreen_image",
+        PREVIEW_SIZE,
+        Format::Rgba8Unorm,
+        SlotPreview::fullscreen(slot),
+    )?;
     scene.render();
     Some(scene.image())
 }
@@ -557,7 +607,12 @@ fn scalar_slots_are_gray_and_albedo_is_encoded() {
         (PreviewSlot::Roughness, 48, 10, uv_of(48, 10, PREVIEW_SIZE).x),
         (PreviewSlot::Reactive, 4, 4, 0.0),
         (PreviewSlot::Reactive, 12, 4, 1.0),
-        (PreviewSlot::Ao, 32, 32, 1.0 - 1.6 * (uv_of(32, 32, PREVIEW_SIZE) - Vec2::splat(0.5)).length()),
+        (
+            PreviewSlot::Ao,
+            32,
+            32,
+            1.0 - 1.6 * (uv_of(32, 32, PREVIEW_SIZE) - Vec2::splat(0.5)).length(),
+        ),
         (PreviewSlot::Ao, 2, 2, 0.0),
     ] {
         let Some(image) = fullscreen_image(slot) else {
@@ -626,7 +681,12 @@ fn the_exposure_slot_can_drive_the_hdr_preview() {
 #[test]
 fn previews_look_the_same_on_srgb_and_plain_targets() {
     let preview = || {
-        let mut preview = SlotPreview::grid(vec![PreviewSlot::Depth, PreviewSlot::Albedo, PreviewSlot::Hdr, PreviewSlot::Normals]);
+        let mut preview = SlotPreview::grid(vec![
+            PreviewSlot::Depth,
+            PreviewSlot::Albedo,
+            PreviewSlot::Hdr,
+            PreviewSlot::Normals,
+        ]);
         preview.exposure = 1.0;
         preview
     };
@@ -662,7 +722,7 @@ fn the_grid_shows_every_slot_on_a_dark_background() {
         return;
     };
 
-    assert!(scene.render().is_empty());
+    assert_eq!(scene.render(), [] as [String; 0]);
     let image = scene.image();
 
     // Thirteen slots in a 4 x 4 grid of 64 px cells: the last three cells are background.

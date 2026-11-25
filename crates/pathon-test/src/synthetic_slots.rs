@@ -77,7 +77,9 @@ impl SyntheticSlots {
         if let Some(pipeline) = self.pipelines.get(&(pattern, format)) {
             return Ok(*pipeline);
         }
-        let module = self.module.ok_or(RhiError::Unsupported("synthetic slots used before setup"))?;
+        let module = self
+            .module
+            .ok_or(RhiError::Unsupported("synthetic slots used before setup"))?;
         let (entry_point, constants, color_targets, depth) = match pattern {
             Pattern::Float(kind) => (
                 "fs_float",
@@ -148,7 +150,11 @@ impl RenderFeature for SyntheticSlots {
                 continue;
             };
             let pipeline = self.pipeline(ctx, pattern, format)?;
-            let levels = if slot == Slot::DEPTH_PYRAMID { SYNTHETIC_PYRAMID_LEVELS } else { 1 };
+            let levels = if slot == Slot::DEPTH_PYRAMID {
+                SYNTHETIC_PYRAMID_LEVELS
+            } else {
+                1
+            };
             let desc = if slot == Slot::EXPOSURE {
                 GraphTextureDesc::fixed(1, 1, format)
             } else {
@@ -156,7 +162,9 @@ impl RenderFeature for SyntheticSlots {
             };
             let mut texture = ctx.graph().create_texture(slot.name(), desc);
             for level in 0..levels {
-                let mut pass = ctx.graph().add_pass(PassDesc::new("synthetic slots", Stage::Opaque).priority(order));
+                let mut pass = ctx
+                    .graph()
+                    .add_pass(PassDesc::new("synthetic slots", Stage::Opaque).priority(order));
                 order += 1;
                 let written = if pattern == Pattern::Depth {
                     pass.write(texture, Access::DEPTH_WRITE)

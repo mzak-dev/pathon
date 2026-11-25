@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
 use pathon_rhi_types::{
-    Access, BindGroupId, BufferId, BufferUsage, Command, CommandList, DepthAccess, Extent3d, FormatKind, LoadOp,
-    PassTimestamps, ResourceRef, RhiError, StoreOp, SubresourceRange, TexelLayout, TextureCopy, TextureDimension,
-    TextureId, TextureUsage, TextureViewId, Transfer,
+    Access, BindGroupId, BufferId, BufferUsage, Command, CommandList, DepthAccess, DispatchIndirectArgs,
+    DrawIndexedIndirectArgs, DrawIndirectArgs, Extent3d, Features, FormatKind, INDIRECT_ALIGNMENT, INDIRECT_COUNT_SIZE,
+    LoadOp, MultiDrawCount, PassTimestamps, ResourceRef, RhiError, StoreOp, SubresourceRange, TexelLayout, TextureCopy,
+    TextureDimension, TextureId, TextureUsage, TextureViewId, Transfer,
 };
 
 use crate::device::{BindingUse, State};
@@ -31,6 +32,7 @@ fn structure_error(message: impl Into<String>) -> RhiError {
 // does not allow it, or whose contents were never written.
 pub(crate) struct Validator<'state> {
     state: &'state mut State,
+    features: Features,
     pass: PassKind,
     // One flag per 4-byte word of the current pipeline's immediates; `None` until a pipeline is set.
     immediates_written: Option<Vec<bool>>,
@@ -39,9 +41,10 @@ pub(crate) struct Validator<'state> {
 }
 
 impl<'state> Validator<'state> {
-    pub(crate) fn new(state: &'state mut State) -> Self {
+    pub(crate) fn new(state: &'state mut State, features: Features) -> Self {
         Self {
             state,
+            features,
             pass: PassKind::None,
             immediates_written: None,
             bound: Vec::new(),
@@ -180,11 +183,35 @@ impl<'state> Validator<'state> {
                 self.require_pass(PassKind::Render, "viewport or scissor")?;
             }
             Command::Draw { .. } | Command::DrawIndexed { .. } => self.draw_or_dispatch(PassKind::Render)?,
-            Command::DrawIndexedIndirect { buffer, .. } => {
-                self.buffer_usage(buffer, BufferUsage::INDIRECT)?;
+            Command::DrawIndirect { buffer, offset } => {
                 self.draw_or_dispatch(PassKind::Render)?;
+                self.indirect_arguments(buffer, offset, DrawIndirectArgs::SIZE, 1)?;
+            }
+            Command::DrawIndexedIndirect { buffer, offset } => {
+                self.draw_or_dispatch(PassKind::Render)?;
+                self.indirect_arguments(buffer, offset, DrawIndexedIndirectArgs::SIZE, 1)?;
+            }
+            Command::MultiDrawIndirect { buffer, offset, count } => {
+                self.draw_or_dispatch(PassKind::Render)?;
+                self.indirect_arguments(buffer, offset, DrawIndirectArgs::SIZE, count)?;
+            }
+            Command::MultiDrawIndexedIndirect { buffer, offset, count } => {
+                self.draw_or_dispatch(PassKind::Render)?;
+                self.indirect_arguments(buffer, offset, DrawIndexedIndirectArgs::SIZE, count)?;
+            }
+            Command::MultiDrawIndirectCount(draws) => {
+                self.draw_or_dispatch(PassKind::Render)?;
+                self.counted_draws(*draws, DrawIndirectArgs::SIZE)?;
+            }
+            Command::MultiDrawIndexedIndirectCount(draws) => {
+                self.draw_or_dispatch(PassKind::Render)?;
+                self.counted_draws(*draws, DrawIndexedIndirectArgs::SIZE)?;
             }
             Command::Dispatch { .. } => self.draw_or_dispatch(PassKind::Compute)?,
+            Command::DispatchIndirect { buffer, offset } => {
+                self.draw_or_dispatch(PassKind::Compute)?;
+                self.indirect_arguments(buffer, offset, DispatchIndirectArgs::SIZE, 1)?;
+            }
             Command::Transfer(transfer) => {
                 self.require_pass(PassKind::None, "transfer")?;
                 self.transfer(*transfer)?;
@@ -552,6 +579,47 @@ impl<'state> Validator<'state> {
                 format!("buffer '{}' used without {usage:?} usage", target.desc.label),
             ))
         }
+    }
+
+    fn counted_draws(&self, draws: MultiDrawCount, element_size: u64) -> Result<(), RhiError> {
+        if !self.features.contains(Features::MULTI_DRAW_INDIRECT_COUNT) {
+            return Err(RhiError::MissingFeatures(Features::MULTI_DRAW_INDIRECT_COUNT));
+        }
+        self.indirect_arguments(draws.args, draws.args_offset, element_size, draws.max_count)?;
+        self.indirect_arguments(draws.count_buffer, draws.count_offset, INDIRECT_COUNT_SIZE, 1)
+    }
+
+    // The GPU reads `count` elements of `element_size` bytes at `offset`; wgpu validates the same on the CPU, but only
+    // at submit, so the null backend reports it with the recorded command.
+    fn indirect_arguments(&self, buffer: BufferId, offset: u64, element_size: u64, count: u32) -> Result<(), RhiError> {
+        self.buffer_usage(buffer, BufferUsage::INDIRECT)?;
+        let target = self
+            .state
+            .buffers
+            .get(buffer)
+            .ok_or(RhiError::InvalidHandle("buffer"))?;
+        let label = target.desc.label;
+        if !offset.is_multiple_of(INDIRECT_ALIGNMENT) {
+            return Err(RhiError::validation(
+                "R0114",
+                format!(
+                    "indirect arguments of buffer '{label}' start at offset {offset}, not a multiple of {INDIRECT_ALIGNMENT}"
+                ),
+            ));
+        }
+        let end = element_size
+            .checked_mul(u64::from(count))
+            .and_then(|bytes| bytes.checked_add(offset));
+        if end.is_none_or(|end| end > target.desc.size) {
+            return Err(RhiError::validation(
+                "R0108",
+                format!(
+                    "{count} indirect arguments of {element_size} bytes at offset {offset} reach past the {} bytes of buffer '{label}'",
+                    target.desc.size
+                ),
+            ));
+        }
+        Ok(())
     }
 
     fn copy_buffer_data(

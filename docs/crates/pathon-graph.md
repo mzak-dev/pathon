@@ -22,7 +22,7 @@ Tekstury tymczasowe o tym samym kształcie i rozłącznych czasach życia dziel�
 
 ## Bufory (ADR-0011)
 
-Bufory są zasobami grafu jak tekstury: `create_buffer(name, GraphBufferDesc)` i `import_buffer(name, id, size, initial, final)`, a passy deklarują je przez `read_buffer` / `write_buffer` / `modify_buffer` z tą samą semantyką wersji, cullingu i kolejności. Flagi `BufferUsage` graf wylicza z `Access` (`SHADER_*` daje `STORAGE`), a bufory tymczasowe o tym samym rozmiarze i rozłącznych czasach życia dzielą pamięć w `ResourcePool` (dawny `TexturePool`). Przed passem graf wpisuje `BufferAccess` według tej samej reguły co dla tekstur, a zaimportowane bufory na końcu przechodzą do `final`; w passie id bufora daje `PassContext::buffer`.
+Bufory są zasobami grafu jak tekstury: `create_buffer(name, GraphBufferDesc)` i `import_buffer(name, id, size, initial, final)`, a passy deklarują je przez `read_buffer` / `write_buffer` / `modify_buffer` z tą samą semantyką wersji, cullingu i kolejności. Flagi `BufferUsage` graf wylicza z `Access` (`SHADER_*` daje `STORAGE`), a bufory tymczasowe o tym samym rozmiarze i rozłącznych czasach życia dzielą pamięć w `ResourcePool` (dawny `TexturePool`). Przed passem graf wpisuje `BufferAccess` według tej samej reguły co dla tekstur, a zaimportowane bufory na końcu przechodzą do `final`; w passie id bufora daje `PassContext::buffer`. Bufor argumentów indirect to zwykły bufor grafu: pass compute deklaruje `write_buffer(args, Access::STORAGE_WRITE)`, pass draw lub dispatch `read_buffer(args, Access::INDIRECT)`; graf nadaje buforowi `BufferUsage::STORAGE | INDIRECT`, układa passy w tej kolejności i wpisuje barierę `STORAGE_WRITE → INDIRECT` ([ADR-0033](../adr/0033-komendy-indirect.md)).
 
 ## Historia (ADR-0011, M2-08)
 

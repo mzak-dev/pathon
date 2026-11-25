@@ -89,23 +89,31 @@ fn renderer_independent_of_platform(member: &Member, violations: &mut Vec<Violat
 
 const PACK_CRATES: &[&str] = &["pathon-api", "pathon-shader"];
 
-// Regular packs see pathon-api and pathon-shader (ADR-0023); vendor packs and host adapters may also use a backend's
-// interop module.
-fn pack_boundary(member: &Member, violations: &mut Vec<Violation>) {
+// Regular packs see pathon-api and pathon-shader (ADR-0023) and the `pack-lib` crates other packs expose (ADR-0041);
+// vendor packs and host adapters may also use a backend's interop module.
+fn pack_boundary(member: &Member, model: &Model, violations: &mut Vec<Violation>) {
     let kind = member.kind.as_deref();
-    let is_pack = member.area == Area::Packs || matches!(kind, Some("pack" | "vendor"));
+    let is_pack = member.area == Area::Packs || matches!(kind, Some("pack" | "vendor" | "pack-lib"));
     let is_host = member.area == Area::Hosts || kind == Some("host");
     if !is_pack && !is_host {
         return;
     }
     let may_use_backend = matches!(kind, Some("vendor" | "host"));
+    let is_pack_lib = |dep: &str| {
+        model
+            .members
+            .iter()
+            .any(|other| other.name == dep && other.kind.as_deref() == Some("pack-lib"))
+    };
     for dep in member.deps.iter().filter(|dep| dep.starts_with("pathon")) {
-        let allowed = PACK_CRATES.contains(&dep.as_str()) || (may_use_backend && (is_backend_crate(dep) || is_host));
+        let allowed = PACK_CRATES.contains(&dep.as_str())
+            || is_pack_lib(dep)
+            || (may_use_backend && (is_backend_crate(dep) || is_host));
         if !allowed {
             let hint = if is_backend_crate(dep) {
                 "declare [package.metadata.pathon] kind = \"vendor\" to use interop"
             } else {
-                "packs depend on pathon-api and pathon-shader only"
+                "packs depend on pathon-api, pathon-shader and crates declared kind = \"pack-lib\" only"
             };
             violations.push(violation(
                 "pack-boundary",
@@ -180,7 +188,7 @@ pub(crate) fn check(model: &Model) -> Report {
     for member in model.members.iter().filter(|member| shipped(member)) {
         pinned_dependencies(member, &mut violations);
         renderer_independent_of_platform(member, &mut violations);
-        pack_boundary(member, &mut violations);
+        pack_boundary(member, model, &mut violations);
         no_threads_in_core(member, &mut violations);
     }
     licenses(model, &mut violations);
@@ -280,6 +288,31 @@ mod tests {
             &["pathon-api", "pathon-shader"],
         )]);
         assert_eq!(check(&model).violations, []);
+    }
+
+    #[test]
+    fn pack_may_depend_on_a_pack_lib_but_not_on_another_pack() {
+        let mut library = member("pathon-material", Area::Crates, &["pathon-api", "pathon-shader"]);
+        library.kind = Some("pack-lib".into());
+        let mut other_pack = member("pathon-post", Area::Packs, &["pathon-api"]);
+        other_pack.kind = Some("pack".into());
+        let allowed = member("pathon-pbr", Area::Packs, &["pathon-api", "pathon-material"]);
+        assert_eq!(
+            check(&model_with(vec![library.clone(), other_pack.clone(), allowed])).violations,
+            []
+        );
+        let forbidden = member("pathon-pbr", Area::Packs, &["pathon-api", "pathon-post"]);
+        assert_eq!(
+            rules_hit(&model_with(vec![library, other_pack, forbidden])),
+            ["pack-boundary"]
+        );
+    }
+
+    #[test]
+    fn a_pack_lib_obeys_the_pack_boundary_itself() {
+        let mut library = member("pathon-material", Area::Crates, &["pathon-api", "pathon-core"]);
+        library.kind = Some("pack-lib".into());
+        assert_eq!(rules_hit(&model_with(vec![library])), ["pack-boundary"]);
     }
 
     #[test]

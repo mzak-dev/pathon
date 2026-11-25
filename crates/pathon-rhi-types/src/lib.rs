@@ -10,6 +10,7 @@ mod device;
 mod error;
 mod format;
 mod id;
+mod indirect;
 mod maybe_send;
 mod pipeline;
 mod surface;
@@ -40,10 +41,15 @@ pub use id::{
     BindGroupId, BindGroupLayoutId, BufferId, ComputePipelineId, Id, Pool, QuerySetId, RawHandle, RenderPipelineId,
     SamplerId, ShaderModuleId, SurfaceId, TextureId, TextureViewId,
 };
+pub use indirect::{
+    DispatchIndirectArgs, DrawIndexedIndirectArgs, DrawIndirectArgs, INDIRECT_ALIGNMENT, INDIRECT_COUNT_SIZE,
+    MultiDrawCount,
+};
 pub use maybe_send::{MaybeSend, MaybeSendSync};
 pub use pipeline::{
     BlendComponent, BlendFactor, BlendOperation, BlendState, ColorTargetState, ColorWrites, ComputePipelineDesc,
-    CullMode, DepthState, FrontFace, IndexFormat, OverrideValue, PrimitiveState, PrimitiveTopology, RenderPipelineDesc,
-    ShaderModuleDesc, ShaderStage, VertexAttribute, VertexBufferLayout, VertexFormat, VertexStepMode,
+    CullMode, DepthBias, DepthState, FrontFace, IndexFormat, OverrideValue, PrimitiveState, PrimitiveTopology,
+    RenderPipelineDesc, ShaderModuleDesc, ShaderStage, VertexAttribute, VertexBufferLayout, VertexFormat,
+    VertexStepMode,
 };
 pub use surface::{PhysicalSize, PresentMode, SurfaceConfig, SurfaceFrame, SurfaceTarget, WindowSource};

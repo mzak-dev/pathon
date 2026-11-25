@@ -10,18 +10,29 @@ publish = false
 # Examples play the host: they may use wgpu and winit directly, like an own engine would.
 [dependencies]
 bytemuck.workspace = true
+gltf.workspace = true
 log.workspace = true
 pathon.workspace = true
+pathon-api.workspace = true
+pathon-bindless.workspace = true
 pathon-devtools.workspace = true
+pathon-ibl.workspace = true
+pathon-golden.workspace = true
 pathon-material.workspace = true
 pathon-mesh.workspace = true
+pathon-pbr.workspace = true
+pathon-post.workspace = true
 pathon-profile.workspace = true
 pathon-texture.workspace = true
 pathon-rhi-wgpu.workspace = true
 pathon-scene.workspace = true
+pathon-shadow.workspace = true
 pathon-shader.workspace = true
 pathon-test.workspace = true
 png.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+zune-jpeg.workspace = true
 wgpu.workspace = true
 winit.workspace = true
 
@@ -45,5 +56,10 @@ harness = false
 
 [[test]]
 name = "window_events"
+harness = false
+required-features = ["window-tests"]
+
+[[test]]
+name = "surface_reconfigure"
 harness = false
 required-features = ["window-tests"]

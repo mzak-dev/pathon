@@ -15,15 +15,19 @@ repository = "https://github.com/mzak-dev/pathon"
 pathon = { path = "crates/pathon" }
 pathon-api = { path = "crates/pathon-api" }
 pathon-bench = { path = "tools/pathon-bench" }
+pathon-bindless = { path = "crates/pathon-bindless" }
 pathon-core = { path = "crates/pathon-core" }
 pathon-diag = { path = "crates/pathon-diag" }
 pathon-golden = { path = "crates/pathon-golden" }
+pathon-ibl = { path = "crates/pathon-ibl" }
 pathon-graph = { path = "crates/pathon-graph" }
 pathon-hot = { path = "tools/pathon-hot" }
 pathon-material = { path = "crates/pathon-material" }
 pathon-mesh = { path = "crates/pathon-mesh" }
+pathon-pbr = { path = "crates/pathon-pbr" }
 pathon-platform = { path = "crates/pathon-platform" }
 pathon-platform-winit = { path = "crates/pathon-platform-winit" }
+pathon-post = { path = "crates/pathon-post" }
 pathon-profile = { path = "crates/pathon-profile" }
 pathon-resources = { path = "crates/pathon-resources" }
 pathon-rhi = { path = "crates/pathon-rhi" }
@@ -31,6 +35,7 @@ pathon-rhi-null = { path = "crates/pathon-rhi-null" }
 pathon-rhi-types = { path = "crates/pathon-rhi-types" }
 pathon-rhi-wgpu = { path = "crates/pathon-rhi-wgpu" }
 pathon-scene = { path = "crates/pathon-scene" }
+pathon-shadow = { path = "crates/pathon-shadow" }
 pathon-shader = { path = "crates/pathon-shader" }
 pathon-test = { path = "crates/pathon-test" }
 pathon-texture = { path = "crates/pathon-texture" }
@@ -41,6 +46,19 @@ bytemuck = { version = "1.25", features = ["derive"] }
 crossbeam-channel = "0.5"
 divan = "0.1"
 glam = { version = "0.34", features = ["bytemuck"] }
+# Examples only (M4-10): the glTF test-scene loader lives in `examples/` and never reaches the core closure.
+gltf = { version = "1.4", default-features = false, features = [
+    "utils",
+    "names",
+    "extensions",
+    "KHR_lights_punctual",
+    "KHR_materials_emissive_strength",
+    "KHR_materials_ior",
+    "KHR_materials_specular",
+    "KHR_materials_transmission",
+    "KHR_materials_volume",
+    "KHR_texture_transform",
+] }
 log = "0.4"
 naga = { version = "30", default-features = false, features = ["wgsl-in"] }
 # Native only (pathon-hot); browsers have no files to watch.
@@ -67,6 +85,7 @@ wgpu = { version = "30", default-features = false, features = [
     "webgpu",
 ] }
 winit = "0.30"
+zune-jpeg = "0.5"
 wesl = { version = "0.6", default-features = false, features = ["naga-ext"] }
 
 # Web only (ADR-0014).

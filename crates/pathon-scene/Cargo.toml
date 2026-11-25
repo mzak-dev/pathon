@@ -7,7 +7,7 @@ license.workspace = true
 repository.workspace = true
 
 [package.metadata.pathon]
-kind = "pack"
+kind = "pack-lib"
 
 [dependencies]
 bitflags.workspace = true

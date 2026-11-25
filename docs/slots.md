@@ -8,7 +8,7 @@ Sloty to nazwane tekstury, przez które paczki wymieniają dane w obrębie widok
 - **Głębia:** reverse-Z — bliżej = większa wartość, czyszczenie do `0.0`, test `GreaterEqual`.
 - **Wektory ruchu:** w pikselach, z bieżącej klatki do poprzedniej, bez jittera.
 - **Normalne:** w przestrzeni świata, kodowane oktaedralnie do dwóch kanałów.
-- **Światło:** jednostki fizyczne (lux, lumen); `hdr` jest liniowe i pre-exposed, mnożnik w slocie `exposure`.
+- **Światło:** jednostki fizyczne (lux, lumen); `hdr` jest liniowe i nie zawiera ekspozycji, a jasność wyświetlana to `hdr × exposure` (slot `exposure`, [ADR-0038](adr/0038-post-processing-ekspozycja-bloom-tonemapping.md)). Pre-exposure producenta jest odroczone do pbr.
 
 ## Sloty
 
@@ -18,15 +18,15 @@ Sloty to nazwane tekstury, przez które paczki wymieniają dane w obrębie widok
 | `Slot::DEPTH_PYRAMID` | `R32Float` + mipy | render | tak | Hi-Z (min głębi) dla SSR i cullingu okluzji |
 | `Slot::NORMALS` | `Rg16Float` | render | nie | normalne świata, oct-encoded |
 | `Slot::MOTION` | `Rg16Float` | render | nie | ruch w pikselach do poprzedniej klatki |
-| `Slot::MATERIAL_ID` | `R32Uint` | render | nie | indeks materiału w tablicy materiałów |
+| `Slot::MATERIAL_ID` | `R32Uint` | render | nie | indeks materiału w tablicy materiałów; `u32::MAX` tam, gdzie nic nie narysowano |
 | `Slot::ROUGHNESS` | `R8Unorm` | render | tak | chropowatość perceptualna (SSR, DLSS RR) |
-| `Slot::ALBEDO` | `Rgba8Unorm` | render | tak | albedo liniowe |
+| `Slot::ALBEDO` | `Rgba8Unorm` | render | tak | albedo liniowe w RGB, `metallic` w alfa (pisze `pathon-pbr`) |
 | `Slot::REACTIVE` | `R8Unorm` | render | tak | maska reaktywności dla upscalerów |
-| `Slot::DIFFUSE` | `Rgba16Float` | render | nie | światło rozproszone (podział dla SSS) |
+| `Slot::DIFFUSE` | `Rgba16Float` | render | nie | światło rozproszone (podział dla SSS); `pathon-pbr` pisze go, gdy ktoś poprosi (`request`), i wtedy `diffuse + specular = hdr` |
 | `Slot::SPECULAR` | `Rgba16Float` | render | nie | światło odbite |
-| `Slot::HDR` | `Rgba16Float` | render | nie | kolor sceny, liniowy, pre-exposed |
+| `Slot::HDR` | `Rgba16Float` | render | nie | kolor sceny, liniowy, bez ekspozycji |
 | `Slot::AO` | `R8Unorm` | render | nie | ambient occlusion |
-| `Slot::EXPOSURE` | `R32Float` 1×1 | stały | nie | mnożnik ekspozycji |
+| `Slot::EXPOSURE` | `R32Float` 1×1 | stały | nie | mnożnik ekspozycji (pisze `pathon-post`) |
 | `Slot::OUTPUT` | format celu | wyjście | nie | obraz końcowy celu renderu |
 
 Rozmiar „render” to `ViewCtx::render_size` (ustala rola TemporalResolve), „wyjście” to `ViewCtx::output_size`. Render pass nie może mieszać tych klas (G0004).

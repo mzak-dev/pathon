@@ -124,7 +124,7 @@ Sprawdzone przy tworzeniu (22.11.2026, Blender 5.2.2):
 - Ponowny import `.glb` do Blendera (`import_scene.gltf`): 956 obiektów (836 meshów, 107 empty, 10 świateł, 3 kamery), 28 obrazów; render Workbench z `renderCam` pokazuje poprawną klasę (tablica z napisami, tablice korkowe, mapa, drzwi, ławki z teksturami, podłoga).
 - Własne sprawdzenia JSON-a glb: brak prymitywów z teksturą bez `TEXCOORD_0`, 77 materiałów, 2 z `BLEND`.
 
-Nie sprawdzono jeszcze renderu w pathon (M4-10 czeka na loader w `examples/`).
+Render w pathon: patrz [Render w pathon](#render-w-pathon) niżej.
 
 Walidator uruchomisz tak:
 
@@ -134,10 +134,37 @@ npm install gltf-validator && node -e "require('gltf-validator').validateBytes(n
 
 ### Użycie w testach
 
-Konwencja dla M4-10: zmienna środowiskowa `PATHON_TEST_SCENE` wskazuje na plik `.glb`, który przykłady i testy mają wczytać; bez niej testy sceny się pomijają. Loader jeszcze nie istnieje, więc obsługę zmiennej (i ewentualnego wymuszenia w CI, jak `PATHON_REQUIRE_WINDOW` przy oknach) dopisze M4-10:
+Konwencja M4-10: zmienna środowiskowa `PATHON_TEST_SCENE` wskazuje na plik `.glb`, który przykłady i testy wczytują; bez niej testy sceny się pomijają (z komunikatem). Obsługują ją `gltf_viewer` (domyślny plik) i test `the_test_scene_loads_when_it_is_available` w `examples/src/gltf_loader.rs`. Wymuszenia w CI (jak `PATHON_REQUIRE_WINDOW` przy oknach) nie ma: sceny nie ma w repozytorium.
 
 ```sh
-PATHON_TEST_SCENE=test-assets/classroom/classroom-lite.glb cargo run -p pathon-examples --bin <przykład>
+PATHON_TEST_SCENE=test-assets/classroom/classroom-lite.glb cargo run --release -p pathon-examples --bin gltf_viewer
+PATHON_TEST_SCENE=test-assets/classroom/classroom-lite.glb cargo test -p pathon-examples --lib
 ```
 
-Do codziennych testów i Chrome używaj `classroom-lite.glb` (17,9 MB), do pomiarów wydajności `classroom.glb`. Do IBL wskaż `test-assets/classroom/env/Garage.hdr`. Główna kamera i światła są w `*.scene.json`, żeby loader nie musiał zgadywać, która z trzech kamer ma być domyślna (flaga `main`).
+Do codziennych testów i Chrome używaj `classroom-lite.glb` (17,9 MB), do pomiarów wydajności `classroom.glb`. Do IBL wskaż `test-assets/classroom/env/Garage.hdr` (M4-06). Główna kamera i światła są w `*.scene.json`; loader bierze z niego tylko flagę `main` kamery (nazwa obiektu = nazwa węzła glTF), reszta idzie z samego `.glb`.
+
+## Render w pathon
+
+`cargo run --release -p pathon-examples --bin gltf_viewer` (opis, sterowanie i tryb `--screenshot` w [przykładach](examples.md#viewer-sceny-testowej-gltf_viewer)). Sprawdzone 22.11.2026 na Windows, Vulkan, AMD Radeon RX 9070 XT, w obu wariantach sceny: wczytanie `.glb` ok. 0,1-0,5 s (obrazy dekodowane równolegle), wgranie na GPU poniżej sekundy, w oknie 1280×720 ok. 70 klatek na sekundę przy włączonym vsync (`classroom.glb`: 862 instancje, 606 tys. trójkątów po rozwinięciu instancji, 78 materiałów, 10 świateł).
+
+Zrzuty referencyjne (960×540, ekspozycja domyślna viewera, `--supersample 2`) leżą w `docs/scenes/`:
+
+| Plik | Co | Polecenie (`--size 960x540 --supersample 2`) |
+| --- | --- | --- |
+| `classroom-lite-renderCam.png` | kamera główna, wariant lite | `classroom-lite.glb --camera 2` |
+| `classroom-lite-wide.png` | `pathon_wide` (14 mm) | `classroom-lite.glb --camera 1` |
+| `classroom-lite-reverse.png` | `pathon_reverse`, od strony tablicy | `classroom-lite.glb --camera 0` |
+| `classroom-renderCam.png` | kamera główna, wariant pełny | `classroom.glb --camera 2` |
+
+Numer kamery to kolejność z pliku (log viewera ją wypisuje; w klasie: 0 `pathon_reverse`, 1 `pathon_wide`, 2 `renderCam`). Pliki są wygenerowane lokalnym wariantem sceny, której licencji nie potwierdzono do końca (patrz wyżej): zanim obrazy wyjdą poza repozytorium, trzeba to zrobić.
+
+Co widać i co nie jest wierne (viewer to przejściowy zamiennik pbr, cieni, IBL i postu):
+
+- **Zgadza się:** tablica z napisami, mapa, tablice korkowe, drzwi, ławki i krzesła z drewnem i metalem, żaluzje, kosz z siatki (blend z maski alfa) z kulkami papieru, lampy sufitowe jako emisja, plamy słońca na podłodze przez żaluzje (cień kierunkowy z mapy 4096²). Normalne, winding i odwrócenie Y są poprawne; lustrzane instancje (ujemny wyznacznik) nie mają odwróconych normalnych.
+- **Jasność:** ekspozycja 1/683 z tego opisu jest u Blendera przy transformacji Standard; z ACES (przybliżenie Narkowicza w shaderze viewera) obraz jest za ciemny, więc viewer startuje o jeden stopień wyżej (2/683). Klawisze `+` / `-` zmieniają ekspozycję, `--ev` w trybie zrzutu.
+- **Oświetlenie:** pętla po wszystkich 10 światłach bez cieni (poza słońcem) plus ambient półsferyczny 400 / 150 lx w miejsce IBL. Wypełnienie za oknem (213 437 cd) świeci też na powierzchnie, które w rzeczywistości zasłania ściana, a światła sufitowe nie rzucają cieni, więc kontakty (spód ławek) są jaśniejsze niż w Cyclesie.
+- **Okna:** światło dzienne to słońce, a tło okien to stały kolor nieba (brak portalu i IBL).
+- **Szkło** (`frostedGlass`, szkło zegara): `KHR_materials_transmission` jest rysowane jako blend z alfą `1 - 0,9 * transmission`, bez załamania.
+- **Materiały:** straty z tabeli wyżej (bump, korekcje koloru, atrybuty obiektu) są widoczne jako płaskie albo jednolite powierzchnie (np. skóra foteli). `KHR_texture_transform` dla normalnej i okluzji bierze transformację base color, bo crate `gltf` nie wystawia jej dla tych dwóch map.
+- **Alias:** okno nie ma MSAA (zrzuty wygładza `--supersample`).
+

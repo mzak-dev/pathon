@@ -14,8 +14,7 @@ Bindless (M4-04: materiały jako indeksy do tablicy tekstur) wymaga tablic bindi
 - **Model aktualizacji:** bind groupy są niemutowalne; zmiana elementu tablicy = utworzenie nowej grupy (tak działa wgpu). Bez publicznej flagi update-after-bind i bez API aktualizacji pojedynczego elementu.
 - **Reguły (walidowane w `rhi-null`, kod R0107):** layout z `count` wymaga `Features::TEXTURE_BINDING_ARRAY` i mieści się w `Limits::max_binding_array_elements_per_shader_stage` (dla samplerów — w nowym `Limits::max_binding_array_sampler_elements_per_shader_stage`); grupa z tablicą nie zawiera uniform buffera (reguła wgpu `ContainsBothBindingArrayAndUniformBuffer`); liczba zasobów w tablicy równa się `count`, chyba że włączone jest `PARTIALLY_BOUND_BINDING_ARRAY` (wtedy ≤ `count`); zasób tablicowy tylko dla wpisu z `count` i odwrotnie.
 - **Zakres `rhi-null`:** odrzuca też tablice buforów i tekstur storage (R0107) — wgpu wymagałby `BUFFER_BINDING_ARRAY` / `STORAGE_RESOURCE_BINDING_ARRAY`, których pathon nie żąda; limity liczy się na etap (suma elementów wszystkich wpisów widocznych dla etapu, samplery także w limicie ogólnym); tablica ma co najmniej jeden element.
-- **Poza zakresem tego tasku:** `NON_UNIFORM_INDEXING` nie jest jeszcze ćwiczone testem GPU — do zrobienia przed M4-04.
-- **Web:** profil Web nie ma `TEXTURE_BINDING_ARRAY`; paczki potrzebują ścieżki bez tablic (bind group per materiał, M4-04).
+- **Aneks (M4-04):** `NON_UNIFORM_INDEXING` ma test GPU (`crates/pathon-rhi/tests/binding_array_gpu.rs`). Profil Web nie ma `TEXTURE_BINDING_ARRAY`; ścieżkę bez tablic (bind group per materiał), strategię przebudowy grupy z tablicą, placeholder w pustych slotach i samplery jako stałe bindingi opisuje [ADR-0036](0036-bindless-i-bind-group-per-material.md).
 
 ## Konsekwencje
 

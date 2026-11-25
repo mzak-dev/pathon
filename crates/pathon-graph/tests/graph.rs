@@ -628,6 +628,122 @@ fn a_compute_pass_feeding_an_indirect_draw_is_kept_and_ordered_first() {
         .expect("buffer barriers pass null validation");
 }
 
+fn indirect_pipelines(
+    device: &NullDevice,
+) -> (pathon_rhi_types::ComputePipelineId, pathon_rhi_types::RenderPipelineId) {
+    let module = device
+        .create_shader_module(&pathon_rhi_types::ShaderModuleDesc {
+            label: "indirect",
+            wgsl: "fn main() {}",
+        })
+        .expect("module");
+    let stage = |entry_point| pathon_rhi_types::ShaderStage {
+        module,
+        entry_point,
+        constants: vec![],
+    };
+    let compute = device
+        .create_compute_pipeline(&pathon_rhi_types::ComputePipelineDesc {
+            label: "indirect",
+            bind_group_layouts: vec![],
+            shader: stage("main"),
+            immediate_size: 0,
+        })
+        .expect("compute pipeline");
+    let render = device
+        .create_render_pipeline(&pathon_rhi_types::RenderPipelineDesc {
+            label: "indirect",
+            bind_group_layouts: vec![],
+            vertex: stage("vs"),
+            vertex_buffers: vec![],
+            fragment: Some(stage("fs")),
+            color_targets: vec![pathon_rhi_types::ColorTargetState::opaque(Format::Rgba8Unorm)],
+            primitive: pathon_rhi_types::PrimitiveState::default(),
+            depth: None,
+            sample_count: 1,
+            immediate_size: 0,
+        })
+        .expect("render pipeline");
+    (compute, render)
+}
+
+// The graph infers `BufferUsage::INDIRECT | STORAGE` for the argument buffer from the two accesses; the null device
+// rejects the recorded indirect commands if it did not.
+#[test]
+fn a_compute_written_argument_buffer_feeds_indirect_draws_and_dispatches() {
+    let device = NullDevice::new();
+    let (compute, render) = indirect_pipelines(&device);
+    let mut graph = FrameGraph::new();
+    let output = import_output(&mut graph, &device);
+    let args = graph.create_buffer("args", GraphBufferDesc::new(256, BufferUsage::empty()));
+
+    let mut pass = graph.add_pass(PassDesc::new("cull", Stage::Opaque));
+    let written = pass.write_buffer(args, Access::STORAGE_WRITE);
+    pass.record(move |context| {
+        let mut pass = context.commands().compute_pass(pathon_rhi_types::ComputePassDesc {
+            label: "cull",
+            timestamps: None,
+        });
+        pass.set_pipeline(compute);
+        pass.dispatch(1, 1, 1);
+        Ok(())
+    });
+
+    let mut pass = graph.add_pass(PassDesc::new("draw", Stage::Opaque));
+    pass.read_buffer(written, Access::INDIRECT);
+    let drawn = pass.write(output, Access::COLOR_ATTACHMENT);
+    pass.record(move |context| {
+        let view = context.view(drawn)?;
+        let args = context.buffer(written);
+        let mut pass = context.commands().render_pass(RenderPassDesc {
+            label: "draw",
+            color: vec![ColorAttachment::clear(view, Color::BLACK)],
+            depth: None,
+            timestamps: None,
+        });
+        pass.set_pipeline(render);
+        pass.draw_indirect(args, 0);
+        pass.draw_indexed_indirect(args, 16);
+        pass.multi_draw_indirect(args, 0, 8);
+        pass.multi_draw_indexed_indirect(args, 0, 8);
+        Ok(())
+    });
+
+    let mut pass = graph.add_pass(PassDesc::new("dispatch", Stage::Opaque).after("draw").side_effect());
+    pass.read_buffer(written, Access::INDIRECT);
+    pass.record(move |context| {
+        let args = context.buffer(written);
+        let mut pass = context.commands().compute_pass(pathon_rhi_types::ComputePassDesc {
+            label: "dispatch",
+            timestamps: None,
+        });
+        pass.set_pipeline(compute);
+        pass.dispatch_indirect(args, 0);
+        Ok(())
+    });
+
+    // `run` would release the output view before the submit that uses it.
+    let compiled = graph.compile(FrameSizes::same(SIZE)).expect("graph compiles");
+    let mut release = DeferredRelease::new(2);
+    let execution = graph
+        .execute(
+            &compiled,
+            &device,
+            &mut ResourcePool::new(),
+            &mut HistoryStore::new(),
+            &mut release,
+            0,
+        )
+        .expect("graph executes");
+    assert_eq!(
+        buffer_accesses(&execution.commands),
+        [Access::STORAGE_WRITE, Access::INDIRECT]
+    );
+    device
+        .submit(execution.commands)
+        .expect("the graph gave the buffer the INDIRECT usage the commands need");
+}
+
 #[test]
 fn a_buffer_nobody_reads_does_not_keep_its_writer() {
     let device = NullDevice::new();

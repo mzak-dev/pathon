@@ -2,7 +2,7 @@
 
 Materiał standardowy (M4-03, [ADR-0030](../adr/0030-material-standardowy-i-hooki-wgsl.md)): model glTF metallic-roughness z rozszerzeniami KHR jako **funkcje WGSL oddzielone od entry pointu**, ta sama funkcja dla fragmentu forward, compute po visibility bufferze i punktu trafienia RT. Do tego opis materiału po stronie CPU, układ danych na GPU, tablica materiałów z indeksem logicznym i flagi permutacji shadera.
 
-To zwykła paczka: zależy tylko od `pathon-api` i `pathon-shader` (`[package.metadata.pathon] kind = "pack"`). Nie rysuje niczego sama: nie ma pętli po światłach, cieni ani IBL (to `pathon-pbr`, `pathon-shadow`, `pathon-ibl`), nie zna sceny (`pathon-scene`) ani bindless (M4-04).
+To zwykła paczka: zależy tylko od `pathon-api` i `pathon-shader` (`[package.metadata.pathon] kind = "pack"`). Nie rysuje niczego sama: nie ma pętli po światłach, cieni ani IBL (to `pathon-pbr`, `pathon-shadow`, `pathon-ibl`), nie zna sceny (`pathon-scene`) ani bindless ([pathon-bindless](pathon-bindless.md)).
 
 ```rust
 # use pathon_material::{MaterialTable, StandardMaterial};
@@ -75,7 +75,7 @@ Moduły: `package::material::surface` (struktury), `standard` (model), `hooks` i
 
 Paczka podmienia moduł pod tą samą ścieżką: `MaterialHooks` (typ w `Shared`: `get_or_insert_with(MaterialHooks::default)`) przechowuje źródła, `set_surface_hook` i `set_texture_source` je ustawiają, `modules()` oddaje komplet do `add_module`. Hook może importować resztę `package::material::*`. `validate()` składa moduły bez flag i ze wszystkimi naraz i sprawdza je w naga; błąd to `Y0003`. Hook nie może zależeć od flagi, której nie ma w każdej permutacji. Tylko jeden hook danego rodzaju naraz.
 
-`texture_source` to jedyne miejsce, w którym materiał czyta teksturę; M4-04 podstawi tu `binding_array` (Desktop) albo bind group per materiał (Web) z tym samym `slot`.
+`texture_source` to jedyne miejsce, w którym materiał czyta teksturę; [pathon-bindless](pathon-bindless.md) (M4-04, [ADR-0036](../adr/0036-bindless-i-bind-group-per-material.md)) generuje tu `binding_array` (Desktop) albo bind group per materiał (Web) z tym samym `slot`: `hooks.set_texture_source(binder.texture_source_wgsl(grupa))`.
 
 ## Flagi permutacji
 

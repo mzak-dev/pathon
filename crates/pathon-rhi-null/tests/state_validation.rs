@@ -4,9 +4,10 @@ use pathon_rhi_null::NullDevice;
 use pathon_rhi_types::{
     Access, BindGroupDesc, BindGroupEntry, BindGroupLayoutDesc, BindGroupLayoutEntry, BindingResource, BindingType,
     Color, ColorAttachment, ColorTargetState, CommandList, ComputePassDesc, ComputePipelineDesc, ComputePipelineId,
-    DepthAttachment, DeviceApi, Features, Format, PassTimestamps, PolygonMode, PrimitiveState, QuerySetDesc, QuerySetId,
-    RenderPassDesc, RenderPipelineDesc, Resource, RhiError, ShaderModuleDesc, ShaderStage, ShaderStages, StorageAccess,
-    SubresourceRange, SurfaceConfig, TextureDesc, TextureId, TextureUsage, TextureViewDesc, TextureViewDimension,
+    DepthAttachment, DeviceApi, Features, Format, PassTimestamps, PolygonMode, PrimitiveState, QuerySetDesc,
+    QuerySetId, RenderPassDesc, RenderPipelineDesc, Resource, RhiError, ShaderModuleDesc, ShaderStage, ShaderStages,
+    StorageAccess, SubresourceRange, SurfaceConfig, TextureDesc, TextureId, TextureUsage, TextureViewDesc,
+    TextureViewDimension,
 };
 
 fn code(result: Result<(), RhiError>) -> &'static str {

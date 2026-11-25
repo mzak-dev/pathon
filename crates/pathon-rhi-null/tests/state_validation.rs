@@ -4,9 +4,10 @@ use pathon_rhi_null::NullDevice;
 use pathon_rhi_types::{
     Access, BindGroupDesc, BindGroupEntry, BindGroupLayoutDesc, BindGroupLayoutEntry, BindingResource, BindingType,
     Color, ColorAttachment, ColorTargetState, CommandList, ComputePassDesc, ComputePipelineDesc, ComputePipelineId,
-    DepthAttachment, DeviceApi, Features, Format, PassTimestamps, PrimitiveState, QuerySetDesc, QuerySetId,
-    RenderPassDesc, RenderPipelineDesc, Resource, RhiError, ShaderModuleDesc, ShaderStage, ShaderStages, StorageAccess,
-    SubresourceRange, SurfaceConfig, TextureDesc, TextureId, TextureUsage, TextureViewDesc, TextureViewDimension,
+    DepthAttachment, DeviceApi, Features, Format, PassTimestamps, PolygonMode, PrimitiveState, QuerySetDesc,
+    QuerySetId, RenderPassDesc, RenderPipelineDesc, Resource, RhiError, ShaderModuleDesc, ShaderStage, ShaderStages,
+    StorageAccess, SubresourceRange, SurfaceConfig, TextureDesc, TextureId, TextureUsage, TextureViewDesc,
+    TextureViewDimension,
 };
 
 fn code(result: Result<(), RhiError>) -> &'static str {
@@ -1587,6 +1588,48 @@ fn query_sets_need_the_timestamp_feature() {
         .expect_err("no timestamp feature");
 
     assert!(matches!(error, RhiError::MissingFeatures(Features::TIMESTAMP_QUERY)));
+}
+
+fn pipeline_with_polygon_mode(device: &NullDevice, polygon_mode: PolygonMode) -> Result<(), RhiError> {
+    let module = device
+        .create_shader_module(&ShaderModuleDesc {
+            label: "render",
+            wgsl: "fn main() {}",
+        })
+        .expect("module");
+    let stage = |entry_point| ShaderStage {
+        module,
+        entry_point,
+        constants: vec![],
+    };
+    device
+        .create_render_pipeline(&RenderPipelineDesc {
+            label: "wireframe",
+            bind_group_layouts: vec![],
+            vertex: stage("vs_main"),
+            vertex_buffers: vec![],
+            fragment: Some(stage("fs_main")),
+            color_targets: vec![ColorTargetState::opaque(Format::Rgba8Unorm)],
+            primitive: PrimitiveState {
+                polygon_mode,
+                ..PrimitiveState::default()
+            },
+            depth: None,
+            sample_count: 1,
+            immediate_size: 0,
+        })
+        .map(drop)
+}
+
+#[test]
+fn line_polygon_mode_needs_its_feature() {
+    let without = NullDevice::with_features(Features::empty());
+    let error = pipeline_with_polygon_mode(&without, PolygonMode::Line).expect_err("no line feature");
+    assert!(matches!(error, RhiError::MissingFeatures(Features::POLYGON_MODE_LINE)));
+    pipeline_with_polygon_mode(&without, PolygonMode::Fill).expect("fill needs no feature");
+
+    let with = NullDevice::with_features(Features::POLYGON_MODE_LINE);
+    pipeline_with_polygon_mode(&with, PolygonMode::Line).expect("line with the feature");
 }
 
 fn depth_pipeline(device: &NullDevice, depth: pathon_rhi_types::DepthState) -> Result<(), RhiError> {

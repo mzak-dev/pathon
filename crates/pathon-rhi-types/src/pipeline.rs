@@ -150,11 +150,31 @@ pub enum CullMode {
     Back,
 }
 
+// `Line` needs `Features::POLYGON_MODE_LINE`; without it pipeline creation fails with `MissingFeatures` (ADR-0046).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
+pub enum PolygonMode {
+    #[default]
+    Fill,
+    Line,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
 pub struct PrimitiveState {
     pub topology: PrimitiveTopology,
     pub front_face: FrontFace,
     pub cull_mode: CullMode,
+    pub polygon_mode: PolygonMode,
+}
+
+impl PrimitiveState {
+    // Backends call this before creating a pipeline, so every one of them refuses the same way.
+    pub fn check_features(self, caps: &crate::caps::Caps) -> Result<(), RhiError> {
+        match self.polygon_mode {
+            PolygonMode::Fill => Ok(()),
+            PolygonMode::Line if caps.has(crate::caps::Features::POLYGON_MODE_LINE) => Ok(()),
+            PolygonMode::Line => Err(RhiError::MissingFeatures(crate::caps::Features::POLYGON_MODE_LINE)),
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]

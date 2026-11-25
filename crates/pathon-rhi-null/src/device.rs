@@ -564,6 +564,7 @@ impl DeviceApi for NullDevice {
 
     fn create_render_pipeline(&self, desc: &RenderPipelineDesc) -> Result<RenderPipelineId, RhiError> {
         self.caps.check_immediate_size(desc.label, desc.immediate_size)?;
+        desc.primitive.check_features(&self.caps)?;
         desc.vertex.check_constants(desc.label)?;
         if let Some(fragment) = &desc.fragment {
             fragment.check_constants(desc.label)?;

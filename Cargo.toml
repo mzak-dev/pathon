@@ -17,6 +17,7 @@ pathon-api = { path = "crates/pathon-api" }
 pathon-bench = { path = "tools/pathon-bench" }
 pathon-bindless = { path = "crates/pathon-bindless" }
 pathon-core = { path = "crates/pathon-core" }
+pathon-debug = { path = "crates/pathon-debug" }
 pathon-diag = { path = "crates/pathon-diag" }
 pathon-golden = { path = "crates/pathon-golden" }
 pathon-ibl = { path = "crates/pathon-ibl" }

@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use pathon_api::graph::{GraphBufferDesc, PassDesc, Stage};
 use pathon_api::rhi::{
     Access, BindGroupDesc, BindGroupEntry, BindingResource, BufferUsage, Caps, Color, ColorAttachment, DepthAccess,
@@ -40,7 +42,8 @@ impl RenderFeature for LightingFeature {
 
     fn negotiate(&mut self, caps: &Caps) -> Negotiation {
         let hdr = caps.format(Format::Rgba16Float);
-        if !hdr.contains(FormatCaps::RENDER_TARGET | FormatCaps::BLENDABLE | FormatCaps::SAMPLED | FormatCaps::FILTERABLE)
+        if !hdr
+            .contains(FormatCaps::RENDER_TARGET | FormatCaps::BLENDABLE | FormatCaps::SAMPLED | FormatCaps::FILTERABLE)
         {
             return Negotiation::Disabled {
                 reason: "L0006: Rgba16Float must be a blendable, filterable render target".to_owned(),
@@ -60,7 +63,12 @@ fn record_lighting(
     binder: Option<&TextureBinder>,
 ) -> Result<(), RhiError> {
     let view = ctx.view().clone();
-    let Some(frame) = pbr.views.get(&view.view).filter(|frame| frame.record_epoch == view.record_epoch).cloned() else {
+    let Some(frame) = pbr
+        .views
+        .get(&view.view)
+        .filter(|frame| frame.record_epoch == view.record_epoch)
+        .cloned()
+    else {
         return Ok(());
     };
     let Some(depth) = ctx.slot(Slot::DEPTH) else {
@@ -74,15 +82,14 @@ fn record_lighting(
     let environment = pbr.environment(device, published)?;
     pbr.shaders(hooks.as_ref(), binder)
         .map_err(|error| RhiError::validation("L0006", error.to_string()))?;
-    let cluster = match pbr.cluster {
-        Some(cluster) => cluster,
-        None => {
-            let shaders = pbr.shaders.as_mut().expect("built above");
-            let built = ClusterPipeline::new(device, shaders)
-                .map_err(|error| RhiError::validation("L0006", error.to_string()))?;
-            pbr.cluster = Some(built);
-            built
-        }
+    let cluster = if let Some(cluster) = pbr.cluster {
+        cluster
+    } else {
+        let shaders = pbr.shaders.as_mut().expect("built above");
+        let built =
+            ClusterPipeline::new(device, shaders).map_err(|error| RhiError::validation("L0006", error.to_string()))?;
+        pbr.cluster = Some(built);
+        built
     };
     let shaders = pbr.shaders.as_mut().expect("built above");
 
@@ -91,16 +98,15 @@ fn record_lighting(
     for (items, split) in [(&frame.draws.opaque, split), (&frame.draws.transparent, false)] {
         for item in items {
             if !variants.iter().any(|(variant, _)| *variant == item.variant) {
-                let pipeline = shaders
-                    .forward_pipeline(
-                        device,
-                        ForwardKey {
-                            variant: item.variant,
-                            split: split && item.variant.alpha != AlphaKind::Transparent,
-                        },
-                        &frame.draws.vertex_buffers,
-                        texture_layout,
-                    )?;
+                let pipeline = shaders.forward_pipeline(
+                    device,
+                    ForwardKey {
+                        variant: item.variant,
+                        split: split && item.variant.alpha != AlphaKind::Transparent,
+                    },
+                    &frame.draws.vertex_buffers,
+                    texture_layout,
+                )?;
                 variants.push((item.variant, pipeline));
             }
         }
@@ -117,9 +123,10 @@ fn record_lighting(
         "pbr cluster indices",
         GraphBufferDesc::new(max_indices * 4, BufferUsage::STORAGE),
     );
-    let counters = ctx
-        .graph()
-        .create_buffer("pbr cluster counters", GraphBufferDesc::new(COUNTERS_SIZE, BufferUsage::STORAGE));
+    let counters = ctx.graph().create_buffer(
+        "pbr cluster counters",
+        GraphBufferDesc::new(COUNTERS_SIZE, BufferUsage::STORAGE),
+    );
     let params = ClusterParams::new(
         &grid,
         frame.matrices.projection,
@@ -129,7 +136,9 @@ fn record_lighting(
         u32::try_from(frame.lights.clustered().len()).expect("fewer than 2^32 lights"),
         frame.settings.clusters.max_light_indices,
     );
-    let (params_slice, retired) = pbr.arena.write(ctx.device(), view.record_epoch, bytemuck::bytes_of(&params))?;
+    let (params_slice, retired) = pbr
+        .arena
+        .write(ctx.device(), view.record_epoch, bytemuck::bytes_of(&params))?;
     if let Some(old) = retired {
         ctx.release_later(old);
     }
@@ -155,12 +164,17 @@ fn record_lighting(
     let hdr = ctx.create_slot_texture(Slot::HDR, "hdr").expect("hdr has a format");
     let split_slots = split.then(|| {
         (
-            ctx.create_slot_texture(Slot::DIFFUSE, "diffuse").expect("diffuse has a format"),
-            ctx.create_slot_texture(Slot::SPECULAR, "specular").expect("specular has a format"),
+            ctx.create_slot_texture(Slot::DIFFUSE, "diffuse")
+                .expect("diffuse has a format"),
+            ctx.create_slot_texture(Slot::SPECULAR, "specular")
+                .expect("specular has a format"),
         )
     });
     let pipeline_of = move |variants: &[(MaterialVariant, RenderPipeline)], variant: MaterialVariant| {
-        variants.iter().find(|(known, _)| *known == variant).map(|(_, pipeline)| *pipeline)
+        variants
+            .iter()
+            .find(|(known, _)| *known == variant)
+            .map(|(_, pipeline)| *pipeline)
     };
 
     let mut pass = ctx.graph().add_pass(PassDesc::new("pbr forward", Stage::Opaque));
@@ -174,9 +188,13 @@ fn record_lighting(
             pass.write(specular, Access::COLOR_ATTACHMENT),
         )
     });
-    let draws = frame.draws.clone();
-    let (frame_uniforms, instances, light_slice, materials) =
-        (frame.frame_uniforms, frame.instances, frame.light_array, frame.materials);
+    let draws = Arc::clone(&frame.draws);
+    let (frame_uniforms, instances, light_slice, materials) = (
+        frame.frame_uniforms,
+        frame.instances,
+        frame.light_array,
+        frame.materials,
+    );
     let opaque_pipelines = variants.clone();
     pass.record(move |pass| {
         let mut color = vec![ColorAttachment::clear(pass.view(hdr)?, Color::BLACK)];
@@ -222,12 +240,14 @@ fn record_lighting(
     if frame.draws.transparent.is_empty() {
         return Ok(());
     }
-    let mut pass = ctx.graph().add_pass(PassDesc::new("pbr transparent", Stage::Transparent));
+    let mut pass = ctx
+        .graph()
+        .add_pass(PassDesc::new("pbr transparent", Stage::Transparent));
     let depth_read = pass.read(depth, Access::DEPTH_READ);
     let ranges_read = pass.read_buffer(ranges, Access::STORAGE_READ);
     let indices_read = pass.read_buffer(indices, Access::STORAGE_READ);
     let hdr = pass.modify(hdr, Access::COLOR_ATTACHMENT);
-    let draws = frame.draws.clone();
+    let draws = Arc::clone(&frame.draws);
     pass.record(move |pass| {
         let depth_view = pass.view(depth_read)?;
         let ranges = pass.buffer(ranges_read);
@@ -293,10 +313,14 @@ fn frame_groups(
     let mut groups = Vec::new();
     let mut by_layout: Vec<(pathon_api::rhi::BindGroupLayoutId, pathon_api::rhi::BindGroupId)> = Vec::new();
     for (variant, pipeline) in pipelines {
-        let existing = by_layout.iter().find(|(layout, _)| *layout == pipeline.frame_layout).map(|(_, group)| *group);
-        let group = match existing {
-            Some(group) => group,
-            None => {
+        let existing = by_layout
+            .iter()
+            .find(|(layout, _)| *layout == pipeline.frame_layout)
+            .map(|(_, group)| *group);
+        let group = if let Some(group) = existing {
+            group
+        } else {
+            {
                 let mut entries = vec![
                     BindGroupEntry {
                         binding: 0,

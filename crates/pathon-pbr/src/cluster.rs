@@ -1,6 +1,6 @@
 use pathon_api::glam::Mat4;
 use pathon_api::rhi::{
-    BindGroupDesc, BindGroupEntry, BindGroupLayoutDesc, BindGroupLayoutEntry, BindGroupLayoutId, BindGroupId,
+    BindGroupDesc, BindGroupEntry, BindGroupId, BindGroupLayoutDesc, BindGroupLayoutEntry, BindGroupLayoutId,
     BindingResource, BindingType, CommandList, ComputePassDesc, ComputePipelineId, DeviceApi, PhysicalSize, RhiError,
     ShaderStages, StorageAccess,
 };
@@ -47,6 +47,11 @@ impl ClusterGrid {
     }
 
     /// The depth slice of a view-space distance in front of the camera.
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "clamped to 0..slices before the cast"
+    )]
     pub fn slice_of(&self, view_depth: f32) -> u32 {
         if view_depth <= self.near {
             return 0;
@@ -60,6 +65,11 @@ impl ClusterGrid {
     }
 
     /// The cluster of the pixel at `(x, y)` (pixel coordinates, y down) at `view_depth`.
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "pixel coordinates inside the target are not negative and fit u32"
+    )]
     pub fn index_of_pixel(&self, x: f32, y: f32, view_depth: f32) -> u32 {
         let tile = |coordinate: f32, tiles: u32| ((coordinate as u32) / self.tile_size).min(tiles - 1);
         self.index(tile(x, self.tiles_x), tile(y, self.tiles_y), self.slice_of(view_depth))
@@ -157,14 +167,20 @@ impl ClusterPipeline {
     }
 
     pub fn bind_group_desc(&self, buffers: &ClusterBuffers) -> BindGroupDesc {
-        let entries = [&buffers.params, &buffers.lights, &buffers.ranges, &buffers.indices, &buffers.counters]
-            .into_iter()
-            .zip(0..)
-            .map(|(resource, binding)| BindGroupEntry {
-                binding,
-                resource: resource.clone(),
-            })
-            .collect();
+        let entries = [
+            &buffers.params,
+            &buffers.lights,
+            &buffers.ranges,
+            &buffers.indices,
+            &buffers.counters,
+        ]
+        .into_iter()
+        .zip(0..)
+        .map(|(resource, binding)| BindGroupEntry {
+            binding,
+            resource: resource.clone(),
+        })
+        .collect();
         BindGroupDesc {
             label: "pbr clusters",
             layout: self.layout,

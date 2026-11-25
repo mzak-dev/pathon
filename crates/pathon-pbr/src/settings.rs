@@ -55,14 +55,23 @@ impl PbrSettings {
     pub fn problem(&self) -> Option<String> {
         let clusters = &self.clusters;
         if !(4..=256).contains(&clusters.tile_size) || !clusters.tile_size.is_power_of_two() {
-            return Some(format!("tile size {} is not a power of two in 4..=256", clusters.tile_size));
+            return Some(format!(
+                "tile size {} is not a power of two in 4..=256",
+                clusters.tile_size
+            ));
         }
         if !(1..=64).contains(&clusters.slices) {
             return Some(format!("{} depth slices, expected 1..=64", clusters.slices));
         }
-        if !(clusters.near.is_finite() && clusters.far.is_finite() && 0.0 < clusters.near && clusters.near < clusters.far)
+        if !(clusters.near.is_finite()
+            && clusters.far.is_finite()
+            && 0.0 < clusters.near
+            && clusters.near < clusters.far)
         {
-            return Some(format!("cluster depth range {}..{} must satisfy 0 < near < far", clusters.near, clusters.far));
+            return Some(format!(
+                "cluster depth range {}..{} must satisfy 0 < near < far",
+                clusters.near, clusters.far
+            ));
         }
         if clusters.max_light_indices == 0 {
             return Some("the light index list cannot be empty".to_owned());

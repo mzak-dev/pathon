@@ -59,7 +59,8 @@ impl ProbeReader {
         let row = (layout.width * self.texel_bytes) as usize;
         (0..layout.height as usize)
             .flat_map(|y| {
-                let start = layout.offset as usize + y * layout.padded_row as usize;
+                let offset = usize::try_from(layout.offset).expect("a readback buffer fits in memory");
+                let start = offset + y * layout.padded_row as usize;
                 bytes[start..start + row].to_vec()
             })
             .collect()

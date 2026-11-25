@@ -53,7 +53,10 @@ fn the_prepass_validates_on_the_null_device() {
 
     let diagnostics = harness.render(camera(SIZE));
 
-    let errors: Vec<_> = diagnostics.iter().filter(|d| d.severity == pathon_api::Severity::Error).collect();
+    let errors: Vec<_> = diagnostics
+        .iter()
+        .filter(|d| d.severity == pathon_api::Severity::Error)
+        .collect();
     assert!(errors.is_empty(), "{errors:?}");
 }
 
@@ -62,8 +65,8 @@ mod gpu {
     use pathon_api::glam::{Mat4, Vec2};
     use pathon_api::rhi::PhysicalSize;
     use pathon_api::{Camera, Severity};
-    use pathon_pbr::reference::{depth_pyramid, motion_of, oct_decode};
     use pathon_pbr::pyramid_levels;
+    use pathon_pbr::reference::{depth_pyramid, motion_of, oct_decode};
     use support::probe::{Probe, ProbeReader};
     use support::scene::harness;
 
@@ -161,13 +164,14 @@ mod gpu {
 
     #[test]
     fn depth_normals_and_material_ids_are_what_the_scene_says() {
-        let Some((mut harness, readers)) = prepass_harness("depth_normals_and_material_ids_are_what_the_scene_says") else {
+        let Some((mut harness, readers)) = prepass_harness("depth_normals_and_material_ids_are_what_the_scene_says")
+        else {
             return;
         };
         let (spheres, _) = populate(&mut harness, CENTER);
         let camera = camera(SIZE);
         assert_no_errors(&harness.render(camera));
-        let device = harness.renderer.device().clone();
+        let device = std::sync::Arc::clone(harness.renderer.device());
         let device: &dyn pathon_rhi::DeviceApi = &*device;
         let (depth, normals, materials) = (
             readers.depth.f32s(device, 0),
@@ -191,18 +195,34 @@ mod gpu {
                     "depth at ({x}, {y}): {} vs {expected_depth}",
                     depth[index]
                 );
-                let expected_normal = if on_ball { (point - spheres.center).normalize() } else { Vec3::Y };
+                let expected_normal = if on_ball {
+                    (point - spheres.center).normalize()
+                } else {
+                    Vec3::Y
+                };
                 let decoded = oct_decode(Vec2::from(normals[index]));
-                assert!(decoded.dot(expected_normal) > 0.998, "normal at ({x}, {y}): {decoded} vs {expected_normal}");
+                assert!(
+                    decoded.dot(expected_normal) > 0.998,
+                    "normal at ({x}, {y}): {decoded} vs {expected_normal}"
+                );
                 let expected_material = if on_ball { spheres.ball_id } else { spheres.floor_id };
                 assert_eq!(materials[index], expected_material, "material id at ({x}, {y})");
                 checked[usize::from(on_ball)] += 1;
             }
         }
-        assert!(checked[0] > 100 && checked[1] > 30, "too few pixels checked: {checked:?}");
-        let sky = materials.iter().position(|id| *id == u32::MAX).expect("some pixel is sky");
+        assert!(
+            checked[0] > 100 && checked[1] > 30,
+            "too few pixels checked: {checked:?}"
+        );
+        let sky = materials
+            .iter()
+            .position(|id| *id == u32::MAX)
+            .expect("some pixel is sky");
         assert_eq!(depth[sky], 0.0, "reverse-Z is cleared to 0 where nothing was drawn");
-        assert!(depth.iter().all(|value| (0.0..=1.0).contains(value)), "depth stays inside 0..=1");
+        assert!(
+            depth.iter().all(|value| (0.0..=1.0).contains(value)),
+            "depth stays inside 0..=1"
+        );
     }
 
     #[test]
@@ -213,7 +233,7 @@ mod gpu {
         let (spheres, _) = populate(&mut harness, CENTER);
         let camera = camera(SIZE);
         assert_no_errors(&harness.render(camera));
-        let device = harness.renderer.device().clone();
+        let device = std::sync::Arc::clone(harness.renderer.device());
         let device: &dyn pathon_rhi::DeviceApi = &*device;
         let (roughness, albedo) = (readers.roughness.texels(device, 0), readers.albedo.texels(device, 0));
 
@@ -231,10 +251,16 @@ mod gpu {
                     (0.55, [0.55, 0.55, 0.5])
                 };
                 let got = f32::from(roughness[index]) / 255.0;
-                assert!((got - expected_roughness).abs() < 0.01, "roughness at ({x}, {y}): {got}");
+                assert!(
+                    (got - expected_roughness).abs() < 0.01,
+                    "roughness at ({x}, {y}): {got}"
+                );
                 for (channel, expected) in expected_color.into_iter().enumerate() {
                     let got = f32::from(albedo[index * 4 + channel]) / 255.0;
-                    assert!((got - expected).abs() < 0.01, "albedo {channel} at ({x}, {y}): {got} vs {expected}");
+                    assert!(
+                        (got - expected).abs() < 0.01,
+                        "albedo {channel} at ({x}, {y}): {got} vs {expected}"
+                    );
                 }
                 assert!(albedo[index * 4 + 3] < 3, "dielectrics store metallic 0 in alpha");
                 found[usize::from(on_ball)] = true;
@@ -257,7 +283,7 @@ mod gpu {
             .extract(|writer| writer.set_transform(ball, scale_translate(spheres.radius, second.0)))
             .expect("move");
         assert_no_errors(&harness.render(second.1));
-        let device = harness.renderer.device().clone();
+        let device = std::sync::Arc::clone(harness.renderer.device());
         let motion = readers.motion.half_pairs(&*device, 0);
         Some((
             motion,
@@ -272,7 +298,8 @@ mod gpu {
 
     fn check_motion(motion: &[[f32; 2]], spheres: &Spheres, current: &Camera, previous: &Camera, moved: Vec3) {
         let size = PhysicalSize::new(SIZE, SIZE);
-        let (view_projection, previous_view_projection): (Mat4, Mat4) = (current.view_projection(), previous.view_projection());
+        let (view_projection, previous_view_projection): (Mat4, Mat4) =
+            (current.view_projection(), previous.view_projection());
         let mut checked = 0;
         let mut moving_checked = 0;
         for y in (6..SIZE - 6).step_by(4) {
@@ -311,22 +338,35 @@ mod gpu {
 
         check_motion(&motion, &spheres, &current, &still, moved);
         let on_ball = motion[(SIZE / 2 * SIZE + SIZE / 4) as usize];
-        assert!(on_ball[0].abs() + on_ball[1].abs() > 1.0, "the ball moved by more than a pixel: {on_ball:?}");
+        assert!(
+            on_ball[0].abs() + on_ball[1].abs() > 1.0,
+            "the ball moved by more than a pixel: {on_ball:?}"
+        );
     }
 
     #[test]
     fn motion_follows_a_moving_camera_in_pixels() {
         let first = camera(SIZE);
-        let second = Camera::look_at(Vec3::new(0.4, 2.0, 6.0), Vec3::new(0.1, -0.4, 0.0), 40.0_f32.to_radians(), 1.0);
-        let Some((motion, spheres, current, moved)) =
-            motion_between((CENTER, first), (CENTER, second), "motion_follows_a_moving_camera_in_pixels")
-        else {
+        let second = Camera::look_at(
+            Vec3::new(0.4, 2.0, 6.0),
+            Vec3::new(0.1, -0.4, 0.0),
+            40.0_f32.to_radians(),
+            1.0,
+        );
+        let Some((motion, spheres, current, moved)) = motion_between(
+            (CENTER, first),
+            (CENTER, second),
+            "motion_follows_a_moving_camera_in_pixels",
+        ) else {
             return;
         };
 
         check_motion(&motion, &spheres, &current, &first, moved);
         let floor = motion[(SIZE * 5 / 6 * SIZE + SIZE / 2) as usize];
-        assert!(floor[0].abs() + floor[1].abs() > 1.0, "the camera moved by more than a pixel: {floor:?}");
+        assert!(
+            floor[0].abs() + floor[1].abs() > 1.0,
+            "the camera moved by more than a pixel: {floor:?}"
+        );
     }
 
     #[test]
@@ -336,7 +376,7 @@ mod gpu {
         };
         populate(&mut harness, CENTER);
         assert_no_errors(&harness.render(camera(SIZE)));
-        let device = harness.renderer.device().clone();
+        let device = std::sync::Arc::clone(harness.renderer.device());
         let device: &dyn pathon_rhi::DeviceApi = &*device;
 
         let depth = readers.depth.f32s(device, 0);
@@ -346,10 +386,25 @@ mod gpu {
         for (mip, level) in expected.iter().enumerate() {
             let got = readers.pyramid.f32s(device, mip);
             assert_eq!(got.len(), level.texels.len());
-            let differing = got.iter().zip(&level.texels).filter(|(a, b)| a != b).count();
-            assert_eq!(differing, 0, "mip {mip} ({}x{}) differs from the reference in {differing} texels", level.width, level.height);
+            let differing = got
+                .iter()
+                .zip(&level.texels)
+                .filter(|(a, b)| a.to_bits() != b.to_bits())
+                .count();
+            assert_eq!(
+                differing, 0,
+                "mip {mip} ({}x{}) differs from the reference in {differing} texels",
+                level.width, level.height
+            );
         }
-        assert!(expected[0].texels.iter().any(|value| *value > 0.0), "something is in front of the far plane");
-        assert_eq!(expected.last().expect("levels").texels, [0.0], "the top mip keeps the farthest depth: the cleared sky");
+        assert!(
+            expected[0].texels.iter().any(|value| *value > 0.0),
+            "something is in front of the far plane"
+        );
+        assert_eq!(
+            expected.last().expect("levels").texels,
+            [0.0],
+            "the top mip keeps the farthest depth: the cleared sky"
+        );
     }
 }

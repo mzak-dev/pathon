@@ -142,7 +142,10 @@ mod tests {
 
         assert_eq!(packed.directional, 1);
         assert!(packed.lights[0].is_directional());
-        assert!((packed.lights[0].direction_kind[1] - 1.0).abs() < 1e-6, "to the light = up");
+        assert!(
+            (packed.lights[0].direction_kind[1] - 1.0).abs() < 1e-6,
+            "to the light = up"
+        );
         assert_eq!(packed.lights[0].color_intensity[0], 3.0, "lux");
         assert_eq!(packed.clustered().len(), 1);
         let candela = 1000.0 / (4.0 * std::f32::consts::PI);
@@ -157,7 +160,7 @@ mod tests {
 
         assert!((window(0.2) - 1.0).abs() < 1e-5);
         assert!(window(0.5).abs() < 1e-5);
-        assert!(window(0.7) == 0.0);
+        assert!(window(0.7) < 1e-9);
         assert!((gpu.spot[2] - 1.0 / (gpu.position_range[3] * gpu.position_range[3])).abs() < 1e-9);
     }
 }

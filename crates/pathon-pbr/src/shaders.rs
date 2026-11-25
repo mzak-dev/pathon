@@ -2,18 +2,18 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use pathon_api::rhi::{
-    BindGroupLayoutDesc, BindGroupLayoutId, BlendState, ColorTargetState, ComputePipelineDesc, ComputePipelineId,
-    CullMode, DepthState, DeviceApi, Format, PrimitiveState, RenderPipelineDesc, RenderPipelineId, RhiError,
-    ShaderStage, VertexBufferLayout, CompareFunction,
+    BindGroupLayoutDesc, BindGroupLayoutId, BlendState, ColorTargetState, CompareFunction, ComputePipelineDesc,
+    ComputePipelineId, CullMode, DepthState, DeviceApi, Format, PrimitiveState, RenderPipelineDesc, RenderPipelineId,
+    RhiError, ShaderStage, VertexBufferLayout,
 };
 use pathon_ibl::IblBindings;
 use pathon_material::{AlphaKind, MaterialHooks, MaterialVariant};
 use pathon_shader::{PipelineCache, ShaderError, ShaderKey, ShaderLibrary, reflect_bind_groups};
 
-pub const COMMON_MODULE: &str = "pbr::common";
-pub const LIGHTS_MODULE: &str = "pbr::lights";
-pub const OCCLUSION_MODULE: &str = "pbr::occlusion";
-pub const HOOKS_MODULE: &str = "pbr::hooks";
+pub(crate) const COMMON_MODULE: &str = "pbr::common";
+pub(crate) const LIGHTS_MODULE: &str = "pbr::lights";
+pub(crate) const OCCLUSION_MODULE: &str = "pbr::occlusion";
+pub(crate) const HOOKS_MODULE: &str = "pbr::hooks";
 
 const COMMON_WESL: &str = include_str!("../wgsl/common.wesl");
 const LIGHTS_WESL: &str = include_str!("../wgsl/lights.wesl");
@@ -31,7 +31,7 @@ pub const IBL_FIRST_BINDING: u32 = 6;
 pub const TEXTURE_GROUP: u32 = 1;
 
 pub const HDR_FORMAT: Format = Format::Rgba16Float;
-pub const DEPTH_FORMAT: Format = Format::Depth32Float;
+pub(crate) const DEPTH_FORMAT: Format = Format::Depth32Float;
 
 /// The WESL modules and roots of the pack, the pipelines built from them and the bind group layouts reflection found.
 /// Pipelines are made on first use of a permutation: a material the scene never draws costs nothing.
@@ -114,8 +114,8 @@ impl PbrShaders {
         entries: &[&str],
         adjust: fn(&mut BindGroupLayoutDesc),
     ) -> Result<BindGroupLayoutId, RhiError> {
-        let wgsl = self.library.wgsl(key).map_err(shader_error)?;
-        let mut groups = reflect_bind_groups(&wgsl, entries).map_err(shader_error)?;
+        let wgsl = self.library.wgsl(key).map_err(|error| shader_error(&error))?;
+        let mut groups = reflect_bind_groups(&wgsl, entries).map_err(|error| shader_error(&error))?;
         let mut group_zero = if groups.is_empty() {
             BindGroupLayoutDesc {
                 label: "empty",
@@ -135,7 +135,11 @@ impl PbrShaders {
         vertex_buffers: &[VertexBufferLayout],
         texture_layout: Option<BindGroupLayoutId>,
     ) -> Result<RenderPipeline, RhiError> {
-        let alpha = if key.masked { AlphaKind::Masked } else { AlphaKind::Opaque };
+        let alpha = if key.masked {
+            AlphaKind::Masked
+        } else {
+            AlphaKind::Opaque
+        };
         let shader = MaterialVariant {
             alpha,
             ..MaterialVariant::default()
@@ -143,7 +147,10 @@ impl PbrShaders {
         .shader_key("prepass");
         let fragment = if key.full { "fs_full" } else { "fs" };
         let frame_layout = self.reflected_group_zero(device, &shader, &["vs", fragment], |_| {})?;
-        let module = self.library.module(device, &shader).map_err(shader_error)?;
+        let module = self
+            .library
+            .module(device, &shader)
+            .map_err(|error| shader_error(&error))?;
         let mut targets = vec![
             ColorTargetState::opaque(Format::Rg16Float),
             ColorTargetState::opaque(Format::Rg16Float),
@@ -192,7 +199,10 @@ impl PbrShaders {
         let shader = key.variant.shader_key("forward");
         let fragment = if key.split { "fs_split" } else { "fs" };
         let frame_layout = self.reflected_group_zero(device, &shader, &["vs", fragment], |_| {})?;
-        let module = self.library.module(device, &shader).map_err(shader_error)?;
+        let module = self
+            .library
+            .module(device, &shader)
+            .map_err(|error| shader_error(&error))?;
         let transparent = key.variant.alpha == AlphaKind::Transparent;
         let mut targets = vec![ColorTargetState {
             blend: transparent.then_some(BlendState::PREMULTIPLIED_ALPHA),
@@ -251,7 +261,10 @@ impl PbrShaders {
             features: pathon_shader::ShaderFeatures::default(),
         };
         let layout = self.reflected_group_zero(device, &key, &[entry_point], adjust)?;
-        let module = self.library.module(device, &key).map_err(shader_error)?;
+        let module = self
+            .library
+            .module(device, &key)
+            .map_err(|error| shader_error(&error))?;
         let pipeline = self.pipelines.compute(
             device,
             &ComputePipelineDesc {
@@ -282,7 +295,10 @@ impl PbrShaders {
             root: root.to_owned(),
             features: pathon_shader::ShaderFeatures::default(),
         };
-        let module = self.library.module(device, &key).map_err(shader_error)?;
+        let module = self
+            .library
+            .module(device, &key)
+            .map_err(|error| shader_error(&error))?;
         self.pipelines.compute(
             device,
             &ComputePipelineDesc {
@@ -304,7 +320,7 @@ impl PbrShaders {
     }
 }
 
-fn shader_error(error: ShaderError) -> RhiError {
+fn shader_error(error: &ShaderError) -> RhiError {
     RhiError::validation("L0006", error.to_string())
 }
 

@@ -31,11 +31,8 @@ fn camera(orthographic: bool) -> (Mat4, Mat4) {
     } else {
         Projection::perspective(std::f32::consts::FRAC_PI_3, 0.1)
     };
-    let world_to_view = pathon_api::glam::camera::rh::view::look_at_mat4(
-        Vec3::new(1.0, 2.0, 8.0),
-        Vec3::new(0.0, 1.0, 0.0),
-        Vec3::Y,
-    );
+    let world_to_view =
+        pathon_api::glam::camera::rh::view::look_at_mat4(Vec3::new(1.0, 2.0, 8.0), Vec3::new(0.0, 1.0, 0.0), Vec3::Y);
     (projection.matrix(aspect), world_to_view)
 }
 
@@ -44,7 +41,11 @@ fn random_scene(seed: u64, lights: usize, orthographic: bool) -> Scene {
     let (projection, world_to_view) = camera(orthographic);
     let lights = (0..lights)
         .map(|_| SphereLight {
-            position: Vec3::new(random.between(-14.0, 14.0), random.between(-1.0, 8.0), random.between(-30.0, 10.0)),
+            position: Vec3::new(
+                random.between(-14.0, 14.0),
+                random.between(-1.0, 8.0),
+                random.between(-30.0, 10.0),
+            ),
             range: random.between(0.5, 5.0),
         })
         .collect();
@@ -94,11 +95,20 @@ fn run(device: &dyn DeviceApi, scene: &Scene) -> (ClusterGrid, Assignment) {
         scene.settings.max_light_indices,
     );
     let storage = BufferUsage::STORAGE | BufferUsage::COPY_DST | BufferUsage::COPY_SRC;
-    let params_buffer = buffer(device, "params", std::mem::size_of::<ClusterParams>() as u64, BufferUsage::UNIFORM | BufferUsage::COPY_DST);
-    device.write_buffer(params_buffer, 0, bytemuck::bytes_of(&params)).expect("params");
+    let params_buffer = buffer(
+        device,
+        "params",
+        std::mem::size_of::<ClusterParams>() as u64,
+        BufferUsage::UNIFORM | BufferUsage::COPY_DST,
+    );
+    device
+        .write_buffer(params_buffer, 0, bytemuck::bytes_of(&params))
+        .expect("params");
     let lights_buffer = buffer(device, "lights", (gpu_lights.len().max(1) * 64) as u64, storage);
     if !gpu_lights.is_empty() {
-        device.write_buffer(lights_buffer, 0, bytemuck::cast_slice(&gpu_lights)).expect("lights");
+        device
+            .write_buffer(lights_buffer, 0, bytemuck::cast_slice(&gpu_lights))
+            .expect("lights");
     }
     let ranges_size = u64::from(grid.count()) * RANGE_SIZE;
     let indices_size = u64::from(scene.settings.max_light_indices) * 4;
@@ -159,13 +169,26 @@ mod gpu {
     }
 
     fn check_against_brute_force(scene: &Scene, grid: &ClusterGrid, assignment: &Assignment) {
-        let expected = assign_lights(grid, scene.projection, scene.world_to_view, SIZE, &scene.lights, TOLERANCE);
+        let expected = assign_lights(
+            grid,
+            scene.projection,
+            scene.world_to_view,
+            SIZE,
+            &scene.lights,
+            TOLERANCE,
+        );
         let mut with_lights = 0;
         for (cluster, expectation) in expected.iter().enumerate() {
             let got = list_of(assignment, cluster);
-            assert!(got.windows(2).all(|pair| pair[0] < pair[1]), "cluster {cluster}: not in light order");
+            assert!(
+                got.windows(2).all(|pair| pair[0] < pair[1]),
+                "cluster {cluster}: not in light order"
+            );
             for must in &expectation.must {
-                assert!(got.contains(must), "cluster {cluster} lacks light {must}: {got:?} vs {expectation:?}");
+                assert!(
+                    got.contains(must),
+                    "cluster {cluster} lacks light {must}: {got:?} vs {expectation:?}"
+                );
             }
             for light in got {
                 assert!(
@@ -186,13 +209,26 @@ mod gpu {
         let Some(device) = gpu("random_scenes_match_brute_force_from_ten_to_a_thousand_lights") else {
             return;
         };
-        for (seed, lights, orthographic) in [(1, 10, false), (2, 100, false), (3, 1000, false), (4, 300, true), (5, 1000, true)] {
+        for (seed, lights, orthographic) in [
+            (1, 10, false),
+            (2, 100, false),
+            (3, 1000, false),
+            (4, 300, true),
+            (5, 1000, true),
+        ] {
             let scene = random_scene(seed, lights, orthographic);
             let (grid, assignment) = run(&device, &scene);
-            assert_eq!(assignment.counters[1], 0, "seed {seed}: nothing overflows the default list");
+            assert_eq!(
+                assignment.counters[1], 0,
+                "seed {seed}: nothing overflows the default list"
+            );
             check_against_brute_force(&scene, &grid, &assignment);
             let entries: usize = assignment.ranges.iter().map(|range| range[1] as usize).sum();
-            assert_eq!(entries as u32, assignment.counters[0], "seed {seed}: the reservation counter matches the lists");
+            assert_eq!(
+                u32::try_from(entries).expect("few entries"),
+                assignment.counters[0],
+                "seed {seed}: the reservation counter matches the lists"
+            );
         }
     }
 
@@ -208,7 +244,11 @@ mod gpu {
             let mut random = Lcg(77);
             let mut checked = 0;
             while checked < 400 {
-                let world = Vec3::new(random.between(-14.0, 14.0), random.between(-1.0, 8.0), random.between(-30.0, 10.0));
+                let world = Vec3::new(
+                    random.between(-14.0, 14.0),
+                    random.between(-1.0, 8.0),
+                    random.between(-30.0, 10.0),
+                );
                 let clip = view_projection * world.extend(1.0);
                 let ndc = clip.truncate() / clip.w;
                 let view_depth = -(scene.world_to_view * world.extend(1.0)).z;
@@ -242,11 +282,25 @@ mod gpu {
 
         let (grid, assignment) = run(&device, &scene);
 
-        assert!(assignment.counters[1] > 0, "300 lights in 1152 clusters need more than 512 entries");
+        assert!(
+            assignment.counters[1] > 0,
+            "300 lights in 1152 clusters need more than 512 entries"
+        );
         let kept: u32 = assignment.ranges.iter().map(|range| range[1]).sum();
         assert!(kept <= 512, "{kept} entries kept in a list of 512");
-        assert_eq!(kept + assignment.counters[1], assignment.counters[0], "every entry is either kept or counted");
-        let expected = assign_lights(&grid, scene.projection, scene.world_to_view, SIZE, &scene.lights, TOLERANCE);
+        assert_eq!(
+            kept + assignment.counters[1],
+            assignment.counters[0],
+            "every entry is either kept or counted"
+        );
+        let expected = assign_lights(
+            &grid,
+            scene.projection,
+            scene.world_to_view,
+            SIZE,
+            &scene.lights,
+            TOLERANCE,
+        );
         for (cluster, expectation) in expected.iter().enumerate() {
             let [offset, _] = assignment.ranges[cluster];
             assert!(assignment.ranges[cluster][1] == 0 || offset + assignment.ranges[cluster][1] <= 512);

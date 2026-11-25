@@ -79,7 +79,7 @@ pub struct SceneDraws {
     pub skipped: usize,
 }
 
-fn variant_order(variant: &MaterialVariant) -> (u8, bool, bool, bool, bool) {
+fn variant_order(variant: MaterialVariant) -> (u8, bool, bool, bool, bool) {
     let alpha = match variant.alpha {
         AlphaKind::Opaque => 0,
         AlphaKind::Masked => 1,
@@ -95,7 +95,7 @@ fn variant_order(variant: &MaterialVariant) -> (u8, bool, bool, bool, bool) {
 }
 
 /// The slots of `MaterialData` that hold textures.
-pub fn texture_values(data: &MaterialData) -> [u32; 5] {
+pub(crate) fn texture_values(data: &MaterialData) -> [u32; 5] {
     [
         data.base_color_texture,
         data.metallic_roughness_texture,
@@ -105,7 +105,7 @@ pub fn texture_values(data: &MaterialData) -> [u32; 5] {
     ]
 }
 
-pub struct SceneSources<'sources> {
+pub(crate) struct SceneSources<'sources> {
     pub world: &'sources RenderWorld,
     pub pool: &'sources GeometryPool,
     pub materials: &'sources MaterialTable,
@@ -114,7 +114,7 @@ pub struct SceneSources<'sources> {
 
 /// Walks the visible instances of the snapshot. Instances whose mesh or material is unknown are skipped and counted
 /// (`L0003`); a pool without the standard vertex attributes draws nothing (`L0002`).
-pub fn gather(
+pub(crate) fn gather(
     sources: &SceneSources<'_>,
     device: &dyn DeviceApi,
     mut binder: Option<&mut TextureBinder>,
@@ -155,23 +155,22 @@ pub fn gather(
         };
         let location = info.location;
         let key = (location.vertex_chunk, location.index_chunk);
-        let chunk = match chunk_of.get(&key) {
-            Some(chunk) => *chunk,
-            None => {
-                let (Some(vertex), Some(index)) = (
-                    sources.pool.vertex_buffers(location.vertex_chunk),
-                    sources.pool.index_buffer(location.index_chunk),
-                ) else {
-                    draws.skipped += 1;
-                    continue;
-                };
-                draws.chunks.push(ChunkBuffers {
-                    vertex: vertex.to_vec(),
-                    index,
-                });
-                chunk_of.insert(key, draws.chunks.len() - 1);
-                draws.chunks.len() - 1
-            }
+        let chunk = if let Some(chunk) = chunk_of.get(&key) {
+            *chunk
+        } else {
+            let (Some(vertex), Some(index)) = (
+                sources.pool.vertex_buffers(location.vertex_chunk),
+                sources.pool.index_buffer(location.index_chunk),
+            ) else {
+                draws.skipped += 1;
+                continue;
+            };
+            draws.chunks.push(ChunkBuffers {
+                vertex: vertex.to_vec(),
+                index,
+            });
+            chunk_of.insert(key, draws.chunks.len() - 1);
+            draws.chunks.len() - 1
         };
         let texture_group = match binder.as_deref_mut() {
             Some(binder) => *groups.entry(material).or_insert_with(|| {
@@ -208,9 +207,13 @@ pub fn gather(
             draws.opaque.push(item);
         }
     }
-    draws
-        .opaque
-        .sort_by_key(|item| (variant_order(&item.variant), item.chunk, item.texture_group.map_or(0, |group| group.raw().index())));
+    draws.opaque.sort_by_key(|item| {
+        (
+            variant_order(item.variant),
+            item.chunk,
+            item.texture_group.map_or(0, |group| group.raw().index()),
+        )
+    });
     draws.transparent.sort_by(|a, b| b.distance.total_cmp(&a.distance));
     if draws.skipped > 0 {
         diagnostics.push(

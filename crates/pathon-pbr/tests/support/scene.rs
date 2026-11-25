@@ -11,7 +11,7 @@ use std::f32::consts::{PI, TAU};
 
 use pathon_api::glam::{Affine3A, Quat, Vec3};
 use pathon_api::{Camera, RenderFeature};
-use pathon_bindless::{BINDLESS_FEATURES, BinderDesc, SamplerPreset, TextureBinder, TextureHandle};
+use pathon_bindless::{BINDLESS_FEATURES, BinderDesc, PathPreference, SamplerPreset, TextureBinder, TextureHandle};
 use pathon_core::{FrameInput, RenderError, Renderer, RendererBuilder, TargetId, ViewInput};
 use pathon_golden::{announce_adapter, gpu_or_skip};
 use pathon_material::{AlphaMode, MaterialId, MaterialTable, MaterialTextures, StandardMaterial, TextureSlot};
@@ -42,7 +42,10 @@ impl Shape {
             device,
             &MeshData::new(
                 label,
-                vec![bytemuck::cast_slice(&self.positions), bytemuck::cast_slice(&self.surface)],
+                vec![
+                    bytemuck::cast_slice(&self.positions),
+                    bytemuck::cast_slice(&self.surface),
+                ],
                 IndexData::U32(&self.indices),
             ),
         )
@@ -138,6 +141,11 @@ pub fn floor() -> Shape {
     quad_faces(&[([0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, -1.0])], 0.0, 3.0)
 }
 
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "clamped to 0..=255 before the cast"
+)]
 fn to_byte(value: f32) -> u8 {
     (value.clamp(0.0, 1.0) * 255.0).round() as u8
 }
@@ -162,14 +170,28 @@ fn bumps(x: u32, y: u32) -> [u8; 4] {
     let (u, v) = (x as f32 * TAU / 16.0, y as f32 * TAU / 16.0);
     let (dx, dy) = (0.8 * u.cos() * v.sin(), 0.8 * u.sin() * v.cos());
     let length = (dx * dx + dy * dy + 1.0).sqrt();
-    [to_byte(0.5 - 0.5 * dx / length), to_byte(0.5 - 0.5 * dy / length), to_byte(0.5 + 0.5 / length), 255]
+    [
+        to_byte(0.5 - 0.5 * dx / length),
+        to_byte(0.5 - 0.5 * dy / length),
+        to_byte(0.5 + 0.5 / length),
+        255,
+    ]
 }
 
 // glTF packing: occlusion in red, roughness in green, metalness in blue.
 fn packed(x: u32, y: u32) -> [u8; 4] {
-    let dots = if ((x % 16) as f32 - 8.0).hypot((y % 16) as f32 - 8.0) < 3.0 { 0.45 } else { 1.0 };
+    let dots = if ((x % 16) as f32 - 8.0).hypot((y % 16) as f32 - 8.0) < 3.0 {
+        0.45
+    } else {
+        1.0
+    };
     let metallic = if (y / 16).is_multiple_of(2) { 1.0 } else { 0.0 };
-    [to_byte(dots), to_byte(0.2 + 0.7 * x as f32 / 63.0), to_byte(metallic), 255]
+    [
+        to_byte(dots),
+        to_byte(0.2 + 0.7 * x as f32 / 63.0),
+        to_byte(metallic),
+        255,
+    ]
 }
 
 // A fence: green with round holes.
@@ -189,7 +211,8 @@ fn upload_texture(
     let data: Vec<u8> = (0..TEXTURE_SIZE * TEXTURE_SIZE)
         .flat_map(|index| texel(index % TEXTURE_SIZE, index / TEXTURE_SIZE))
         .collect();
-    let source = TextureSource::new(label, TEXTURE_SIZE, TEXTURE_SIZE, color_space).with_variant(Variant::rgba8(vec![&data]));
+    let source =
+        TextureSource::new(label, TEXTURE_SIZE, TEXTURE_SIZE, color_space).with_variant(Variant::rgba8(vec![&data]));
     let texture = loader
         .load(device, &source)
         .unwrap_or_else(|error| panic!("{}", error.to_diagnostic()));
@@ -214,7 +237,12 @@ pub struct Content {
 
 /// Meshes, materials and textures, inserted into `Shared` of the renderer.
 pub fn add_content(renderer: &mut Renderer, textured: bool) -> Content {
-    let device = renderer.device().clone();
+    add_content_with(renderer, textured, PathPreference::Auto)
+}
+
+/// `preference` picks the texture path: bindless or a bind group per material (what the Web profile does).
+pub fn add_content_with(renderer: &mut Renderer, textured: bool, preference: PathPreference) -> Content {
+    let device = std::sync::Arc::clone(renderer.device());
     let device: &dyn DeviceApi = &*device;
     let mut pool = GeometryPool::new(device, "scene", VertexLayout::standard(), PoolDesc::default());
     let ground = floor().upload(device, &mut pool, "floor");
@@ -223,10 +251,18 @@ pub fn add_content(renderer: &mut Renderer, textured: bool) -> Content {
     let fence_mesh = wall().upload(device, &mut pool, "fence");
 
     let mut table = MaterialTable::new("materials", 4);
-    let mut binder = TextureBinder::new(device, &BinderDesc::default()).unwrap_or_else(|error| panic!("{}", error.to_diagnostic()));
+    let mut binder = TextureBinder::new(
+        device,
+        &BinderDesc {
+            preference,
+            ..BinderDesc::default()
+        },
+    )
+    .unwrap_or_else(|error| panic!("{}", error.to_diagnostic()));
     let mut loader = TextureLoader::new();
-    let mut slots = MaterialTextures::default;
-    let mut texture = |label, color_space, texel| upload_texture(device, &mut loader, &mut binder, label, color_space, texel);
+    let slots = MaterialTextures::default;
+    let mut texture =
+        |label, color_space, texel| upload_texture(device, &mut loader, &mut binder, label, color_space, texel);
     let (floor_textures, metal_textures, plastic_textures, fence_textures);
     if textured {
         let (checker, bumps, stripes, packed, fence_color) = (
@@ -258,7 +294,11 @@ pub fn add_content(renderer: &mut Renderer, textured: bool) -> Content {
     } else {
         (floor_textures, metal_textures, plastic_textures, fence_textures) = (slots(), slots(), slots(), slots());
     }
-    let mut add = |material: StandardMaterial| table.add(&material).unwrap_or_else(|error| panic!("{}", error.to_diagnostic()));
+    let mut add = |material: StandardMaterial| {
+        table
+            .add(&material)
+            .unwrap_or_else(|error| panic!("{}", error.to_diagnostic()))
+    };
     let floor_material = add(StandardMaterial {
         base_color: if textured { [1.0; 4] } else { [0.55, 0.55, 0.5, 1.0] },
         metallic: 0.0,
@@ -343,7 +383,9 @@ pub fn harness(
         ..Default::default()
     };
     let built = configure(Renderer::builder().with_device_request(request)).build();
-    let mut renderer = gpu_or_skip(test, built, |error| matches!(error, RenderError::Rhi(RhiError::NoAdapter(_))))?;
+    let mut renderer = gpu_or_skip(test, built, |error| {
+        matches!(error, RenderError::Rhi(RhiError::NoAdapter(_)))
+    })?;
     announce_adapter(test, renderer.device().caps());
     let target = renderer
         .add_offscreen_target(PhysicalSize::new(size, size), format)
@@ -389,7 +431,10 @@ impl Harness {
             delta_seconds: 1.0 / 60.0,
             ..FrameInput::default()
         };
-        let report = self.renderer.render_frame(&input).unwrap_or_else(|error| panic!("{error}"));
+        let report = self
+            .renderer
+            .render_frame(&input)
+            .unwrap_or_else(|error| panic!("{error}"));
         report.diagnostics
     }
 }

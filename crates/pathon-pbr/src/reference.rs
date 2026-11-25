@@ -85,8 +85,16 @@ pub fn depth_pyramid(width: u32, height: u32, depth: &[f32]) -> Vec<Level> {
         let mut texels = Vec::with_capacity((target_width * target_height) as usize);
         for y in 0..target_height {
             for x in 0..target_width {
-                let span_x = if x + 1 == target_width && source.width % 2 == 1 { 3 } else { 2 };
-                let span_y = if y + 1 == target_height && source.height % 2 == 1 { 3 } else { 2 };
+                let span_x = if x + 1 == target_width && source.width % 2 == 1 {
+                    3
+                } else {
+                    2
+                };
+                let span_y = if y + 1 == target_height && source.height % 2 == 1 {
+                    3
+                } else {
+                    2
+                };
                 let mut farthest = 1.0_f32;
                 for dy in 0..span_y {
                     for dx in 0..span_x {
@@ -139,7 +147,8 @@ pub fn cluster_bounds(
     render_size: PhysicalSize,
     (x, y, slice): (u32, u32, u32),
 ) -> (DVec3, DVec3) {
-    let inverse = DMat4::from_cols_array_2d(&projection.to_cols_array_2d().map(|column| column.map(f64::from))).inverse();
+    let inverse =
+        DMat4::from_cols_array_2d(&projection.to_cols_array_2d().map(|column| column.map(f64::from))).inverse();
     let (width, height) = (f64::from(render_size.width), f64::from(render_size.height));
     let tile = f64::from(grid.tile_size);
     let left = f64::from(x) * tile;
@@ -242,8 +251,16 @@ mod tests {
 
         let sizes: Vec<_> = levels.iter().map(|level| (level.width, level.height)).collect();
         assert_eq!(sizes, [(5, 3), (2, 1), (1, 1)]);
-        assert_eq!(levels[1].at(0, 0), 0.1, "texels (0..2, 0..2)... the farthest of the 2x2 block");
-        assert_eq!(levels[1].at(1, 0), 0.1 + 0.05 * 2.0, "covers columns 2, 3 and 4, rows 0 and 1 and 2");
+        assert_eq!(
+            levels[1].at(0, 0),
+            0.1,
+            "texels (0..2, 0..2)... the farthest of the 2x2 block"
+        );
+        assert_eq!(
+            levels[1].at(1, 0),
+            0.1 + 0.05 * 2.0,
+            "covers columns 2, 3 and 4, rows 0 and 1 and 2"
+        );
         assert_eq!(levels[2].at(0, 0), 0.1);
     }
 }

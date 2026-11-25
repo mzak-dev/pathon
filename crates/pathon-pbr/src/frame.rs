@@ -61,6 +61,7 @@ impl ViewMatrices {
     }
 }
 
+#[derive(Debug)]
 pub struct FrameInputs<'inputs> {
     pub matrices: ViewMatrices,
     pub previous_view_projection: Mat4,
@@ -101,14 +102,14 @@ impl FrameUniforms {
 /// The previous frame's unjittered view-projection per view: the motion vectors of the camera. A frame that is
 /// recorded again (the same `ViewCtx::frame`) keeps the matrix of the frame before it.
 #[derive(Clone, Copy, PartialEq, Debug)]
-pub struct ViewHistory {
+pub(crate) struct ViewHistory {
     frame: u64,
     current: Mat4,
     previous: Mat4,
 }
 
 impl ViewHistory {
-    pub fn first(frame: u64, current: Mat4) -> Self {
+    pub(crate) fn first(frame: u64, current: Mat4) -> Self {
         Self {
             frame,
             current,
@@ -117,7 +118,7 @@ impl ViewHistory {
     }
 
     /// Records this frame's matrix and returns the one of the previous committed frame.
-    pub fn advance(&mut self, frame: u64, current: Mat4) -> Mat4 {
+    pub(crate) fn advance(&mut self, frame: u64, current: Mat4) -> Mat4 {
         if frame != self.frame {
             self.previous = self.current;
             self.frame = frame;
@@ -149,7 +150,11 @@ mod tests {
 
     #[test]
     fn history_keeps_the_previous_frames_matrix_across_re_records() {
-        let (a, b, c) = (Mat4::from_scale(Vec3::ONE), Mat4::from_scale(Vec3::splat(2.0)), Mat4::from_scale(Vec3::splat(3.0)));
+        let (a, b, c) = (
+            Mat4::from_scale(Vec3::ONE),
+            Mat4::from_scale(Vec3::splat(2.0)),
+            Mat4::from_scale(Vec3::splat(3.0)),
+        );
         let mut history = ViewHistory::first(0, a);
 
         assert_eq!(history.advance(0, a), a);

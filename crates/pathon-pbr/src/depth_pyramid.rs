@@ -1,7 +1,7 @@
 use pathon_api::graph::{GraphTextureDesc, PassDesc, Stage};
 use pathon_api::rhi::{
-    Access, BindGroupDesc, BindGroupEntry, BindGroupLayoutDesc, BindGroupLayoutId, BindingResource, BindingType,
-    Caps, ComputePassDesc, ComputePipelineId, Format, FormatCaps, RhiError, SubresourceRange, TextureSampleType,
+    Access, BindGroupDesc, BindGroupEntry, BindGroupLayoutDesc, BindGroupLayoutId, BindingResource, BindingType, Caps,
+    ComputePassDesc, ComputePipelineId, Format, FormatCaps, RhiError, SubresourceRange, TextureSampleType,
     TextureViewDesc,
 };
 use pathon_api::{Diagnostic, Negotiation, RecordCtx, RenderFeature, Slot};
@@ -74,7 +74,10 @@ impl RenderFeature for DepthPyramidFeature {
     }
 
     fn negotiate(&mut self, caps: &Caps) -> Negotiation {
-        if caps.format(Format::R32Float).contains(FormatCaps::STORAGE | FormatCaps::SAMPLED) {
+        if caps
+            .format(Format::R32Float)
+            .contains(FormatCaps::STORAGE | FormatCaps::SAMPLED)
+        {
             Negotiation::Full
         } else {
             Negotiation::Disabled {
@@ -89,17 +92,19 @@ impl RenderFeature for DepthPyramidFeature {
         }
         let Some(depth) = ctx.slot(Slot::DEPTH) else {
             if !std::mem::replace(&mut self.reported_unsupported, true) {
-                ctx.report(Diagnostic::warning("L0004", "depth_pyramid needs the depth slot of the PBR prepass"));
+                ctx.report(Diagnostic::warning(
+                    "L0004",
+                    "depth_pyramid needs the depth slot of the PBR prepass",
+                ));
             }
             return Ok(());
         };
-        let pipelines = match self.pipelines {
-            Some(pipelines) => pipelines,
-            None => {
-                let built = with_context(ctx, |ctx, pbr, binder| build_pipelines(ctx, pbr, binder.as_deref()))?;
-                self.pipelines = Some(built);
-                built
-            }
+        let pipelines = if let Some(pipelines) = self.pipelines {
+            pipelines
+        } else {
+            let built = with_context(ctx, |ctx, pbr, binder| build_pipelines(ctx, pbr, binder.as_deref()))?;
+            self.pipelines = Some(built);
+            built
         };
         let view = ctx.view().clone();
         let levels = pyramid_levels(view.render_size.width, view.render_size.height);
@@ -114,10 +119,15 @@ impl RenderFeature for DepthPyramidFeature {
                     mip_size(view.render_size.width, level.saturating_sub(1)),
                     mip_size(view.render_size.height, level.saturating_sub(1)),
                 ],
-                target_size: [mip_size(view.render_size.width, level), mip_size(view.render_size.height, level)],
+                target_size: [
+                    mip_size(view.render_size.width, level),
+                    mip_size(view.render_size.height, level),
+                ],
             };
             let slice = with_context(ctx, |ctx, pbr, _| {
-                let (slice, old) = pbr.arena.write(ctx.device(), view.record_epoch, bytemuck::bytes_of(&params))?;
+                let (slice, old) = pbr
+                    .arena
+                    .write(ctx.device(), view.record_epoch, bytemuck::bytes_of(&params))?;
                 retired.extend(old);
                 Ok::<_, RhiError>(slice)
             })?;
@@ -129,8 +139,15 @@ impl RenderFeature for DepthPyramidFeature {
             };
             pyramid = pass.write_range(pyramid, Access::STORAGE_WRITE, SubresourceRange::mip(level));
             let written = pyramid;
-            let (pipeline, layout) = if level == 0 { pipelines.copy } else { pipelines.downsample };
-            let groups = (params.target_size[0].div_ceil(GROUP_SIZE), params.target_size[1].div_ceil(GROUP_SIZE));
+            let (pipeline, layout) = if level == 0 {
+                pipelines.copy
+            } else {
+                pipelines.downsample
+            };
+            let groups = (
+                params.target_size[0].div_ceil(GROUP_SIZE),
+                params.target_size[1].div_ceil(GROUP_SIZE),
+            );
             pass.record(move |pass| {
                 let source_view = if level == 0 {
                     pass.view(source)?
@@ -186,10 +203,14 @@ fn build_pipelines(
         .shaders(hooks.as_ref(), binder)
         .map_err(|error| RhiError::validation("L0006", error.to_string()))?;
     Ok(PyramidPipelines {
-        copy: shaders
-            .compute_pipeline(device, "depth_pyramid", "copy_depth", "pbr depth copy", |_| {})?,
-        downsample: shaders
-            .compute_pipeline(device, "depth_pyramid", "downsample", "pbr depth downsample", unfilterable_previous)?,
+        copy: shaders.compute_pipeline(device, "depth_pyramid", "copy_depth", "pbr depth copy", |_| {})?,
+        downsample: shaders.compute_pipeline(
+            device,
+            "depth_pyramid",
+            "downsample",
+            "pbr depth downsample",
+            unfilterable_previous,
+        )?,
     })
 }
 

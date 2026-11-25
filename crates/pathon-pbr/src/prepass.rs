@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use pathon_api::graph::{PassDesc, Stage};
 use pathon_api::rhi::{
-    Access, BindGroupDesc, BindGroupEntry, BindingResource, Caps, Color, ColorAttachment, DepthAttachment,
-    Format, FormatCaps, IndexFormat, RenderPassDesc, RhiError,
+    Access, BindGroupDesc, BindGroupEntry, BindingResource, Caps, Color, ColorAttachment, DepthAttachment, Format,
+    FormatCaps, IndexFormat, RenderPassDesc, RhiError,
 };
 use pathon_api::{Diagnostic, Negotiation, RecordCtx, RenderFeature, SetupCtx, Slot};
 use pathon_bindless::TextureBinder;
@@ -87,7 +87,7 @@ impl RenderFeature for PrepassFeature {
     }
 
     fn record(&mut self, ctx: &mut RecordCtx<'_>) -> Result<(), RhiError> {
-        with_context(ctx, |ctx, pbr, binder| record_prepass(ctx, pbr, binder))
+        with_context(ctx, record_prepass)
     }
 }
 
@@ -114,8 +114,11 @@ fn read_inputs(ctx: &mut RecordCtx<'_>, pbr: &mut PbrContext) -> Option<Inputs> 
         report_once(
             ctx,
             &mut pbr.reported.missing_inputs,
-            Diagnostic::warning("L0004", "PBR needs a scene Snapshot, a GeometryPool and a MaterialTable in Shared")
-                .with_hint("insert them with Renderer::shared_mut(); the snapshot every frame"),
+            Diagnostic::warning(
+                "L0004",
+                "PBR needs a scene Snapshot, a GeometryPool and a MaterialTable in Shared",
+            )
+            .with_hint("insert them with Renderer::shared_mut(); the snapshot every frame"),
         );
         return None;
     }
@@ -140,7 +143,9 @@ fn record_prepass(
     // Materials: upload what changed; the old buffer of a grown array waits for the frames in flight.
     pbr.release().collect(view.frame, device);
     let material_buffer = {
-        let release = pbr.material_release.get_or_insert_with(|| pathon_api::resources::DeferredRelease::new(4));
+        let release = pbr
+            .material_release
+            .get_or_insert_with(|| pathon_api::resources::DeferredRelease::new(4));
         let Some(mut table) = ctx.shared_mut().remove::<MaterialTable>() else {
             return Ok(());
         };
@@ -162,7 +167,9 @@ fn record_prepass(
             camera_position: view.camera.position,
         };
         if let Some(binder) = binder.as_deref_mut() {
-            binder.prepare(ctx.device()).map_err(|error| RhiError::validation("L0006", error.to_string()))?;
+            binder
+                .prepare(ctx.device())
+                .map_err(|error| RhiError::validation("L0006", error.to_string()))?;
         }
         gather(&sources, ctx.device(), binder.as_deref_mut(), &mut diagnostics)
     };
@@ -184,9 +191,17 @@ fn record_prepass(
     let full = view.is_requested(Slot::ROUGHNESS) || view.is_requested(Slot::ALBEDO);
     let mut pipelines = [None, None];
     for (index, masked) in [false, true].into_iter().enumerate() {
-        if draws.opaque.iter().any(|item| (item.variant.alpha == AlphaKind::Masked) == masked) {
-            let built =
-                shaders.prepass_pipeline(ctx.device(), PrepassKey { masked, full }, &draws.vertex_buffers, texture_layout)?;
+        if draws
+            .opaque
+            .iter()
+            .any(|item| (item.variant.alpha == AlphaKind::Masked) == masked)
+        {
+            let built = shaders.prepass_pipeline(
+                ctx.device(),
+                PrepassKey { masked, full },
+                &draws.vertex_buffers,
+                texture_layout,
+            )?;
             pipelines[index] = Some(built);
         }
     }
@@ -240,7 +255,15 @@ fn record_prepass(
         },
     );
 
-    add_prepass(ctx, pipelines, draws, full, frame_uniforms.binding(), instances.binding(), material_buffer);
+    add_prepass(
+        ctx,
+        pipelines,
+        draws,
+        full,
+        frame_uniforms.binding(),
+        instances.binding(),
+        material_buffer,
+    );
     Ok(())
 }
 
@@ -253,16 +276,24 @@ fn add_prepass(
     instances_binding: BindingResource,
     materials: pathon_api::rhi::BufferId,
 ) {
-    let depth = ctx.create_slot_texture(Slot::DEPTH, "depth").expect("depth has a format");
-    let normals = ctx.create_slot_texture(Slot::NORMALS, "normals").expect("normals has a format");
-    let motion = ctx.create_slot_texture(Slot::MOTION, "motion").expect("motion has a format");
+    let depth = ctx
+        .create_slot_texture(Slot::DEPTH, "depth")
+        .expect("depth has a format");
+    let normals = ctx
+        .create_slot_texture(Slot::NORMALS, "normals")
+        .expect("normals has a format");
+    let motion = ctx
+        .create_slot_texture(Slot::MOTION, "motion")
+        .expect("motion has a format");
     let material_id = ctx
         .create_slot_texture(Slot::MATERIAL_ID, "material id")
         .expect("material id has a format");
     let extras = full.then(|| {
         (
-            ctx.create_slot_texture(Slot::ROUGHNESS, "roughness").expect("roughness has a format"),
-            ctx.create_slot_texture(Slot::ALBEDO, "albedo").expect("albedo has a format"),
+            ctx.create_slot_texture(Slot::ROUGHNESS, "roughness")
+                .expect("roughness has a format"),
+            ctx.create_slot_texture(Slot::ALBEDO, "albedo")
+                .expect("albedo has a format"),
         )
     });
 
@@ -318,8 +349,14 @@ fn add_prepass(
             })
         };
         let groups = [
-            pipelines[0].as_ref().map(|pipeline| frame_group(pass, pipeline)).transpose()?,
-            pipelines[1].as_ref().map(|pipeline| frame_group(pass, pipeline)).transpose()?,
+            pipelines[0]
+                .as_ref()
+                .map(|pipeline| frame_group(pass, pipeline))
+                .transpose()?,
+            pipelines[1]
+                .as_ref()
+                .map(|pipeline| frame_group(pass, pipeline))
+                .transpose()?,
         ];
         let mut render = pass.commands().render_pass(RenderPassDesc {
             label: "pbr prepass",
@@ -329,7 +366,9 @@ fn add_prepass(
         });
         draw_list(&mut render, &draws, &draws.opaque, |item| {
             let index = usize::from(item.variant.alpha == AlphaKind::Masked);
-            pipelines[index].zip(groups[index]).map(|(pipeline, group)| (pipeline.pipeline, group))
+            pipelines[index]
+                .zip(groups[index])
+                .map(|(pipeline, group)| (pipeline.pipeline, group))
         });
         Ok(())
     });

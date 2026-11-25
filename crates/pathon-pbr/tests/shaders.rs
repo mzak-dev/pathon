@@ -5,7 +5,7 @@ use pathon_api::rhi::BindGroupLayoutId;
 use pathon_bindless::{BINDLESS_FEATURES, BinderDesc, PathPreference, TextureBinder};
 use pathon_material::{MaterialHooks, MaterialVariant};
 use pathon_mesh::VertexLayout;
-use pathon_pbr::{ClusterPipeline, PbrShaders, TEXTURE_GROUP};
+use pathon_pbr::{ClusterPipeline, ForwardKey, PbrShaders, PrepassKey, TEXTURE_GROUP};
 use pathon_rhi::{Features, NullDevice};
 use pathon_shader::{ShaderFeatures, ShaderKey};
 
@@ -34,9 +34,7 @@ fn every_roots_composes_and_validates_without_textures() {
             root: root.to_owned(),
             features: ShaderFeatures::default(),
         };
-        shaders
-            .wgsl(&key)
-            .unwrap_or_else(|error| panic!("{root}: {error}"));
+        shaders.wgsl(&key).unwrap_or_else(|error| panic!("{root}: {error}"));
     }
 }
 
@@ -55,13 +53,13 @@ fn forward_and_prepass_pipelines_exist_for_all_forty_eight_permutations_on_both_
         for variant in MaterialVariant::all() {
             for split in [false, true] {
                 shaders
-                    .forward_pipeline(&device, pathon_pbr_forward_key(variant, split), &layouts, textures)
+                    .forward_pipeline(&device, ForwardKey { variant, split }, &layouts, textures)
                     .unwrap_or_else(|error| panic!("{variant:?} split {split}: {error}"));
             }
         }
         for (masked, full) in [(false, false), (true, false), (false, true), (true, true)] {
             shaders
-                .prepass_pipeline(&device, pathon_pbr_prepass_key(masked, full), &layouts, textures)
+                .prepass_pipeline(&device, PrepassKey { masked, full }, &layouts, textures)
                 .unwrap_or_else(|error| panic!("masked {masked} full {full}: {error}"));
         }
     }
@@ -74,10 +72,26 @@ fn the_pack_works_without_a_texture_binder() {
     let mut shaders = PbrShaders::new(&MaterialHooks::default()).expect("modules register");
 
     shaders
-        .forward_pipeline(&device, pathon_pbr_forward_key(MaterialVariant::default(), true), &layouts, None)
+        .forward_pipeline(
+            &device,
+            ForwardKey {
+                variant: MaterialVariant::default(),
+                split: true,
+            },
+            &layouts,
+            None,
+        )
         .expect("opaque forward without textures");
     shaders
-        .prepass_pipeline(&device, pathon_pbr_prepass_key(false, true), &layouts, None)
+        .prepass_pipeline(
+            &device,
+            PrepassKey {
+                masked: false,
+                full: true,
+            },
+            &layouts,
+            None,
+        )
         .expect("prepass without textures");
 }
 
@@ -99,12 +113,4 @@ fn cluster_and_pyramid_pipelines_build() {
             }
         })
         .expect("downsample");
-}
-
-fn pathon_pbr_forward_key(variant: MaterialVariant, split: bool) -> pathon_pbr::ForwardKey {
-    pathon_pbr::ForwardKey { variant, split }
-}
-
-fn pathon_pbr_prepass_key(masked: bool, full: bool) -> pathon_pbr::PrepassKey {
-    pathon_pbr::PrepassKey { masked, full }
 }

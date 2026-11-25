@@ -5,7 +5,9 @@
 )]
 
 use pathon_golden::{announce_adapter, gpu_or_skip};
-use pathon_rhi::{Backend, BufferCopy, BufferDesc, BufferId, BufferUsage, CommandList, Device, DeviceApi, DeviceRequest, RhiError};
+use pathon_rhi::{
+    Backend, BufferCopy, BufferDesc, BufferId, BufferUsage, CommandList, Device, DeviceApi, DeviceRequest, RhiError,
+};
 
 pub fn backend_from_environment() -> Option<Backend> {
     match std::env::var("PATHON_TEST_BACKEND").ok()?.to_ascii_lowercase().as_str() {
@@ -44,7 +46,10 @@ pub struct Lcg(pub u64);
 
 impl Lcg {
     pub fn next_f32(&mut self) -> f32 {
-        self.0 = self.0.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        self.0 = self
+            .0
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
         ((self.0 >> 40) as f32) / ((1u64 << 24) as f32)
     }
 

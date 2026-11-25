@@ -49,7 +49,11 @@ impl BufferArena {
             self.cursor = 0;
         }
         let limits = &device.caps().limits;
-        let alignment = u64::from(limits.min_uniform_buffer_offset_alignment.max(limits.min_storage_buffer_offset_alignment));
+        let alignment = u64::from(
+            limits
+                .min_uniform_buffer_offset_alignment
+                .max(limits.min_storage_buffer_offset_alignment),
+        );
         let offset = self.cursor.next_multiple_of(alignment);
         // A storage binding must hold at least one element of the array the shader declares (the widest is 160 bytes),
         // so an empty list still gets a block of this size.
@@ -59,7 +63,10 @@ impl BufferArena {
         let buffer = match self.buffer {
             Some((buffer, capacity)) if needed <= capacity => buffer,
             existing => {
-                let capacity = needed.next_power_of_two().max(Self::MIN_CAPACITY).max(existing.map_or(0, |(_, c)| c * 2));
+                let capacity = needed
+                    .next_power_of_two()
+                    .max(Self::MIN_CAPACITY)
+                    .max(existing.map_or(0, |(_, c)| c * 2));
                 let buffer = device.create_buffer(&BufferDesc {
                     label: "pbr frame data",
                     size: capacity,
@@ -117,6 +124,9 @@ mod tests {
 
         assert_eq!(retired, Some(small.buffer));
         assert_ne!(big.buffer, small.buffer);
-        assert!(device.write_buffer(small.buffer, 0, &[0; 4]).is_ok(), "not destroyed here");
+        assert!(
+            device.write_buffer(small.buffer, 0, &[0; 4]).is_ok(),
+            "not destroyed here"
+        );
     }
 }

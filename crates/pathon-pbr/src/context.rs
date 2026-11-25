@@ -22,7 +22,7 @@ use crate::shaders::{PbrShaders, TEXTURE_GROUP};
 
 /// What the prepass prepared for a view in one record attempt and the colour pass consumes.
 #[derive(Clone, Debug)]
-pub struct ViewFrame {
+pub(crate) struct ViewFrame {
     pub record_epoch: u64,
     pub draws: Arc<SceneDraws>,
     pub lights: PackedLights,
@@ -69,7 +69,12 @@ impl PbrContext {
         if let Some(binder) = binder {
             hooks.set_texture_source(binder.texture_source_wgsl(TEXTURE_GROUP));
         }
-        let fingerprint: String = hooks.modules().iter().map(|(path, source)| format!("{path}:{source}")).collect();
+        let mut fingerprint = String::new();
+        for (path, source) in hooks.modules() {
+            fingerprint.push_str(path);
+            fingerprint.push(':');
+            fingerprint.push_str(source);
+        }
         if self.shader_fingerprint.as_ref() != Some(&fingerprint) || self.shaders.is_none() {
             self.shaders = Some(PbrShaders::new(&hooks)?);
             self.cluster = None;

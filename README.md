@@ -186,3 +186,5 @@ Szczegóły: [plan implementacji](docs/plan-implementacji.md) · decyzje: [docs/
 ## Licencja
 
 MIT OR Apache-2.0, do wyboru.
+
+Kod i dane przeniesione z cudzych projektów (m.in. z Filamenta, [ADR-0047](docs/adr/0047-uzywanie-kodu-filamenta.md)) wymienia [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

@@ -2016,6 +2016,7 @@ dependencies = [
  "pathon-ibl",
  "pathon-material",
  "pathon-mesh",
+ "pathon-pbr",
  "pathon-post",
  "pathon-profile",
  "pathon-rhi-wgpu",

@@ -154,8 +154,9 @@ fn the_cluster_pass_validates_on_the_null_device() {
 
 #[cfg(feature = "gpu-tests")]
 mod gpu {
-    use super::*;
     use support::gpu;
+
+    use super::*;
 
     // A light within `TOLERANCE` metres of a cluster's boundary may be on either side of float rounding.
     const TOLERANCE: f64 = 2.0e-3;

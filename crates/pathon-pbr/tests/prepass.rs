@@ -141,9 +141,9 @@ mod gpu {
         (t > 0.0).then(|| origin + direction * t)
     }
 
-    // The world point under a pixel and what it belongs to, from the scene's geometry. `None` where the polygonal sphere or
-    // the edge of the floor could disagree with the analytic shape: grazing views of the ball, its silhouette, the
-    // floor next to it and beyond the quad.
+    // The world point under a pixel and what it belongs to, from the scene's geometry. `None` where the polygonal
+    // sphere or the edge of the floor could disagree with the analytic shape: grazing views of the ball, its
+    // silhouette, the floor next to it and beyond the quad.
     fn expected_point(camera: &Camera, spheres: &Spheres, pixel: Vec2) -> Option<(Vec3, bool)> {
         let (origin, direction) = ray(camera, pixel);
         if let Some(point) = hit_sphere(origin, direction, spheres.center, spheres.radius) {

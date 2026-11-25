@@ -19,6 +19,7 @@ pathon-ibl.workspace = true
 pathon-golden.workspace = true
 pathon-material.workspace = true
 pathon-mesh.workspace = true
+pathon-pbr.workspace = true
 pathon-post.workspace = true
 pathon-profile.workspace = true
 pathon-texture.workspace = true

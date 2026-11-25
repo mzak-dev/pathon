@@ -54,7 +54,16 @@ fn forward_and_prepass_pipelines_exist_for_all_forty_eight_permutations_on_both_
         for variant in MaterialVariant::all() {
             for (split, shadows) in [(false, false), (true, false), (false, true), (true, true)] {
                 shaders
-                    .forward_pipeline(&device, ForwardKey { variant, split, shadows }, &layouts, textures)
+                    .forward_pipeline(
+                        &device,
+                        ForwardKey {
+                            variant,
+                            split,
+                            shadows,
+                        },
+                        &layouts,
+                        textures,
+                    )
                     .unwrap_or_else(|error| panic!("{variant:?} split {split} shadows {shadows}: {error}"));
             }
         }
@@ -107,7 +116,9 @@ fn the_shadow_permutation_adds_the_three_shadow_bindings_and_nothing_else() {
             shadows,
         }
         .shader_key();
-        let wgsl = shaders.wgsl(&key).unwrap_or_else(|error| panic!("shadows {shadows}: {error}"));
+        let wgsl = shaders
+            .wgsl(&key)
+            .unwrap_or_else(|error| panic!("shadows {shadows}: {error}"));
         let group = reflect_bind_groups(&wgsl, &["vs", "fs"]).expect("reflection").remove(0);
         group.entries.iter().map(|entry| entry.binding).collect::<Vec<_>>()
     };
@@ -116,7 +127,10 @@ fn the_shadow_permutation_adds_the_three_shadow_bindings_and_nothing_else() {
     let with = bindings(&mut shaders, true);
 
     assert_eq!(without, (0..SHADOW_FIRST_BINDING).collect::<Vec<_>>());
-    assert_eq!(with, (0..SHADOW_FIRST_BINDING + ShadowBindings::COUNT).collect::<Vec<_>>());
+    assert_eq!(
+        with,
+        (0..SHADOW_FIRST_BINDING + ShadowBindings::COUNT).collect::<Vec<_>>()
+    );
 }
 
 #[test]

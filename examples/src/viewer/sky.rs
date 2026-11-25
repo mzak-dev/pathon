@@ -9,9 +9,8 @@ use pathon::api::resources::UniformRing;
 use pathon::api::{RecordCtx, RenderFeature, Slot};
 use pathon::rhi::{
     Access, BindGroupDesc, BindGroupEntry, BindGroupLayoutDesc, BindGroupLayoutEntry, BindGroupLayoutId,
-    BindingResource, BindingType, ColorAttachment, ColorTargetState,
-    DeviceApi, Format, PrimitiveState, RenderPassDesc, RenderPipelineDesc,
-    RenderPipelineId, RhiError, SamplerBindingType, ShaderModuleDesc, ShaderStage, ShaderStages,
+    BindingResource, BindingType, ColorAttachment, ColorTargetState, DeviceApi, Format, PrimitiveState, RenderPassDesc,
+    RenderPipelineDesc, RenderPipelineId, RhiError, SamplerBindingType, ShaderModuleDesc, ShaderStage, ShaderStages,
     TextureSampleType, TextureViewDimension,
 };
 use pathon_ibl::IblEnvironment;
@@ -148,7 +147,9 @@ impl RenderFeature for SkyFeature {
         let intensity = ctx
             .shared()
             .get::<ViewerSettings>()
-            .map_or(ViewerSettings::default().sky_intensity, |settings| settings.sky_intensity);
+            .map_or(ViewerSettings::default().sky_intensity, |settings| {
+                settings.sky_intensity
+            });
         if self.gpu.is_none() {
             self.gpu = Some(Gpu::new(ctx.device())?);
         }

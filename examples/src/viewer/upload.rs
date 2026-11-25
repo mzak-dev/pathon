@@ -665,7 +665,9 @@ fn upload_pbr(
         })
         .collect::<Result<_, _>>()?;
     let BinderTextures {
-        cache, binder: texture_binder, ..
+        cache,
+        binder: texture_binder,
+        ..
     } = textures;
     let TextureCache {
         mut loader,

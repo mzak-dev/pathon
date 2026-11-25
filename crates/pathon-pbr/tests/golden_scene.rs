@@ -12,10 +12,10 @@ use pathon_api::glam::{Affine3A, Quat, Vec3};
 use pathon_api::{Severity, Slot};
 use pathon_bindless::PathPreference;
 use pathon_ibl::{IblPack, IblSettings, IblSource, SyntheticSky};
+use pathon_mesh::GeometryPool;
 use pathon_pbr::{LightAssignment, PbrPack, PbrSettings};
 use pathon_post::{BloomSettings, ExposureMode, ExposureSettings, PostPack, PostSettings};
 use pathon_rhi::{Format, NullDevice};
-use pathon_mesh::GeometryPool;
 use pathon_scene::Light;
 use pathon_shadow::{DirectionalShadowLight, ShadowPack, ShadowScene, ShadowSettings};
 use support::Lcg;
@@ -313,7 +313,11 @@ mod gpu {
         let render = |shadowed: bool| -> Option<Vec<[f32; 4]>> {
             let mut readers = None;
             let mut harness = harness(test, SIZE, Format::Rgba8Unorm, |builder| {
-                let (builder, split) = configure_split(if shadowed { with_shadows(builder) } else { base_builder(builder) });
+                let (builder, split) = configure_split(if shadowed {
+                    with_shadows(builder)
+                } else {
+                    base_builder(builder)
+                });
                 readers = Some(split);
                 builder
             })?;

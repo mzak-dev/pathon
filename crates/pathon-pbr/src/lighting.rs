@@ -381,7 +381,8 @@ fn frame_groups(
                 ];
                 entries.extend(IblBindings::starting_at(IBL_FIRST_BINDING).bind_group_entries(&bindings.environment));
                 if let Some((frame, map_view)) = bindings.shadows {
-                    entries.extend(ShadowBindings::starting_at(SHADOW_FIRST_BINDING).bind_group_entries(&frame, map_view));
+                    entries
+                        .extend(ShadowBindings::starting_at(SHADOW_FIRST_BINDING).bind_group_entries(&frame, map_view));
                 }
                 let group = pass.create_bind_group(&BindGroupDesc {
                     label: "pbr forward frame",

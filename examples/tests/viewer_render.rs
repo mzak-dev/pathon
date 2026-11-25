@@ -18,7 +18,10 @@ fn render(lighting: LightingMode, sun_shadows: bool) -> Option<GoldenImage> {
     let request = ScreenshotRequest {
         width: SIZE,
         height: SIZE,
-        eye_and_target: Some((pathon::api::glam::Vec3::new(0.0, 0.0, 3.0), pathon::api::glam::Vec3::ZERO)),
+        eye_and_target: Some((
+            pathon::api::glam::Vec3::new(0.0, 0.0, 3.0),
+            pathon::api::glam::Vec3::ZERO,
+        )),
         vertical_fov_degrees: Some(60.0),
         sun_shadows,
         sky_intensity: Some(TEST_SKY_INTENSITY),

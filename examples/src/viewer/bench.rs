@@ -147,7 +147,9 @@ pub fn run_benchmark(
 
     let sink = Arc::new(SumSink::default());
     let profiler = Profiler::builder().with_sink(Arc::<SumSink>::clone(&sink)).build();
-    session.renderer.set_frame_observer(Some(Arc::<Profiler>::clone(&profiler)));
+    session
+        .renderer
+        .set_frame_observer(Some(Arc::<Profiler>::clone(&profiler)));
     for _ in 0..PROFILED_FRAMES {
         session.render_input(&input).map_err(|error| error.to_string())?;
     }

@@ -57,7 +57,7 @@ Dekodowanie normalnych i referencje CPU (`oct_encode`, `oct_decode`, `depth_pyra
 
 ## Klastry świateł
 
-Siatka kafli (`tile_size` px, potęga dwójki) razy wykładnicze warstwy głębi (`slices` od `near` do `far`). Compute (`cluster.wesl`): jeden wątek na klaster liczy jego AABB w przestrzeni widoku (perspektywa i ortografia), zlicza światła, których sfera zasięgu go dotyka, rezerwuje miejsce na liście jednym `atomicAdd` na `u32` i zapisuje indeksy w kolejności świateł. Nie ma atomików 64-bit, więc ten sam shader działa na Web. Światła kierunkowe nie są klastrowane. Zasięg punktowego i reflektora to `Light::influence_radius`, a tłumienie ma okno `saturate(1 − (d/r)⁴)²` (Karis 2013), więc światło znika dokładnie na zasięgu i klaster nic nie zmienia w obrazie. Przepełnienie wspólnej listy (`max_light_indices`) skraca listy późniejszych klastrów (`L0005`).
+Siatka kafli (`tile_size` px, potęga dwójki) razy wykładnicze warstwy głębi (`slices` od `near` do `far`). Compute (`cluster.wesl`): jeden wątek na klaster liczy jego AABB w przestrzeni widoku (perspektywa i ortografia), zlicza światła, których sfera zasięgu go dotyka, rezerwuje miejsce na liście jednym `atomicAdd` na `u32` i zapisuje indeksy w kolejności świateł. Nie ma atomików 64-bit, więc ten sam shader działa na Web. Światła kierunkowe nie są klastrowane. Zasięg punktowego i reflektora to `Light::influence_radius`, a tłumienie ma okno `saturate(1 − (d/r)⁴)²` (Karis 2013), więc światło znika dokładnie na zasięgu i klaster nic nie zmienia w obrazie. Lista jest tak duża, jak trzeba: `min(max_light_indices, klastry × światła)` wpisów (domyślny limit 2²⁴), więc przepełnienie (`L0005`) wymaga jawnie mniejszego limitu; wtedy skraca listy losowych klastrów, bo kolejność rezerwacji zależy od planowania wątków.
 
 `LightAssignment::BruteForce` testuje w kolorze każde światło i służy do sprawdzania klastrów.
 
@@ -78,6 +78,7 @@ Cieniowane światło to jedno światło kierunkowe, które `ShadowPack` rysuje d
 - Brak cullingu: rysowane są wszystkie widoczne instancje, jedno wywołanie na instancję (M4-11).
 - `CullMode::None`: podwójna strona rozstrzyga się przez `front_facing`; transformacje lustrzane odwracają znak stycznej niepoprawnie.
 - Wgrywanie instancji i świateł co klatkę w całości (przyrostowe z `changes()` zostaje na M4-11).
+- Układy grupy 0 są reflektowane raz na permutację (cache w `PbrShaders`); wcześniej parsowanie WGSL szło co klatkę (14 ms CPU na scenie z 862 instancjami).
 - Koszt przypisania to `O(klastry × światła)`; hierarchiczne przycinanie do zmierzenia w M4-17.
 - Brak AA specular, okluzji z bent normals, cieni punktowych i reflektorów, nieba, przezroczystości z transmisją (M4-15) i MSAA (M4-19).
 

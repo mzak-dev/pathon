@@ -37,7 +37,10 @@ fn render_one_frame(lighting: LightingMode, texture_path: PathPreference) -> Vec
 
 #[test]
 fn the_pbr_stack_validates_with_bindless_textures() {
-    assert_eq!(render_one_frame(LightingMode::Pbr, PathPreference::Auto), Vec::<String>::new());
+    assert_eq!(
+        render_one_frame(LightingMode::Pbr, PathPreference::Auto),
+        Vec::<String>::new()
+    );
 }
 
 #[test]

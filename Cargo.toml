@@ -43,6 +43,19 @@ bytemuck = { version = "1.25", features = ["derive"] }
 crossbeam-channel = "0.5"
 divan = "0.1"
 glam = { version = "0.34", features = ["bytemuck"] }
+# Examples only (M4-10): the glTF test-scene loader lives in `examples/` and never reaches the core closure.
+gltf = { version = "1.4", default-features = false, features = [
+    "utils",
+    "names",
+    "extensions",
+    "KHR_lights_punctual",
+    "KHR_materials_emissive_strength",
+    "KHR_materials_ior",
+    "KHR_materials_specular",
+    "KHR_materials_transmission",
+    "KHR_materials_volume",
+    "KHR_texture_transform",
+] }
 log = "0.4"
 naga = { version = "30", default-features = false, features = ["wgsl-in"] }
 # Without "underline-color": its weak `ratatui-termwiz?/` feature makes cargo metadata list termwiz (WTFPL) as resolved.
@@ -67,6 +80,7 @@ wgpu = { version = "30", default-features = false, features = [
     "webgpu",
 ] }
 winit = "0.30"
+zune-jpeg = "0.5"
 wesl = { version = "0.6", default-features = false, features = ["naga-ext"] }
 
 # Web only (ADR-0014).

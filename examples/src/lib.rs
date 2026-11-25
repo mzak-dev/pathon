@@ -1,5 +1,8 @@
 // Shared helpers for the examples; see docs/examples.md.
 
+pub mod gltf_loader;
+pub mod viewer;
+
 use std::future::Future;
 use std::pin::pin;
 use std::task::{Context, Poll, Waker};

@@ -1,6 +1,7 @@
 // What the host changes between frames; it reaches the packs through `Renderer::shared_mut`.
 
-/// Which lighting the viewer draws with: the stack of pathon packs, or the one-feature stand-in of M4-10 for comparison.
+/// Which lighting the viewer draws with: the stack of pathon packs, or the one-feature stand-in of M4-10 for
+/// comparison.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum LightingMode {
     #[default]

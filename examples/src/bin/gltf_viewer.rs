@@ -6,8 +6,8 @@
 //   PATHON_TEST_SCENE=test-assets/classroom/classroom-lite.glb cargo run --release -p pathon-examples --bin gltf_viewer
 //
 // Options: --screenshot out.png [--camera N | --eye x,y,z --target x,y,z [--fov DEG]] [--size WxH]
-//          [--supersample N] [--ev STOPS] [--no-shadows] [--auto-exposure] [--no-bloom] [--neutral] [--brute-force-lights]
-//          [--env file.hdr | --env none] [--environment-intensity X] [--sky-intensity X]
+//          [--supersample N] [--ev STOPS] [--no-shadows] [--auto-exposure] [--no-bloom] [--neutral]
+// [--brute-force-lights]          [--env file.hdr | --env none] [--environment-intensity X] [--sky-intensity X]
 //          [--simple] [--per-material] [--bench FRAMES] [--backend vulkan|dx12|metal]
 
 use std::path::PathBuf;

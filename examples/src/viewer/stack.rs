@@ -7,10 +7,9 @@
 
 use std::sync::Arc;
 
-use pathon::Renderer;
-use pathon::RendererBuilder;
 use pathon::api::glam::Vec3;
 use pathon::rhi::{DeviceRequest, Features};
+use pathon::{Renderer, RendererBuilder};
 use pathon_bindless::{BINDLESS_FEATURES, PathPreference};
 use pathon_ibl::{EquirectImage, IblPack, IblSettings, IblSource, SyntheticSky};
 use pathon_pbr::{LightAssignment, PbrPack, PbrSettings};

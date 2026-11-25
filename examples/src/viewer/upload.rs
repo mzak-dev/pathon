@@ -106,7 +106,8 @@ pub struct ViewerAssets {
     pub sun_direction: Option<Vec3>,
 }
 
-/// Everything the `--simple` pack draws from. Immutable after the upload, so the render side shares it through an `Arc`.
+/// Everything the `--simple` pack draws from. Immutable after the upload, so the render side shares it through an
+/// `Arc`.
 #[derive(Debug)]
 pub struct SimpleScene {
     pub pool: GeometryPool,

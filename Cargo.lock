@@ -2010,6 +2010,7 @@ dependencies = [
  "gltf",
  "log",
  "pathon",
+ "pathon-api",
  "pathon-bindless",
  "pathon-devtools",
  "pathon-golden",
@@ -2021,6 +2022,7 @@ dependencies = [
  "pathon-rhi-wgpu",
  "pathon-scene",
  "pathon-shader",
+ "pathon-shadow",
  "pathon-test",
  "pathon-texture",
  "png",
@@ -2198,6 +2200,20 @@ dependencies = [
  "pathon-rhi-types",
  "thiserror 2.0.21",
  "wesl",
+]
+
+[[package]]
+name = "pathon-shadow"
+version = "0.0.1"
+dependencies = [
+ "bytemuck",
+ "pathon-api",
+ "pathon-core",
+ "pathon-golden",
+ "pathon-mesh",
+ "pathon-rhi",
+ "pathon-scene",
+ "pathon-shader",
 ]
 
 [[package]]

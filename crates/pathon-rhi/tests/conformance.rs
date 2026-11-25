@@ -1,10 +1,11 @@
 use pathon_rhi::{
     Access, Backend, BindGroupDesc, BindGroupEntry, BindGroupLayoutDesc, BindGroupLayoutEntry, BindingResource,
     BindingType, BufferCopy, BufferDesc, BufferId, BufferUsage, Color, ColorAttachment, ColorTargetState, CommandList,
-    ComputePassDesc, ComputePipelineDesc, Device, DeviceApi, Extent3d, Features, Format, IndexFormat, PassTimestamps,
-    PrimitiveState, QuerySetDesc, RenderPassDesc, RenderPipelineDesc, SamplerBindingType, SamplerDesc,
-    ShaderModuleDesc, ShaderStage, ShaderStages, StorageAccess, SubresourceRange, TexelLayout, TextureCopy,
-    TextureDesc, TextureUsage, TextureViewDesc, VertexAttribute, VertexBufferLayout, VertexFormat, VertexStepMode,
+    CompareFunction, ComputePassDesc, ComputePipelineDesc, DepthAccess, DepthAttachment, DepthBias, DepthState, Device,
+    DeviceApi, Extent3d, Features, Format, IndexFormat, LoadOp, PassTimestamps, PrimitiveState, QuerySetDesc,
+    RenderPassDesc, RenderPipelineDesc, SamplerBindingType, SamplerDesc, ShaderModuleDesc, ShaderStage, ShaderStages,
+    StorageAccess, StoreOp, SubresourceRange, TexelLayout, TextureCopy, TextureDesc, TextureUsage, TextureViewDesc,
+    VertexAttribute, VertexBufferLayout, VertexFormat, VertexStepMode,
 };
 
 const COMPUTE_WGSL: &str = r"
@@ -398,10 +399,146 @@ fn indexed_quad_samples_texture(device: &Device) {
     }
 }
 
+const DEPTH_BIAS_WGSL: &str = r"
+@vertex
+fn vs(@builtin(vertex_index) index: u32) -> @builtin(position) vec4<f32> {
+    let corner = vec2<f32>(f32((index << 1u) & 2u), f32(index & 2u)) * 2.0 - 1.0;
+    return vec4<f32>(corner, 0.5 + 0.2 * corner.x, 1.0);
+}
+
+@fragment
+fn fs() -> @location(0) vec4<f32> {
+    return vec4<f32>(0.0, 1.0, 0.0, 1.0);
+}
+";
+
+// A triangle whose depth runs from 0.3 to 0.7 is tested with `Greater` against a cleared 0.75: it only appears when
+// the bias lifts it past the clear value.
+fn depth_bias_makes_the_fragment_pass(device: &Device, bias: DepthBias) -> Option<bool> {
+    let size = ROW_BYTES / 4;
+    let module = device
+        .create_shader_module(&ShaderModuleDesc {
+            label: "depth bias",
+            wgsl: DEPTH_BIAS_WGSL,
+        })
+        .expect("module");
+    let pipeline = device
+        .create_render_pipeline(&RenderPipelineDesc {
+            label: "depth bias",
+            bind_group_layouts: vec![],
+            vertex: ShaderStage {
+                module,
+                entry_point: "vs",
+                constants: vec![],
+            },
+            vertex_buffers: vec![],
+            fragment: Some(ShaderStage {
+                module,
+                entry_point: "fs",
+                constants: vec![],
+            }),
+            color_targets: vec![ColorTargetState::opaque(Format::Rgba8Unorm)],
+            primitive: PrimitiveState::default(),
+            depth: Some(
+                DepthState {
+                    write_enabled: false,
+                    compare: CompareFunction::Greater,
+                    ..DepthState::reverse_z(Format::Depth32Float)
+                }
+                .with_bias(bias),
+            ),
+            sample_count: 1,
+            immediate_size: 0,
+        })
+        .expect("pipeline");
+    let color = device
+        .create_texture(&TextureDesc::new_2d(
+            "bias color",
+            size,
+            size,
+            Format::Rgba8Unorm,
+            TextureUsage::RENDER_TARGET | TextureUsage::COPY_SRC,
+        ))
+        .expect("color");
+    let depth = device
+        .create_texture(&TextureDesc::new_2d(
+            "bias depth",
+            size,
+            size,
+            Format::Depth32Float,
+            TextureUsage::RENDER_TARGET,
+        ))
+        .expect("depth");
+    let color_view = device
+        .create_texture_view(color, &TextureViewDesc::default())
+        .expect("view");
+    let depth_view = device
+        .create_texture_view(depth, &TextureViewDesc::default())
+        .expect("view");
+    let readback = readback_buffer(device, u64::from(ROW_BYTES * size));
+
+    let mut list = CommandList::new();
+    list.texture_access(color, SubresourceRange::ALL, Access::empty(), Access::COLOR_ATTACHMENT);
+    list.texture_access(depth, SubresourceRange::ALL, Access::empty(), Access::DEPTH_WRITE);
+    {
+        let mut pass = list.render_pass(RenderPassDesc {
+            label: "depth bias",
+            color: vec![ColorAttachment::clear(color_view, Color::BLACK)],
+            depth: Some(DepthAttachment {
+                view: depth_view,
+                load: LoadOp::Clear(0.75),
+                store: StoreOp::Store,
+                access: DepthAccess::ReadWrite,
+                clear_stencil: None,
+            }),
+            timestamps: None,
+        });
+        pass.set_pipeline(pipeline);
+        pass.draw(0..3, 0..1);
+    }
+    list.texture_access(color, SubresourceRange::ALL, Access::COLOR_ATTACHMENT, Access::COPY_SRC);
+    list.copy_texture_to_buffer(
+        TextureCopy::whole(color),
+        BufferCopy {
+            buffer: readback,
+            layout: TexelLayout {
+                offset: 0,
+                bytes_per_row: ROW_BYTES,
+                rows_per_image: size,
+            },
+        },
+        Extent3d::new_2d(size, size),
+    );
+    device.submit(list).expect("depth bias pass");
+    if !executes(device) {
+        return None;
+    }
+    let pixels = device.read_buffer(readback).expect("read");
+    let center = usize::try_from((size / 2) * ROW_BYTES + (size / 2) * 4).expect("fits");
+    Some(pixels[center + 1] == 255)
+}
+
+fn depth_bias_moves_fragments_in_the_depth_test(device: &Device) {
+    let outcomes = [
+        depth_bias_makes_the_fragment_pass(device, DepthBias::NONE),
+        depth_bias_makes_the_fragment_pass(device, DepthBias::new(16_000_000, 0.0, 0.0)),
+        depth_bias_makes_the_fragment_pass(device, DepthBias::new(0, 1000.0, 0.0)),
+        depth_bias_makes_the_fragment_pass(device, DepthBias::new(-16_000_000, 0.0, 0.0)),
+    ];
+    if executes(device) {
+        assert_eq!(
+            outcomes,
+            [Some(false), Some(true), Some(true), Some(false)],
+            "no bias, constant, slope scale and a bias the wrong way"
+        );
+    }
+}
+
 fn run_conformance(device: &Device) {
     buffer_texture_round_trip(device);
     compute_doubles_values(device);
     indexed_quad_samples_texture(device);
+    depth_bias_moves_fragments_in_the_depth_test(device);
 }
 
 #[test]

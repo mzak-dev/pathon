@@ -33,6 +33,7 @@ pathon-rhi-null = { path = "crates/pathon-rhi-null" }
 pathon-rhi-types = { path = "crates/pathon-rhi-types" }
 pathon-rhi-wgpu = { path = "crates/pathon-rhi-wgpu" }
 pathon-scene = { path = "crates/pathon-scene" }
+pathon-shadow = { path = "crates/pathon-shadow" }
 pathon-shader = { path = "crates/pathon-shader" }
 pathon-test = { path = "crates/pathon-test" }
 pathon-texture = { path = "crates/pathon-texture" }

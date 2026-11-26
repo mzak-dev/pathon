@@ -14,7 +14,7 @@ use pathon_shadow::{SHADOW_MAP, SHADOW_MAP_ACCESS, ShadowBindings, ShadowFrame};
 use crate::cluster::{COUNTERS_SIZE, ClusterBuffers, ClusterParams, ClusterPipeline, RANGE_SIZE};
 use crate::context::PbrContext;
 use crate::prepass::{draw_list, with_context};
-use crate::shaders::{ForwardKey, IBL_FIRST_BINDING, RenderPipeline, SHADOW_FIRST_BINDING};
+use crate::shaders::{ForwardKey, IBL_FIRST_BINDING, LTC_BINDING, RenderPipeline, SHADOW_FIRST_BINDING};
 
 /// Assigns the lights to clusters in compute, then draws the opaque and masked meshes (`Stage::Opaque`) and the blended
 /// ones, farthest first (`Stage::Transparent`), into `hdr`; `diffuse` and `specular` are written too when another pack
@@ -81,6 +81,8 @@ fn record_lighting(
     let hooks = ctx.shared().get::<MaterialHooks>().cloned();
     let published = ctx.shared().get::<IblEnvironment>().copied();
     let environment = pbr.environment(device, published)?;
+    let area = frame.lights.has_area();
+    let ltc_table = if area { Some(pbr.ltc_table(device)?) } else { None };
     // The shadow pack publishes both or neither (no light, no map); anything else means this view has no shadows.
     let shadow_frame = ctx.shared().get::<ShadowFrame>().copied();
     let shadow_map = ctx.slot(SHADOW_MAP).zip(shadow_frame);
@@ -109,6 +111,7 @@ fn record_lighting(
                         variant: item.variant,
                         split: split && item.variant.alpha != AlphaKind::Transparent,
                         shadows,
+                        area,
                     },
                     &frame.draws.vertex_buffers,
                     texture_layout,
@@ -234,6 +237,7 @@ fn record_lighting(
                 indices,
                 environment,
                 shadows,
+                ltc_table,
             },
         )?;
         let mut render = pass.commands().render_pass(RenderPassDesc {
@@ -284,6 +288,7 @@ fn record_lighting(
                 indices,
                 environment,
                 shadows,
+                ltc_table,
             },
         )?;
         let hdr_view = pass.view(hdr)?;
@@ -324,6 +329,8 @@ struct FrameBindings {
     environment: IblEnvironment,
     /// The cascade uniforms and the view of the map array, when the permutation has the `shadows` flag.
     shadows: Option<(ShadowFrame, TextureViewId)>,
+    /// The table of the area lights, when the permutation has the `area_lights` flag.
+    ltc_table: Option<pathon_api::rhi::BufferId>,
 }
 
 fn shadow_bindings(
@@ -383,6 +390,12 @@ fn frame_groups(
                 if let Some((frame, map_view)) = bindings.shadows {
                     entries
                         .extend(ShadowBindings::starting_at(SHADOW_FIRST_BINDING).bind_group_entries(&frame, map_view));
+                }
+                if let Some(table) = bindings.ltc_table {
+                    entries.push(BindGroupEntry {
+                        binding: LTC_BINDING,
+                        resource: BindingResource::whole_buffer(table),
+                    });
                 }
                 let group = pass.create_bind_group(&BindGroupDesc {
                     label: "pbr forward frame",

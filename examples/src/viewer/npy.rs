@@ -3,7 +3,8 @@
 const MAGIC: &[u8] = b"\x93NUMPY\x01\x00";
 const HEADER_ALIGNMENT: usize = 64;
 
-/// The file for a float32 array of `shape`; the header is padded with spaces to a multiple of 64 bytes and ends in a newline.
+/// The file for a float32 array of `shape`; the header is padded with spaces to a multiple of 64 bytes and ends in a
+/// newline.
 pub fn encode_f32(shape: &[usize], values: &[f32]) -> Vec<u8> {
     let dims: Vec<String> = shape.iter().map(usize::to_string).collect();
     let tuple = if dims.len() == 1 {

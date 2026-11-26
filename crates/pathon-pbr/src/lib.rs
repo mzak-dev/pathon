@@ -1,5 +1,6 @@
 #![doc = include_str!("../../../docs/crates/pathon-pbr.md")]
 
+pub mod area;
 mod arena;
 mod cluster;
 mod context;
@@ -8,6 +9,8 @@ mod draw;
 mod frame;
 mod light;
 mod lighting;
+pub mod ltc;
+mod ltc_table;
 mod pack;
 mod prepass;
 pub mod reference;
@@ -29,6 +32,6 @@ pub use pack::PbrPack;
 pub use prepass::PrepassFeature;
 pub use settings::{ClusterSettings, LightAssignment, PbrSettings};
 pub use shaders::{
-    ForwardKey, HDR_FORMAT, IBL_FIRST_BINDING, PbrShaders, PrepassKey, RenderPipeline, SHADOW_FIRST_BINDING,
-    SHADOWS_FLAG, TEXTURE_GROUP,
+    AREA_LIGHTS_FLAG, ForwardKey, HDR_FORMAT, IBL_FIRST_BINDING, LTC_BINDING, PbrShaders, PrepassKey, RenderPipeline,
+    SHADOW_FIRST_BINDING, SHADOWS_FLAG, TEXTURE_GROUP,
 };

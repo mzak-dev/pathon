@@ -152,6 +152,16 @@ pub(super) fn light_data(light: &Light) -> LightData {
                 [cos_outer, 1.0 / (cos_inner - cos_outer).max(MIN_CONE_SPAN), 0.0, 0.0],
             )
         }
+        // The `--simple` lighting has no rectangles: an area light is the hemisphere spot the exporter wrote for it
+        // (power / 2 pi candela, cone of 76 to 90 degrees), which is what pathon drew before K05.
+        LightKind::Area { .. } => {
+            let (cos_inner, cos_outer) = (1.3343_f32.cos(), 1.5698_f32.cos());
+            (
+                KIND_SPOT,
+                light.intensity / (2.0 * std::f32::consts::PI),
+                [cos_outer, 1.0 / (cos_inner - cos_outer).max(MIN_CONE_SPAN), 0.0, 0.0],
+            )
+        }
         // `LightKind` is non-exhaustive: an unknown kind contributes nothing.
         _ => (KIND_POINT, 0.0, [0.0; 4]),
     };

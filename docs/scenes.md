@@ -63,7 +63,7 @@ Układ glTF: prawoskrętny, Y w górę, metry (zgodnie z konwencją pathon). Św
 | --- | --- | --- |
 | Sun (W/m²) | `directional`, lux | `lux = W/m² · 683` |
 | Point i Spot (W) | `point` / `spot`, kandela | `cd = W / (4π) · 683` |
-| Area (W) | `spot` z kątem zewnętrznym ok. 90°, kandela | `cd = W / (2π) · 683` (strumień zachowany w półkuli); rozmiar i kształt w `extras.pathon_area` |
+| Area (W) | `spot` z kątem zewnętrznym ok. 90°, kandela | `cd = W / (2π) · 683` (strumień zachowany w półkuli); rozmiar i kształt w `extras.pathon_area`; loader pathon (`gltf_viewer`) czyta je jako prawdziwe prostokąty (moc = kandele · 2π, [ADR-0048](adr/0048-swiatla-powierzchniowe-prostokatne.md)), `--area-as-spot` zostawia spoty |
 
 W Blenderze moc światła to iloczyn pola `Strength` lampy i `Strength` węzła Emission (albo Light Falloff). Eksporter by to przekłamywał, więc skrypt przelicza efektywną moc sam i czyści drzewo węzłów lampy. Kolor Blackbody (5800 K słońce, 5000 K lampy sufitowe) jest liczony z krzywej Plancka i normalizowany do maksimum 1. Wartości z tej sceny: słońce 15 W/m² = 10 245 lx, lampa korytarza 60 W = 3261 cd, lampy sufitowe 20 W = 1087 cd (6 sztuk), podświetlenie tablicy 2561 cd, wypełnienie za oknem (`exterior_fillLight`, 1963 W, prostokąt 0,75×8,3 m) 213 437 cd.
 

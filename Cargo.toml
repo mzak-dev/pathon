@@ -55,6 +55,7 @@ gltf = { version = "1.4", default-features = false, features = [
     "utils",
     "names",
     "extensions",
+    "extras",
     "KHR_lights_punctual",
     "KHR_materials_emissive_strength",
     "KHR_materials_ior",
@@ -141,3 +142,11 @@ float_cmp = "warn"
 # The CPU model of the sky is a numeric reference run by the tests; unoptimised it is 10x slower than the GPU it checks.
 [profile.dev.package.pathon-sky]
 opt-level = 2
+
+# The area light tests integrate the lights numerically on the CPU, millions of samples per image.
+[profile.dev.package.pathon-pbr]
+opt-level = 2
+
+# The LTC fit and its tests integrate millions of samples.
+[profile.dev.package.pathon-ltc-fit]
+opt-level = 3

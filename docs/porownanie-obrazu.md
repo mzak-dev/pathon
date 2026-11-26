@@ -242,6 +242,28 @@ Wpływ antyaliasingu (`spot`, `lights-only`, średnia kamer): `--supersample 1` 
 
 Kolaże (`docs/scenes/reference/compare-*.png`, 960×540): wzorzec odszumiony, pathon, mapa ΔE2000 (żółty = 20), stosunek luminancji (czerwony: pathon jaśniejszy, niebieski: ciemniejszy, ±2 EV). Te same trzy kamery dla wzorca `reference/` (światła obszarowe) leżą obok jako `compare-reference-lights-only-*.png`.
 
+### Po K05: prawdziwe światła obszarowe
+
+26.11.2026, ten sam protokół (`compare_all.py`, wzorzec `reference/`, odszumiony, 960×540, `--supersample 2`, Vulkan), pathon z [ADR-0048](adr/0048-swiatla-powierzchniowe-prostokatne.md): loader czyta `extras.pathon_area` jako prostokąty (lampa za oknem 0,75 × 8,3 m, 1963 W; podświetlenie tablicy 2,43 × 0,11 m, 23,6 W; moc = kandele spota · 2π), cieniowanie analityczne (diffuse) i LTC (specular). Zmierzone binarką debug (obraz ten sam co release; release się nie zmieścił na dysku). **Przed** to wiersze „obszarowe” z tabeli wyżej (pathon rysował spoty), **po** to ten sam wzorzec i te same kamery:
+
+| `lights-only`, wzorzec `reference/` | PSNR dB | SSIM | ΔE2000 śr. | ΔE2000 p95 | FLIP LDR | bias | bias bez okien |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| przed (spoty), średnia kamer | 13,4 | 0,646 | 11,5 | 44,5 | 0,362 | 0,50 | 0,77 |
+| **po (prostokąty), średnia kamer** | **13,5** | **0,652** | **11,3** | **44,2** | **0,355** | **0,55** | **0,84** |
+| po, `renderCam` / `pathon_wide` / `pathon_reverse` | 13,6 / 12,9 / 14,0 | 0,653 / 0,604 / 0,700 | 11,5 / 12,1 / 10,2 | 41,9 / 48,7 / 41,8 | 0,359 / 0,360 / 0,347 | 0,59 / 0,53 / 0,52 | 0,84 / 0,83 / 0,84 |
+
+Bias luminancji w maskach (`renderCam` / `pathon_wide` / `pathon_reverse`):
+
+| Maska | przed | po |
+| --- | --- | --- |
+| oświetlone bezpośrednio | 0,38 / 0,66 / 0,75 | 0,67 / 0,64 / 0,68 |
+| ściany i sufit | 0,26 / 0,81 / 0,97 | 0,81 / 0,80 / 0,88 |
+| zacienione | 0,44 / 0,37 / 0,31 | 0,44 / 0,37 / 0,31 |
+| podłoga | 0,97 / 0,99 / 0,90 | 0,97 / 0,98 / 0,89 |
+| okna | 0,10 / 0,19 / 0,16 | 0,14 / 0,17 / 0,16 |
+
+(`przed` dla masek z `reference/` `lights-only`; kolumny `zacienione` i `podłoga` zmieniają się o ułamki, bo zależą od GI, którego nie ma.) Wniosek: światła powierzchniowe poprawiają kształt i jasność oświetlenia **bezpośredniego** (`renderCam`: oświetlone 0,38 → 0,67, ściany i sufit 0,26 → 0,81, czyli koniec półsferycznego „rozlewania” spota), ale zbiorcze ΔE, SSIM i FLIP ruszają się o 2 do 3%, bo o obrazie rozstrzyga brak GI (okna, cień, ściany; patrz „Pięć największych źródeł różnicy”). `pathon_reverse` wypada nieco gorzej w masce „ściany i sufit” (0,97 → 0,88) (nie sprawdzano, czy to błąd LTC przy widoku stycznym, ADR-0048 pkt 3, czy GI). Powtórzenie: zbuduj `gltf_viewer` po K05 i uruchom `python tools/scenes/compare_all.py --no-build`; porównania ze starym zachowaniem dostaje się flagą `gltf_viewer --area-as-spot`.
+
 ### Eksperyment: pathon z doklejonym oświetleniem pośrednim Cyclesa
 
 Żeby oddzielić brak GI od reszty różnic, do obrazu pathon dodano oświetlenie pośrednie wzorca (`odszumiony wzorzec − przebiegi bezpośrednie i emisja`, `lights-only`) i porównano z wzorcem. To pułap tego, co da samo GI, gdy bezpośrednie światło, materiały i filtrowanie zostają takie jak dziś (średnie z trzech kamer):
@@ -301,7 +323,7 @@ Uwagi:
 | Różnica | Skutek | Kiedy znika |
 | --- | --- | --- |
 | **Brak GI w pathon** | 55 do 64% luminancji, patrz wyżej | K12 (sondy), K13 (SSGI); częściowo K04 (AO) |
-| **Światła obszarowe jako spoty** | jasność o 6 do 78%, ΔE około 4 | K05; do tego czasu `reference-spot/` |
+| ~~**Światła obszarowe jako spoty**~~ | jasność o 6 do 78%, ΔE około 4 | **zrobione w K05** (prostokąty, LTC); od teraz bramkuj względem `reference/`, `--area-as-spot` i `reference-spot/` zostają do porównań |
 | **Okna: żaluzje i ramy bez GI** | 6 do 9% pikseli, 36 do 55% luminancji wzorca; pathon daje 6 do 19% tej jasności (pozycja 2 listy źródeł) | K12, K13 |
 | **Wyciek środowiska (`ibl`)** | pathon dodaje 23 do 51% luminancji z nieba, Cycles 0 do 3% (pozycja 4) | okluzja środowiska |
 | **Okna bez portalu światła dziennego** | otwory w ścianie, w `lights-only` czarne; w obu wzorcach identycznie | nie znika (pathon i wzorzec tak samo; portal tylko w wzorcu A) |

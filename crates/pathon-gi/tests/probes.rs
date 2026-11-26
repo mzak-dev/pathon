@@ -45,8 +45,9 @@ fn the_null_device_accepts_every_pass_of_the_volume() {
 
 #[cfg(feature = "gpu-tests")]
 mod gpu {
-    use super::*;
     use support::rig;
+
+    use super::*;
 
     fn interior(position: Vec3) -> bool {
         let margin = 0.45;
@@ -226,8 +227,8 @@ mod gpu {
         }
         let bias = bias_sum / receivers.len() as f32;
         eprintln!("cornell: mean relative bias {bias:+.3}, worst channel error {worst:.3}");
-        // The conservative voxel walls stand up to a cell (10 cm) inside the room: the surfaces are nearer the light, so
-        // the field is a few percent brighter than the ideal room.
+        // The conservative voxel walls stand up to a cell (10 cm) inside the room: the surfaces are nearer the light,
+        // so the field is a few percent brighter than the ideal room.
         assert!(bias > 0.0 && bias < 0.10, "bias {bias}");
         assert!(worst < 0.18, "worst channel error {worst}");
     }

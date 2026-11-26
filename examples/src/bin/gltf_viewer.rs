@@ -8,10 +8,10 @@
 // Options: --screenshot out.png [--camera N | --camera-name NAME | --eye x,y,z --target x,y,z [--fov DEG]] [--size WxH]
 //          [--supersample N] [--ev STOPS] [--no-shadows] [--auto-exposure] [--no-bloom] [--neutral]
 //          [--area-as-spot]  (area lights as the hemisphere spots of the file, as before K05)
-//          [--gi [--gi-spacing M] [--gi-voxel M] [--gi-rays N] [--gi-hysteresis H] [--gi-period FRAMES] [--gi-warmup FRAMES]]  (pathon-gi probes)
-//          [--dump-hdr out.npy] [--reference-like lights-only|ibl]  (the measuring mode, docs/porownanie-obrazu.md)
-// [--brute-force-lights]          [--env file.hdr | --env none] [--environment-intensity X] [--sky-intensity X]
-//          [--simple] [--per-material] [--bench FRAMES] [--backend vulkan|dx12|metal]
+//          [--gi [--gi-spacing M] [--gi-voxel M] [--gi-rays N] [--gi-hysteresis H] [--gi-period FRAMES] [--gi-warmup
+// FRAMES]]  (pathon-gi probes)          [--dump-hdr out.npy] [--reference-like lights-only|ibl]  (the measuring mode,
+// docs/porownanie-obrazu.md) [--brute-force-lights]          [--env file.hdr | --env none] [--environment-intensity X]
+// [--sky-intensity X]          [--simple] [--per-material] [--bench FRAMES] [--backend vulkan|dx12|metal]
 
 use std::path::PathBuf;
 use std::process::ExitCode;

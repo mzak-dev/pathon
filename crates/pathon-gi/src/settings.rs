@@ -26,7 +26,8 @@ pub struct GiSettings {
     pub probes_per_frame: u32,
     /// Weight of the previous value when a probe is updated (0 = take the new rays only, 1 = never change).
     pub hysteresis: f32,
-    /// Exponent of the cosine weight of the distance moments: a larger one resolves finer occluders and needs more rays.
+    /// Exponent of the cosine weight of the distance moments: a larger one resolves finer occluders and needs more
+    /// rays.
     pub depth_sharpness: f32,
     /// Longest ray in metres: what is farther is the environment, and the visibility moments saturate there.
     pub max_ray_distance: f32,

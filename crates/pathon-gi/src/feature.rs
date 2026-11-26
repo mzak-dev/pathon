@@ -884,7 +884,8 @@ impl GiFeature {
             });
             compute.set_pipeline(light);
             compute.set_bind_group(0, group);
-            // One thread per face of a solid cell of the slice, at most `cells / slices` cells, in rows of 65535 groups.
+            // One thread per face of a solid cell of the slice, at most `cells / slices` cells, in rows of 65535
+            // groups.
             let groups = (cells.div_ceil(slices) * 6).div_ceil(WORKGROUP);
             let columns = groups.clamp(1, MAX_GROUPS);
             compute.dispatch(columns, groups.div_ceil(columns).max(1), 1);

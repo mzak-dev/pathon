@@ -1,6 +1,6 @@
 // K12: a Cornell box lit by one area light in the ceiling, rendered twice by the viewer's stack: with the environment
-// only (what `PbrPack` does without a probe volume) and with `GiPack`. The light that reaches the walls in the shadow of
-// the boxes, and the colour the red and the green wall bleed onto the white ones, exist only in the second picture.
+// only (what `PbrPack` does without a probe volume) and with `GiPack`. The light that reaches the walls in the shadow
+// of the boxes, and the colour the red and the green wall bleed onto the white ones, exist only in the second picture.
 //
 //   cargo run --release -p pathon-examples --bin gi_cornell -- [prefix] [SIZE]
 //

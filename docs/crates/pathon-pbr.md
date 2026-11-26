@@ -67,6 +67,16 @@ Forward z prepassem: kolor testuje głębię `GreaterEqual` bez zapisu, więc ka
 
 Jednostki: lux (kierunkowe), kandela (punktowe i reflektory, lumeny / 4π jak w glTF). `hdr` jest bez ekspozycji; jasność wyświetlana to `hdr × exposure` ([pathon-post](pathon-post.md)).
 
+## Światła powierzchniowe
+
+`LightKind::Area` (prostokąt, moc w lumenach, luminancja L = P/(π·A); [ADR-0048](../adr/0048-swiatla-powierzchniowe-prostokatne.md)) idzie tą samą tablicą świateł i tymi samymi klastrami co punktowe: `GpuLight` (96 bajtów) niesie środek, połówki boków i `kolor · L`, a promień klastra to `influence_radius` (zasięg wyprowadzony z natężenia osiowego P/π plus połowa przekątnej, więc wielki prostokąt nie wypada z klastrów). Gdy w scenie jest choć jedno takie światło, pass koloru buduje permutację z flagą WESL `area_lights` (`ForwardKey::area`): dochodzi binding `LTC_BINDING` (13) z tablicą 32×32 węzłów jako bufor storage i moduł `pbr::area`.
+
+- **Diffuse:** analityczna całka Lamberta z prostokąta (wielokąt sferyczny obcięty do horyzontu normalnej, wzór Arvo 1995), razy `front_diffuse` i L; błąd względem całkowania numerycznego 0,1%.
+- **Specular:** LTC dla GGX (Heitz i in. 2016) z **własną tablicą** (`src/ltc_table.rs`, generuje `tools/pathon-ltc-fit`: `cargo run -p pathon-ltc-fit --release`, 30 s); w tablicy też całki lobu dla `f0` i `f90`, więc działa bez `IblPack`. Clear coat jako drugi lob.
+- **Jednostki:** prostokąt o mocy P świeci jak powierzchnia Lamberta: na osi P/π cd, daleko zbliża się do źródła punktowego o natężeniu (P/π)·cos θ (błąd < 2% w odległości 10× rozmiar).
+- **Granice:** bez cieni, bez tekstury, dysk jako prostokąt o tym samym polu; jakość specular przy widoku stycznym (n·v < 0,3) i chropowatości 0,3 do 0,6 jest ograniczona dopasowaniem (wariacja całkowita lobu do 0,16, w teście na GPU do 53% jasności piksela dla wąskiego odblasku), przy widoku bliższym normalnej średnio 1 do 3%.
+- Moduł `area` (CPU) to model tych całek (`cosine_integral`, `diffuse_cosine_integral`, `specular_ltc`) i ich referencje numeryczne (`diffuse_cosine_integral_numeric`, `specular_numeric`); `ltc` to tablica i jej wyszukiwanie, lustrzane do shadera.
+
 ## Cienie
 
 Cieniowane światło to jedno światło kierunkowe, które `ShadowPack` rysuje do `shadow.map`; reszta świateł (punktowe, reflektory) cieni nie ma. Gdy w klatce są `ShadowFrame` i slot `shadow.map`, `LightingFeature` buduje permutację z flagą WESL `shadows` (`ForwardKey::shadows`): w grupie 0 dochodzą trzy bindingi `SHADOW_FIRST_BINDING`… (kaskady, tablica głębi, sampler porównawczy, tuż za bindingami IBL), a `add_light` mnoży promieniowanie przez `shadow_factor_directional` z `package::shadow::sample`. Normalną geometryczną (po odwróceniu dla tylnej ściany), głębię widoku i `@builtin(position).xy` shader trzyma w zmiennej prywatnej, wypełnianej raz w `shade`. Bez światła w `ShadowScene` paczka cieni nie publikuje niczego i działa permutacja bez cieni (układ bindingów jak dawniej).
@@ -80,7 +90,7 @@ Cieniowane światło to jedno światło kierunkowe, które `ShadowPack` rysuje d
 - Wgrywanie instancji i świateł co klatkę w całości (przyrostowe z `changes()` zostaje na M4-11).
 - Układy grupy 0 są reflektowane raz na permutację (cache w `PbrShaders`); wcześniej parsowanie WGSL szło co klatkę (14 ms CPU na scenie z 862 instancjami).
 - Koszt przypisania to `O(klastry × światła)`; hierarchiczne przycinanie do zmierzenia w M4-17.
-- Brak AA specular, okluzji z bent normals, cieni punktowych i reflektorów, nieba, przezroczystości z transmisją (M4-15) i MSAA (M4-19).
+- Światła powierzchniowe bez cieni; brak AA specular, okluzji z bent normals, cieni punktowych i reflektorów, nieba, przezroczystości z transmisją (M4-15) i MSAA (M4-19).
 
 ## Diagnostyka
 
@@ -92,6 +102,7 @@ Cieniowane światło to jedno światło kierunkowe, które `ShadowPack` rysuje d
 | [L0004](../diag/L0004.md) | brak wymaganych danych w `Shared` |
 | [L0005](../diag/L0005.md) | lista indeksów klastrów przepełniona |
 | [L0006](../diag/L0006.md) | urządzenie nie obsługuje formatów PBR |
+| [E0001](../diag/E0001.md) | jawny zasięg światła powierzchniowego krótszy niż połowa jego przekątnej |
 
 ## Testy
 
@@ -99,7 +110,8 @@ Cieniowane światło to jedno światło kierunkowe, które `ShadowPack` rysuje d
 - `tests/shaders.rs` (`rhi-null`): wszystkie korzenie składają się i przechodzą naga, potoki prepassu i koloru istnieją dla 48 permutacji materiału na obu ścieżkach tekstur (z `binding_array` i bez), z binderem i bez, potoki klastrów i piramidy.
 - `tests/clusters.rs` (`--features gpu-tests`): listy z GPU kontra brute force w `f64` na losowych scenach (10, 100, 1000 świateł; perspektywa i ortografia), punkty losowe dostają każde światło, które je dosięga, przepełnienie jest liczone i nie wychodzi poza listę, zero świateł; na `rhi-null` walidacja komend.
 - `tests/prepass.rs`: głębia (reverse-Z), normalne, id materiałów, roughness i albedo względem geometrii sceny; ruch obiektu i ruch kamery w pikselach (±0,5); piramida względem referencji CPU, bit w bit.
-- `tests/golden_scene.rs`: pełny łańcuch (`IblPack`, `PbrPack`, `PostPack`) na scenie testowej (podłoga, kule metal i dielektryk, sześcian, ogrodzenie masked, cztery materiały, trzy z teksturami; słońce, trzy światła punktowe i reflektor): golden `tests/golden/pbr_scene.png`, brak NaN, `diffuse + specular = hdr`, klastry równe `BruteForce` z tysiącem świateł, ścieżka per-materiał równa bindless, przezroczysta tafla; na `rhi-null` cała scena ze wszystkimi slotami, także z `ShadowPack` (z cieniem i bez światła do cieniowania); na GPU cień słońca przyciemnia podłogę za sześcianem i niczego nie rozjaśnia. `tests/shaders.rs`: permutacja `shadows` dodaje dokładnie trzy bindingi.
+- `tests/golden_scene.rs`: pełny łańcuch (`IblPack`, `PbrPack`, `PostPack`) na scenie testowej (podłoga, kule metal i dielektryk, sześcian, ogrodzenie masked, cztery materiały, trzy z teksturami; słońce, trzy światła punktowe i reflektor): golden `tests/golden/pbr_scene.png`, brak NaN, `diffuse + specular = hdr`, klastry równe `BruteForce` z tysiącem świateł, ścieżka per-materiał równa bindless, przezroczysta tafla; na `rhi-null` cała scena ze wszystkimi slotami, także z `ShadowPack` (z cieniem i bez światła do cieniowania); na GPU cień słońca przyciemnia podłogę za sześcianem i niczego nie rozjaśnia. `tests/shaders.rs`: permutacja `shadows` dodaje dokładnie trzy bindingi, permutacja `area_lights` jeden (`LTC_BINDING`).
+- `tests/area_lights.rs`: światło daleko kontra źródło punktowe (< 2%), diffuse kontra kwadratura, specular LTC kontra źródło punktowe i (GPU) kontra całkowanie numeryczne GGX po prostokącie na podłodze (3 chropowatości, 2 światła), dwustronność z podwójną mocą, światło za powierzchnią i odwrócone, prostokąty przecinające powierzchnię bez NaN, 100 świateł w klastrach równe `BruteForce`, golden `tests/golden/pbr_area_light.png`; `tests/clusters.rs`: 100 świateł powierzchniowych kontra brute force CPU.
 
 ```powershell
 cargo test -p pathon-pbr                                                    # bez GPU

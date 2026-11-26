@@ -7,6 +7,7 @@
 //
 // Options: --screenshot out.png [--camera N | --camera-name NAME | --eye x,y,z --target x,y,z [--fov DEG]] [--size WxH]
 //          [--supersample N] [--ev STOPS] [--no-shadows] [--auto-exposure] [--no-bloom] [--neutral]
+//          [--area-as-spot]  (area lights as the hemisphere spots of the file, as before K05)
 //          [--dump-hdr out.npy] [--reference-like lights-only|ibl]  (the measuring mode, docs/porownanie-obrazu.md)
 // [--brute-force-lights]          [--env file.hdr | --env none] [--environment-intensity X] [--sky-intensity X]
 //          [--simple] [--per-material] [--bench FRAMES] [--backend vulkan|dx12|metal]
@@ -21,7 +22,7 @@ use pathon::api::glam::Vec3;
 use pathon::platform::Platform;
 use pathon::rhi::Backend;
 use pathon_bindless::PathPreference;
-use pathon_examples::gltf_loader::load_path;
+use pathon_examples::gltf_loader::{AreaLights, LoadOptions, load_path_with};
 use pathon_examples::viewer::bench::{format_report, run_benchmark};
 use pathon_examples::viewer::environment::{default_environment_path, load_environment};
 use pathon_examples::viewer::linear_dump::{render_linear, write_npy};
@@ -51,6 +52,7 @@ struct Options {
     texture_path: PathPreference,
     tonemapper: Tonemapper,
     backend: Option<Backend>,
+    load: LoadOptions,
 }
 
 fn parse_size(text: &str) -> Result<(u32, u32), String> {
@@ -93,6 +95,7 @@ fn parse_options(args: impl Iterator<Item = String>) -> Result<Options, String> 
         texture_path: PathPreference::Auto,
         tonemapper: Tonemapper::AcesFitted,
         backend: None,
+        load: LoadOptions::default(),
     };
     let (mut eye, mut target, mut fov_degrees) = (None, None, None);
     while let Some(arg) = args.next() {
@@ -108,6 +111,7 @@ fn parse_options(args: impl Iterator<Item = String>) -> Result<Options, String> 
                     other => return Err(format!("--reference-like takes lights-only or ibl, got {other}")),
                 });
             }
+            "--area-as-spot" => options.load.area_lights = AreaLights::AsSpot,
             "--camera-name" => request.camera_name = Some(value("--camera-name")?),
             "--bench" => options.bench_frames = Some(parse_number("--bench", &value("--bench")?)?),
             "--camera" => request.camera = Some(parse_number("--camera", &value("--camera")?)?),
@@ -194,7 +198,7 @@ fn viewer_config(options: &Options) -> Result<ViewerConfig, String> {
 
 fn run(options: &Options) -> Result<(), String> {
     let started = Instant::now();
-    let scene = load_path(&options.scene).map_err(|error| error.to_string())?;
+    let scene = load_path_with(&options.scene, &options.load).map_err(|error| error.to_string())?;
     log::info!(
         "loaded {} in {:.1} s: {} instances, {} images, {} lights, {} cameras",
         options.scene.display(),

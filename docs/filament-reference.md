@@ -186,7 +186,7 @@ Zasada: od największej różnicy w obrazie wnętrza na jednostkę kosztu, z uwz
 | K02 | `pbr-core` | M4-05 z dopisanym: geometryczne specular AA, micro-shadowing, kompensacja wielokrotnego rozpraszania w świetle punktowym, clearcoat w IBL, hook okluzji spekularnej | S–M (Reimpl.) | M4-03, M4-06 | M4-05 | spadek biasu na błyszczących powierzchniach |
 | K03 | `shadow-local` | M4-07 rozszerzone: spoty i światła punktowe w atlasie, stabilizacja kaskad, contact shadows | M–L | M4-05 | M4-07 | cienie od lamp sufitowych i słońca; maska „zacienione” w ΔE |
 | K04 | `ao-gtao` | M5-02 z bent normals (slot paczki), multi-bounce AO i specular occlusion ze stożków | M (port albo reimpl.) | M4-05 (`depth_pyramid`) | M5-02 | pośrednie przyciemnienie zakamarków, mniej wycieku IBL |
-| K05 | `area-lights-ltc` | światła powierzchniowe (rect, dysk) w `pathon-scene` i `pathon-pbr`, tablice LTC | M | M4-05, ocena licencji LTC | nowe | pasma odblasków i miękkość oświetlenia; wymaga `extras.pathon_area` z eksportu |
+| K05 | `area-lights-ltc` | **zrobione 26.11.2026 ([ADR-0048](adr/0048-swiatla-powierzchniowe-prostokatne.md)): prostokąty, własna tablica LTC; dysk jako prostokąt** światła powierzchniowe (rect, dysk) w `pathon-scene` i `pathon-pbr`, tablice LTC | M | M4-05, ocena licencji LTC | nowe | pasma odblasków i miękkość oświetlenia; wymaga `extras.pathon_area` z eksportu |
 | K06 | `taa` | M5-01 (parytet z Filamentem), potem maska reaktywna i dylatacja prędkości jako druga faza | L | `motion`, jitter, historia | M5-01, M5-08 | brak aliasingu przy stałej kamerze, zbieżność do referencji po N klatkach |
 | K07 | `denoise-lib` | wspólny denoiser (`pack-lib`): à-trous, akumulacja temporalna | M | K06 | nowe | warunek dla K10, K12, K13 |
 | K08 | `reflection-probes` | lokalne sondy odbić z paralaksą, mieszanie, prefiltr przez `IblBuilder` | M–L | M4-06, M4-05 | nowe | odbicia podłogi i szyb |
@@ -280,4 +280,4 @@ Wspólny tonemap do metryk LDR: PBR Neutral (jest w `pathon-post`) zastosowany i
 - W nagłówku używamy linii `Copyright` ze źródła („The Android Open Source Project”), nie „Google LLC”.
 - SSR, FXAA, AgX, GT7, OKLab, FSR 1, SGSR i część GTAO mają własne licencje w plikach Filamenta i nie są objęte zezwoleniem na kod Filamenta.
 - `third_party/` Filamenta: zstd (GPL w wariancie), glslang (mieszane), clang (NCSA), modele CC BY-NC i bez zastosowań komercyjnych oraz pozostałe osobne projekty są poza zakresem (pełna tabela w ADR-0047).
-- Tablice LTC (K05) i narzędzie FLIP (K01) to osobne źródła; licencje do potwierdzenia przed użyciem.
+- Tablice LTC (K05) to własny fit (ADR-0048, licencja cudzych tablic nie była potrzebna); narzędzie FLIP (K01) to osobne źródło, licencja do potwierdzenia przed użyciem.

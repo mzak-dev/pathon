@@ -6,11 +6,12 @@ use std::collections::HashMap;
 use pathon::api::glam::{Affine3A, Mat4, Vec3};
 use pathon_scene::{Light, Projection};
 
-use super::{CpuInstance, SceneCamera};
+use super::{AreaLights, CpuInstance, LoadOptions, SceneCamera};
 
 const MAX_SPOT_ANGLE: f32 = std::f32::consts::FRAC_PI_2;
 const MIN_SPOT_ANGLE: f32 = 0.001;
 const FOUR_PI: f32 = 4.0 * std::f32::consts::PI;
+const TWO_PI: f32 = 2.0 * std::f32::consts::PI;
 
 // Which meshes of `LoadedScene::meshes` one glTF mesh became, one per primitive that could be read.
 pub(super) type PrimitiveMeshes = HashMap<usize, Vec<usize>>;
@@ -28,17 +29,52 @@ fn pose(world: Mat4) -> Affine3A {
     Affine3A::from_rotation_translation(rotation, translation)
 }
 
-fn light_from(light: &gltf::khr_lights_punctual::Light<'_>, pose: Affine3A) -> Light {
+// The rectangle of `extras.pathon_area` that tools/scenes/export_classroom.py writes next to the hemisphere spot it
+// exports an area light as (docs/scenes.md): the value is a JSON string with the shape and the size in metres.
+fn area_shape(light: &gltf::khr_lights_punctual::Light<'_>) -> Option<(f32, f32)> {
+    let extras: serde_json::Value = serde_json::from_str(light.extras().as_ref()?.get()).ok()?;
+    let area = extras.get("pathon_area")?;
+    let area: serde_json::Value = match area {
+        serde_json::Value::String(text) => serde_json::from_str(text).ok()?,
+        other => other.clone(),
+    };
+    let size = |key: &str| area.get(key)?.as_f64().map(|value| value as f32).filter(|value| *value > 0.0);
+    let (size_x, size_y) = (size("size_x")?, size("size_y").or_else(|| size("size_x"))?);
+    // A disk or an ellipse is a rectangle of the same area and proportions.
+    let round = matches!(area.get("shape")?.as_str()?, "DISK" | "ELLIPSE");
+    let fit = if round { std::f32::consts::FRAC_PI_4.sqrt() } else { 1.0 };
+    Some((size_x * fit, size_y * fit))
+}
+
+fn light_from(
+    light: &gltf::khr_lights_punctual::Light<'_>,
+    pose: Affine3A,
+    scale: Vec3,
+    options: &LoadOptions,
+) -> Light {
     let color = Vec3::from(light.color());
     let intensity = light.intensity().max(0.0);
-    let converted = match light.kind() {
-        gltf::khr_lights_punctual::Kind::Directional => Light::directional(pose, intensity),
+    let area = if options.area_lights == AreaLights::Real {
+        area_shape(light)
+    } else {
+        None
+    };
+    let converted = match (light.kind(), area) {
+        // The exporter writes an area light of power P as a hemisphere spot of P / (2 pi) candela, so the power of the
+        // rectangle is that candela times 2 pi (docs/scenes.md, ADR-0048). The node scale stretches the rectangle.
+        (gltf::khr_lights_punctual::Kind::Spot { .. }, Some((width, height))) => {
+            Light::area(pose, intensity * TWO_PI, width * scale.x.abs(), height * scale.y.abs())
+        }
+        (gltf::khr_lights_punctual::Kind::Directional, _) => Light::directional(pose, intensity),
         // glTF gives candela; the render world stores lumens (candela * 4 pi), see docs/scenes.md.
-        gltf::khr_lights_punctual::Kind::Point => Light::point(pose, intensity * FOUR_PI),
-        gltf::khr_lights_punctual::Kind::Spot {
-            inner_cone_angle,
-            outer_cone_angle,
-        } => {
+        (gltf::khr_lights_punctual::Kind::Point, _) => Light::point(pose, intensity * FOUR_PI),
+        (
+            gltf::khr_lights_punctual::Kind::Spot {
+                inner_cone_angle,
+                outer_cone_angle,
+            },
+            None,
+        ) => {
             let outer = outer_cone_angle.clamp(MIN_SPOT_ANGLE, MAX_SPOT_ANGLE);
             let inner = inner_cone_angle.clamp(MIN_SPOT_ANGLE, outer);
             Light::spot(pose, intensity * FOUR_PI, inner, outer)
@@ -70,7 +106,7 @@ fn camera_from(node: &gltf::Node<'_>, camera: &gltf::Camera<'_>, pose: Affine3A)
     })
 }
 
-pub(super) fn flatten(document: &gltf::Document, primitives: &PrimitiveMeshes) -> Flattened {
+pub(super) fn flatten(document: &gltf::Document, primitives: &PrimitiveMeshes, options: &LoadOptions) -> Flattened {
     let mut flattened = Flattened::default();
     let scene = document.default_scene().or_else(|| document.scenes().next());
     let Some(scene) = scene else {
@@ -91,7 +127,8 @@ pub(super) fn flatten(document: &gltf::Document, primitives: &PrimitiveMeshes) -
             }
         }
         if let Some(light) = node.light() {
-            flattened.lights.push(light_from(&light, pose(world)));
+            let (scale, _, _) = world.to_scale_rotation_translation();
+            flattened.lights.push(light_from(&light, pose(world), scale, options));
         }
         if let Some(camera) = node.camera()
             && let Some(camera) = camera_from(&node, &camera, pose(world))

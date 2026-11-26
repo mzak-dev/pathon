@@ -10,7 +10,8 @@ const fn code(code: &'static str, title: &'static str) -> CodeInfo {
 
 // R: RHI, G: frame graph, F: render features (packs), P: platform, M: meshes and geometry pool, S: shaders,
 // T: profiling, N: scene, X: textures, Y: materials, H: HDR output, Q: post, B: bindless textures, I: IBL, D: shadows,
-// L: PBR lighting, K: hot reload of shaders, W: skinning and morph targets, A: sky, U: debug draw and slot previews.
+// L: PBR lighting, K: hot reload of shaders, W: skinning and morph targets, A: sky, U: debug draw and slot previews,
+// E: area lights.
 // Every entry needs docs/diag/<code>.md.
 pub const CODES: &[CodeInfo] = &[
     code("R0001", "no adapter or device could be created"),
@@ -120,6 +121,7 @@ pub const CODES: &[CodeInfo] = &[
     code("L0004", "PBR input missing from Shared"),
     code("L0005", "light cluster index list overflowed"),
     code("L0006", "device cannot run the PBR passes"),
+    code("E0001", "area light range shorter than half its diagonal"),
     code("K0001", "shader file outside the watched directory"),
     code("K0002", "shader file larger than the hot reload limit"),
     code("K0003", "shader file is not readable UTF-8 text"),

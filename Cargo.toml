@@ -54,6 +54,7 @@ gltf = { version = "1.4", default-features = false, features = [
     "utils",
     "names",
     "extensions",
+    "extras",
     "KHR_lights_punctual",
     "KHR_materials_emissive_strength",
     "KHR_materials_ior",

@@ -208,6 +208,22 @@ fn record_prepass(
 
     // Frame data shared with the colour pass.
     let lights = PackedLights::from_lights(world.lights().iter().map(|(_, light)| light));
+    let short_range = world.lights().iter().any(|(_, light)| {
+        light
+            .range
+            .zip(light.area_circumradius())
+            .is_some_and(|(range, radius)| range < radius)
+    });
+    if short_range {
+        report_once(
+            ctx,
+            &mut pbr.reported.area_range,
+            Diagnostic::warning("E0001", "an area light has an explicit range shorter than half its diagonal")
+                .with_hint("the range window cuts the rectangle: raise Light::with_range or drop it to derive the range"),
+        );
+    } else {
+        pbr.reported.area_range = false;
+    }
     let matrices = ViewMatrices::from_view(&view);
     let previous = previous_view_projection(
         &mut pbr.histories,

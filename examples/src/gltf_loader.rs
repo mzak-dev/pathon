@@ -264,8 +264,32 @@ fn main_camera_name(manifest: &str) -> Option<String> {
         .map(str::to_owned)
 }
 
+/// What the loader makes of the area lights the exporter writes as hemisphere spots with `extras.pathon_area`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum AreaLights {
+    /// Rectangular area lights of the size and power in the extras (ADR-0048).
+    #[default]
+    Real,
+    /// The spots of the file as they are: what pathon drew before K05, for comparisons.
+    AsSpot,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct LoadOptions {
+    pub area_lights: AreaLights,
+}
+
 /// Loads a `.glb` or `.gltf`. External files are resolved against `base_dir`.
 pub fn load_slice(bytes: &[u8], base_dir: Option<&Path>, manifest: Option<&str>) -> Result<LoadedScene, LoadError> {
+    load_slice_with(bytes, base_dir, manifest, &LoadOptions::default())
+}
+
+pub fn load_slice_with(
+    bytes: &[u8],
+    base_dir: Option<&Path>,
+    manifest: Option<&str>,
+    options: &LoadOptions,
+) -> Result<LoadedScene, LoadError> {
     let gltf::Gltf { document, blob } = gltf::Gltf::from_slice(bytes)?;
     let buffers = load_buffers(&document, blob, base_dir)?;
     let images = images::decode_all(&image_sources(&document, &buffers, base_dir)?)?;
@@ -297,7 +321,7 @@ pub fn load_slice(bytes: &[u8], base_dir: Option<&Path>, manifest: Option<&str>)
         primitive_meshes.insert(mesh.index(), built);
     }
 
-    let flattened = nodes::flatten(&document, &primitive_meshes);
+    let flattened = nodes::flatten(&document, &primitive_meshes, options);
     if flattened.instances.is_empty() {
         return Err(LoadError::NoGeometry);
     }
@@ -317,13 +341,17 @@ pub fn load_slice(bytes: &[u8], base_dir: Option<&Path>, manifest: Option<&str>)
 }
 
 pub fn load_path(path: &Path) -> Result<LoadedScene, LoadError> {
+    load_path_with(path, &LoadOptions::default())
+}
+
+pub fn load_path_with(path: &Path, options: &LoadOptions) -> Result<LoadedScene, LoadError> {
     let io = |source| LoadError::Io {
         path: path.to_path_buf(),
         source,
     };
     let bytes = std::fs::read(path).map_err(io)?;
     let manifest = std::fs::read_to_string(path.with_extension("scene.json")).ok();
-    load_slice(&bytes, path.parent(), manifest.as_deref())
+    load_slice_with(&bytes, path.parent(), manifest.as_deref(), options)
 }
 
 #[cfg(test)]
@@ -441,6 +469,48 @@ mod tests {
         let scene = load_slice(synthetic_gltf().as_bytes(), None, None).expect("loads");
 
         assert_eq!(scene.lights[0].illuminance_lux(), Some(5.0));
+    }
+
+    // The exporter's area light: a hemisphere spot of P / (2 pi) candela with `extras.pathon_area` (a JSON string).
+    fn gltf_with_area_light() -> String {
+        synthetic_gltf().replace(
+            r#"{"type": "directional", "intensity": 5.0}"#,
+            r#"{"type": "spot", "intensity": 100.0, "spot": {"innerConeAngle": 1.33, "outerConeAngle": 1.57},
+                "extras": {"pathon_area": "{\"shape\": \"RECTANGLE\", \"size_x\": 0.75, \"size_y\": 8.3, \"power_w\": 1.0}"}}"#,
+        )
+    }
+
+    #[test]
+    fn an_exported_area_light_becomes_a_rectangle_with_the_power_of_the_hemisphere_spot() {
+        let scene = load_slice(gltf_with_area_light().as_bytes(), None, None).expect("loads");
+
+        let light = &scene.lights[0];
+        let pathon_scene::LightKind::Area {
+            width,
+            height,
+            two_sided,
+        } = light.kind
+        else {
+            panic!("expected an area light, got {:?}", light.kind);
+        };
+        assert_eq!((width, height, two_sided), (0.75, 8.3, false));
+        assert!(
+            (light.intensity - 100.0 * 2.0 * std::f32::consts::PI).abs() < 1e-3,
+            "lumens = candela * 2 pi: {}",
+            light.intensity
+        );
+    }
+
+    #[test]
+    fn area_lights_as_spot_keeps_the_spot_of_the_file() {
+        let options = LoadOptions {
+            area_lights: AreaLights::AsSpot,
+        };
+
+        let scene = load_slice_with(gltf_with_area_light().as_bytes(), None, None, &options).expect("loads");
+
+        assert!(matches!(scene.lights[0].kind, pathon_scene::LightKind::Spot { .. }));
+        assert!((scene.lights[0].intensity - 100.0 * 4.0 * std::f32::consts::PI).abs() < 1e-3);
     }
 
     #[test]

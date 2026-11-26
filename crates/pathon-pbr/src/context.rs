@@ -57,6 +57,7 @@ pub(crate) struct Reported {
     pub(crate) missing_inputs: bool,
     pub(crate) settings: bool,
     pub(crate) skipped: bool,
+    pub(crate) area_range: bool,
 }
 
 impl PbrContext {

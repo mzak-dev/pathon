@@ -5,7 +5,8 @@ import package::material::standard::{MaterialData, evaluate, load_surface, outpu
 import package::material::surface::{LightSample, Surface, SurfaceInput};
 import package::pbr::common::{Frame, Instance, cluster_index, world_normal, world_position, world_tangent};
 import package::pbr::hooks::shadow_factor;
-import package::pbr::lights::{GpuLight, light_sample};
+import package::pbr::area::{LtcEntry, area_evaluate};
+import package::pbr::lights::{GpuLight, KIND_AREA, light_sample};
 import package::pbr::occlusion::{gtao_multi_bounce, specular_ao_lagarde};
 import package::shadow::sample::{ShadowCascades, shadow_factor_directional};
 
@@ -17,6 +18,7 @@ import package::shadow::sample::{ShadowCascades, shadow_factor_directional};
 @group(0) @binding(5) var<storage, read> cluster_indices: array<u32>;
 // IBL_BINDINGS
 // SHADOW_BINDINGS
+// LTC_BINDING
 
 // What `shadow_factor_directional` needs about the fragment besides its position; `shade` fills it once so that the
 // light loop keeps its signature.
@@ -57,6 +59,57 @@ fn vs(
     return out;
 }
 
+const LTC_SIZE: u32 = 32u;
+
+@if(area_lights)
+fn ltc_node(x: u32, y: u32) -> LtcEntry {
+    let first = (y * LTC_SIZE + x) * 2u;
+    return LtcEntry(ltc_table[first], ltc_table[first + 1u].xy);
+}
+
+// Bilinear lookup of the LTC table, even in roughness and in sqrt(1 - n.v) like the fit.
+@if(area_lights)
+fn ltc_fetch(roughness: f32, n_dot_v: f32) -> LtcEntry {
+    let last = f32(LTC_SIZE - 1u);
+    let position = vec2<f32>(saturate(roughness), sqrt(1.0 - saturate(n_dot_v))) * last;
+    let low = floor(position);
+    let fraction = position - low;
+    let x0 = u32(low.x);
+    let y0 = u32(low.y);
+    let x1 = min(x0 + 1u, LTC_SIZE - 1u);
+    let y1 = min(y0 + 1u, LTC_SIZE - 1u);
+    let a = ltc_node(x0, y0);
+    let b = ltc_node(x1, y0);
+    let c = ltc_node(x0, y1);
+    let d = ltc_node(x1, y1);
+    let inverse = mix(mix(a.inverse, b.inverse, fraction.x), mix(c.inverse, d.inverse, fraction.x), fraction.y);
+    let scales = mix(mix(a.scales, b.scales, fraction.x), mix(c.scales, d.scales, fraction.x), fraction.y);
+    return LtcEntry(inverse, scales);
+}
+
+@if(area_lights)
+fn add_area_light(
+    surface: Surface,
+    view: vec3<f32>,
+    index: u32,
+    light: GpuLight,
+    diffuse: ptr<function, vec3<f32>>,
+    specular: ptr<function, vec3<f32>>,
+) {
+    let visibility = shadow_factor(index, surface.position);
+    if (visibility <= 0.0) {
+        return;
+    }
+    let base = ltc_fetch(surface.roughness, max(abs(dot(surface.normal, view)), 0.0001));
+    var coat = base;
+    @if(clearcoat) {
+        coat = ltc_fetch(surface.clearcoat_roughness, max(abs(dot(surface.geometric_normal, view)), 0.0001));
+    }
+    let lobes = area_evaluate(surface, view, light, base, coat);
+    *diffuse += lobes.diffuse * visibility;
+    *specular += lobes.specular * visibility;
+}
+
 fn add_light(
     surface: Surface,
     view: vec3<f32>,
@@ -65,6 +118,12 @@ fn add_light(
     specular: ptr<function, vec3<f32>>,
 ) {
     let light = lights[index];
+    @if(area_lights) {
+        if (light.direction_kind.w == KIND_AREA) {
+            add_area_light(surface, view, index, light, diffuse, specular);
+            return;
+        }
+    }
     let lit = light_sample(light, surface.position);
     var visibility = shadow_factor(index, surface.position);
     @if(shadows) {

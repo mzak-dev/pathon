@@ -5,7 +5,9 @@ use pathon_api::rhi::BindGroupLayoutId;
 use pathon_bindless::{BINDLESS_FEATURES, BinderDesc, PathPreference, TextureBinder};
 use pathon_material::{MaterialHooks, MaterialVariant};
 use pathon_mesh::VertexLayout;
-use pathon_pbr::{ClusterPipeline, ForwardKey, PbrShaders, PrepassKey, SHADOW_FIRST_BINDING, TEXTURE_GROUP};
+use pathon_pbr::{
+    ClusterPipeline, ForwardKey, LTC_BINDING, PbrShaders, PrepassKey, SHADOW_FIRST_BINDING, TEXTURE_GROUP,
+};
 use pathon_rhi::{Features, NullDevice};
 use pathon_shader::{ShaderFeatures, ShaderKey, reflect_bind_groups};
 use pathon_shadow::ShadowBindings;
@@ -52,7 +54,14 @@ fn forward_and_prepass_pipelines_exist_for_all_forty_eight_permutations_on_both_
         let textures: Option<BindGroupLayoutId> = Some(binder.layout());
 
         for variant in MaterialVariant::all() {
-            for (split, shadows) in [(false, false), (true, false), (false, true), (true, true)] {
+            for (split, shadows, area) in [
+                (false, false, false),
+                (true, false, false),
+                (false, true, false),
+                (true, true, false),
+                (false, false, true),
+                (true, true, true),
+            ] {
                 shaders
                     .forward_pipeline(
                         &device,
@@ -60,11 +69,14 @@ fn forward_and_prepass_pipelines_exist_for_all_forty_eight_permutations_on_both_
                             variant,
                             split,
                             shadows,
+                            area,
                         },
                         &layouts,
                         textures,
                     )
-                    .unwrap_or_else(|error| panic!("{variant:?} split {split} shadows {shadows}: {error}"));
+                    .unwrap_or_else(|error| {
+                        panic!("{variant:?} split {split} shadows {shadows} area {area}: {error}")
+                    });
             }
         }
         for (masked, full) in [(false, false), (true, false), (false, true), (true, true)] {
@@ -88,6 +100,7 @@ fn the_pack_works_without_a_texture_binder() {
                 variant: MaterialVariant::default(),
                 split: true,
                 shadows: false,
+                area: false,
             },
             &layouts,
             None,
@@ -114,6 +127,7 @@ fn the_shadow_permutation_adds_the_three_shadow_bindings_and_nothing_else() {
             variant: MaterialVariant::default(),
             split: false,
             shadows,
+            area: false,
         }
         .shader_key();
         let wgsl = shaders
@@ -130,6 +144,38 @@ fn the_shadow_permutation_adds_the_three_shadow_bindings_and_nothing_else() {
     assert_eq!(
         with,
         (0..SHADOW_FIRST_BINDING + ShadowBindings::COUNT).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn the_area_permutation_adds_the_ltc_table_after_the_shadow_bindings() {
+    let mut shaders = PbrShaders::new(&MaterialHooks::default()).expect("modules register");
+    let bindings = |shaders: &mut PbrShaders, shadows: bool, area: bool| {
+        let key = ForwardKey {
+            variant: MaterialVariant::default(),
+            split: false,
+            shadows,
+            area,
+        }
+        .shader_key();
+        let wgsl = shaders
+            .wgsl(&key)
+            .unwrap_or_else(|error| panic!("shadows {shadows} area {area}: {error}"));
+        let group = reflect_bind_groups(&wgsl, &["vs", "fs"]).expect("reflection").remove(0);
+        group.entries.iter().map(|entry| entry.binding).collect::<Vec<_>>()
+    };
+
+    let without = bindings(&mut shaders, false, false);
+    let with = bindings(&mut shaders, false, true);
+    let with_both = bindings(&mut shaders, true, true);
+
+    assert_eq!(without, (0..SHADOW_FIRST_BINDING).collect::<Vec<_>>());
+    assert_eq!(with, without.iter().copied().chain([LTC_BINDING]).collect::<Vec<_>>());
+    assert_eq!(
+        with_both,
+        (0..SHADOW_FIRST_BINDING + ShadowBindings::COUNT)
+            .chain([LTC_BINDING])
+            .collect::<Vec<_>>()
     );
 }
 

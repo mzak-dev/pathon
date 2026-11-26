@@ -87,7 +87,7 @@ Proporcje obrazu pochodzą z widoku, który kamerę renderuje, nie z kamery: `Ca
 
 ## Światła
 
-`Light` w jednostkach fizycznych ([kontrakt slotów](../slots.md)): `directional(transform, lux)`, `point(transform, lumeny)`, `spot(transform, lumeny, inner, outer)` (półkąty w radianach, `0 < inner <= outer <= π/2`). Kolor to liniowy odcień RGB (1.0 = bez zabarwienia), nie jasność. Światło świeci wzdłuż lokalnego -Z. `luminous_intensity_candela()` = lumeny / 4π (także reflektor, jak w glTF `KHR_lights_punctual`). `influence_radius()` to jawny `range` albo odległość, na której natężenie spada do `AUTO_RANGE_CUTOFF_LUX` (0,02 lx): wejście dla przypisania świateł do klastrów (M4-05).
+`Light` w jednostkach fizycznych ([kontrakt slotów](../slots.md)): `directional(transform, lux)`, `point(transform, lumeny)`, `spot(transform, lumeny, inner, outer)` (półkąty w radianach, `0 < inner <= outer <= π/2`). Kolor to liniowy odcień RGB (1.0 = bez zabarwienia), nie jasność. Światło świeci wzdłuż lokalnego -Z. `area(transform, lumeny, szerokość, wysokość)` to prostokąt w lokalnej płaszczyźnie XY świecący jak powierzchnia Lamberta w stronę -Z (`with_two_sided()`: także w stronę +Z, moc dzielona po równo); `intensity` to moc całego światła, `luminance_nits()` = P/(π·A) na stronę ([ADR-0048](../adr/0048-swiatla-powierzchniowe-prostokatne.md)). `luminous_intensity_candela()` = lumeny / 4π (także reflektor, jak w glTF `KHR_lights_punctual`), dla światła prostokątnego szczyt na osi P/π. `influence_radius()` to jawny `range` albo odległość, na której natężenie spada do `AUTO_RANGE_CUTOFF_LUX` (0,02 lx): wejście dla przypisania świateł do klastrów (M4-05).
 
 ## Diagnostyka
 

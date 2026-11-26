@@ -2178,6 +2178,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "pathon-ltc-fit"
+version = "0.0.1"
+dependencies = [
+ "glam",
+]
+
+[[package]]
 name = "pathon-material"
 version = "0.0.1"
 dependencies = [

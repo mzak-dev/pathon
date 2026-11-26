@@ -5,16 +5,16 @@
 
 mod support;
 
-use pathon_api::glam::{Mat4, Vec3};
+use pathon_api::glam::{Affine3A, Mat4, Quat, Vec3};
 use pathon_api::rhi::{BindingResource, PhysicalSize};
 use pathon_material::MaterialHooks;
 use pathon_pbr::reference::{SphereLight, assign_lights};
 use pathon_pbr::{
-    COUNTERS_SIZE, ClusterBuffers, ClusterGrid, ClusterParams, ClusterPipeline, ClusterSettings, GpuLight, PbrShaders,
-    RANGE_SIZE,
+    COUNTERS_SIZE, ClusterBuffers, ClusterGrid, ClusterParams, ClusterPipeline, ClusterSettings, GpuLight, PackedLights,
+    PbrShaders, RANGE_SIZE,
 };
 use pathon_rhi::{BufferUsage, CommandList, DeviceApi, NullDevice};
-use pathon_scene::Projection;
+use pathon_scene::{Light, Projection};
 use support::{Lcg, buffer};
 
 const SIZE: PhysicalSize = PhysicalSize::new(128, 96);
@@ -23,6 +23,8 @@ struct Scene {
     projection: Mat4,
     world_to_view: Mat4,
     lights: Vec<SphereLight>,
+    // The lights as the shader reads them; point lights made from the spheres when absent.
+    gpu_lights: Option<Vec<GpuLight>>,
     settings: ClusterSettings,
 }
 
@@ -55,6 +57,57 @@ fn random_scene(seed: u64, lights: usize, orthographic: bool) -> Scene {
         projection,
         world_to_view,
         lights,
+        gpu_lights: None,
+        settings: ClusterSettings::default(),
+    }
+}
+
+// Rectangles of every size and orientation: half with an explicit range, half with the range the scene derives from
+// the power (a few lumens, so that it is a few metres and the clusters have something to cut).
+fn random_area_scene(seed: u64, lights: usize) -> Scene {
+    let mut random = Lcg(seed);
+    let (projection, world_to_view) = camera(false);
+    let area_lights: Vec<Light> = (0..lights)
+        .map(|index| {
+            let position = Vec3::new(
+                random.between(-14.0, 14.0),
+                random.between(-1.0, 8.0),
+                random.between(-30.0, 10.0),
+            );
+            let rotation = Quat::from_euler(
+                pathon_api::glam::EulerRot::XYZ,
+                random.between(0.0, 6.28),
+                random.between(0.0, 6.28),
+                random.between(0.0, 6.28),
+            );
+            let size = (random.between(0.2, 8.0), random.between(0.2, 8.0));
+            let light = Light::area(
+                Affine3A::from_rotation_translation(rotation, position),
+                random.between(1.0, 6.0),
+                size.0,
+                size.1,
+            );
+            if index % 2 == 0 {
+                light.with_range(random.between(0.5, 5.0))
+            } else {
+                light
+            }
+        })
+        .collect();
+    let packed = PackedLights::from_lights(&area_lights);
+    let lights = packed
+        .lights
+        .iter()
+        .map(|light| SphereLight {
+            position: Vec3::new(light.position_range[0], light.position_range[1], light.position_range[2]),
+            range: light.position_range[3],
+        })
+        .collect();
+    Scene {
+        projection,
+        world_to_view,
+        lights,
+        gpu_lights: Some(packed.lights),
         settings: ClusterSettings::default(),
     }
 }
@@ -78,15 +131,17 @@ fn run(device: &dyn DeviceApi, scene: &Scene) -> (ClusterGrid, Assignment) {
     let mut shaders = PbrShaders::new(&MaterialHooks::default()).expect("shaders");
     let pipeline = ClusterPipeline::new(device, &mut shaders).expect("pipelines");
     let grid = ClusterGrid::new(SIZE, &scene.settings);
-    let gpu_lights: Vec<GpuLight> = scene
-        .lights
-        .iter()
-        .map(|light| GpuLight {
-            position_range: [light.position.x, light.position.y, light.position.z, light.range],
-            direction_kind: [0.0, 0.0, -1.0, GpuLight::KIND_POINT],
-            ..GpuLight::default()
-        })
-        .collect();
+    let gpu_lights: Vec<GpuLight> = scene.gpu_lights.clone().unwrap_or_else(|| {
+        scene
+            .lights
+            .iter()
+            .map(|light| GpuLight {
+                position_range: [light.position.x, light.position.y, light.position.z, light.range],
+                direction_kind: [0.0, 0.0, -1.0, GpuLight::KIND_POINT],
+                ..GpuLight::default()
+            })
+            .collect()
+    });
     let params = ClusterParams::new(
         &grid,
         scene.projection,
@@ -106,7 +161,7 @@ fn run(device: &dyn DeviceApi, scene: &Scene) -> (ClusterGrid, Assignment) {
     device
         .write_buffer(params_buffer, 0, bytemuck::bytes_of(&params))
         .expect("params");
-    let lights_buffer = buffer(device, "lights", (gpu_lights.len().max(1) * 64) as u64, storage);
+    let lights_buffer = buffer(device, "lights", (gpu_lights.len().max(1) * std::mem::size_of::<GpuLight>()) as u64, storage);
     if !gpu_lights.is_empty() {
         device
             .write_buffer(lights_buffer, 0, bytemuck::cast_slice(&gpu_lights))
@@ -152,6 +207,8 @@ fn the_cluster_pass_validates_on_the_null_device() {
         let (grid, assignment) = run(&device, &scene);
         assert_eq!(assignment.ranges.len(), grid.count() as usize);
     }
+    let (grid, assignment) = run(&device, &random_area_scene(1, 40));
+    assert_eq!(assignment.ranges.len(), grid.count() as usize);
 }
 
 #[cfg(feature = "gpu-tests")]
@@ -232,6 +289,19 @@ mod gpu {
                 assignment.counters[0],
                 "seed {seed}: the reservation counter matches the lists"
             );
+        }
+    }
+
+    #[test]
+    fn a_hundred_area_lights_match_brute_force() {
+        let Some(device) = gpu("a_hundred_area_lights_match_brute_force") else {
+            return;
+        };
+        for seed in [21, 22, 23] {
+            let scene = random_area_scene(seed, 100);
+            let (grid, assignment) = run(&device, &scene);
+            assert_eq!(assignment.counters[1], 0, "seed {seed}: nothing overflows");
+            check_against_brute_force(&scene, &grid, &assignment);
         }
     }
 

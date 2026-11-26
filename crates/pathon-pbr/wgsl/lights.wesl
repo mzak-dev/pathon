@@ -1,5 +1,6 @@
 // Light attenuation for physical units: directional lights give lux, point and spot lights give candela, so the radiance a light adds is
-// colour * intensity * window(d) / max(d^2, eps).
+// colour * intensity * window(d) / max(d^2, eps). An area light carries luminance (nits) instead and is shaded by
+// `pbr::area`.
 // window: Karis 2013, "Real Shading in Unreal Engine 4": saturate(1 - (d / range)^4)^2, which is exactly zero at the range, so a cluster
 // can drop the light there without a visible edge.
 // spot cone: glTF KHR_lights_punctual: saturate(cos * scale + offset)^2 with scale = 1 / max(0.001, cos(inner) - cos(outer)).
@@ -8,8 +9,9 @@ import package::material::surface::LightSample;
 const KIND_DIRECTIONAL: f32 = 0.0;
 const KIND_POINT: f32 = 1.0;
 const KIND_SPOT: f32 = 2.0;
+const KIND_AREA: f32 = 3.0;
 
-// 64 bytes. Layout is mirrored by `light::GpuLight` in Rust.
+// 96 bytes. Layout is mirrored by `light::GpuLight` in Rust.
 struct GpuLight {
     // xyz: position, w: range in metres (0 for a directional light).
     position_range: vec4<f32>,
@@ -19,6 +21,10 @@ struct GpuLight {
     color_intensity: vec4<f32>,
     // x, y: spot angle scale and offset, z: 1 / range^2, w: unused.
     spot: vec4<f32>,
+    // Area light: xyz half of the width side in world space, w: 1 when two-sided.
+    area_half_width: vec4<f32>,
+    // Area light: xyz half of the height side in world space.
+    area_half_height: vec4<f32>,
 }
 
 // Smooth window that brings the inverse-square law to exactly zero at the light's range, so a cluster can drop the
@@ -41,6 +47,12 @@ fn light_sample(light: GpuLight, position: vec3<f32>) -> LightSample {
     if (kind == KIND_DIRECTIONAL) {
         result.direction = light.direction_kind.xyz;
         result.radiance = light.color_intensity.rgb;
+        return result;
+    }
+    if (kind == KIND_AREA) {
+        // Area lights are integrated over their rectangle in `pbr::area`, not sampled as one direction.
+        result.direction = vec3<f32>(0.0, 1.0, 0.0);
+        result.radiance = vec3<f32>(0.0);
         return result;
     }
     let position_to_light = light.position_range.xyz - position;

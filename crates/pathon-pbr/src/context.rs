@@ -4,7 +4,7 @@ use std::sync::Arc;
 use pathon_api::glam::Mat4;
 use pathon_api::resources::DeferredRelease;
 use pathon_api::rhi::{
-    DeviceApi, Extent3d, Format, RhiError, SamplerDesc, TexelLayout, TextureCopy, TextureDesc, TextureUsage,
+    BufferDesc, BufferId, BufferUsage, DeviceApi, Extent3d, Format, RhiError, SamplerDesc, TexelLayout, TextureCopy, TextureDesc, TextureUsage,
     TextureViewDesc,
 };
 use pathon_api::{Diagnostic, RecordCtx, ViewId};
@@ -47,6 +47,7 @@ pub struct PbrContext {
     pub(crate) histories: HashMap<ViewId, ViewHistory>,
     pub(crate) material_release: Option<DeferredRelease>,
     pub(crate) placeholder: Option<IblEnvironment>,
+    ltc_table: Option<BufferId>,
     pub(crate) reported: Reported,
 }
 
@@ -104,6 +105,22 @@ impl PbrContext {
         Ok(placeholder)
     }
 
+    /// The LTC table of the area lights as a storage buffer, uploaded on first use.
+    pub(crate) fn ltc_table(&mut self, device: &dyn DeviceApi) -> Result<BufferId, RhiError> {
+        if let Some(buffer) = self.ltc_table {
+            return Ok(buffer);
+        }
+        let bytes = crate::ltc::table_bytes();
+        let buffer = device.create_buffer(&BufferDesc {
+            label: "pbr ltc table",
+            size: bytes.len() as u64,
+            usage: BufferUsage::STORAGE | BufferUsage::COPY_DST,
+        })?;
+        device.write_buffer(buffer, 0, bytes)?;
+        self.ltc_table = Some(buffer);
+        Ok(buffer)
+    }
+
     /// After device loss every handle is dead.
     pub(crate) fn forget_gpu(&mut self) {
         self.shaders = None;
@@ -112,6 +129,7 @@ impl PbrContext {
         self.arena.forget_gpu();
         self.views.clear();
         self.placeholder = None;
+        self.ltc_table = None;
         if let Some(release) = &mut self.material_release {
             release.forget_all();
         }

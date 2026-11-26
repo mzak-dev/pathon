@@ -17,6 +17,9 @@ pub(crate) const OCCLUSION_MODULE: &str = "pbr::occlusion";
 pub(crate) const HOOKS_MODULE: &str = "pbr::hooks";
 
 const COMMON_WESL: &str = include_str!("../wgsl/common.wesl");
+pub(crate) const AREA_MODULE: &str = "pbr::area";
+
+const AREA_WESL: &str = include_str!("../wgsl/area.wesl");
 const LIGHTS_WESL: &str = include_str!("../wgsl/lights.wesl");
 const OCCLUSION_WESL: &str = include_str!("../wgsl/occlusion.wesl");
 const HOOKS_WESL: &str = include_str!("../wgsl/hooks.wesl");
@@ -33,6 +36,10 @@ pub const IBL_FIRST_BINDING: u32 = 6;
 pub const SHADOW_FIRST_BINDING: u32 = IBL_FIRST_BINDING + IblBindings::COUNT;
 /// WESL flag of the colour pass: the light that `pathon-shadow` shadows is attenuated by its cascaded map.
 pub const SHADOWS_FLAG: &str = "shadows";
+/// WESL flag of the colour pass: the scene has area lights, so the shader carries their code and reads the LTC table.
+pub const AREA_LIGHTS_FLAG: &str = "area_lights";
+/// Binding of the LTC table (`crate::ltc`), right after the shadow bindings; it exists only with the `area_lights` flag.
+pub const LTC_BINDING: u32 = SHADOW_FIRST_BINDING + ShadowBindings::COUNT;
 /// The group of the material textures when a `TextureBinder` is present.
 pub const TEXTURE_GROUP: u32 = 1;
 
@@ -66,6 +73,8 @@ pub struct ForwardKey {
     pub split: bool,
     /// Read the cascaded shadow map of `pathon-shadow` (the `shadows` flag): three more bindings in group 0.
     pub shadows: bool,
+    /// Shade area lights (the `area_lights` flag): one more binding in group 0, the LTC table.
+    pub area: bool,
 }
 
 impl ForwardKey {
@@ -74,6 +83,9 @@ impl ForwardKey {
         key.features
             .set(SHADOWS_FLAG, self.shadows)
             .expect("the shadows flag is a WGSL identifier");
+        key.features
+            .set(AREA_LIGHTS_FLAG, self.area)
+            .expect("the area_lights flag is a WGSL identifier");
         key
     }
 }
@@ -101,6 +113,7 @@ impl PbrShaders {
         for (path, source) in [
             (COMMON_MODULE, COMMON_WESL),
             (LIGHTS_MODULE, LIGHTS_WESL),
+            (AREA_MODULE, AREA_WESL),
             (OCCLUSION_MODULE, OCCLUSION_WESL),
             (HOOKS_MODULE, HOOKS_WESL),
         ] {
@@ -109,7 +122,8 @@ impl PbrShaders {
         let ibl = IblBindings::starting_at(IBL_FIRST_BINDING).wgsl_declarations(0);
         let forward = FORWARD_WESL
             .replace("// IBL_BINDINGS", &ibl)
-            .replace("// SHADOW_BINDINGS", &shadow_declarations());
+            .replace("// SHADOW_BINDINGS", &shadow_declarations())
+            .replace("// LTC_BINDING", &ltc_declaration());
         library.add_root("forward", &forward);
         library.add_root("prepass", PREPASS_WESL);
         library.add_root("cluster", CLUSTER_WESL);
@@ -364,6 +378,14 @@ fn shadow_declarations() -> String {
         .lines()
         .map(|line| ["@if(", SHADOWS_FLAG, ") ", line, "\n"].concat())
         .collect()
+}
+
+// The LTC table exists only in the permutation with the `area_lights` flag.
+fn ltc_declaration() -> String {
+    format!(
+        "@if({AREA_LIGHTS_FLAG}) @group(0) @binding({LTC_BINDING}) var<storage, read> ltc_table: array<vec4<f32>>;
+"
+    )
 }
 
 fn shader_error(error: &ShaderError) -> RhiError {

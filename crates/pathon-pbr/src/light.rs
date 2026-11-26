@@ -1,7 +1,7 @@
 use pathon_api::glam::Vec3;
 use pathon_scene::{Light, LightKind};
 
-/// A light as the shaders read it (`pbr::lights::GpuLight`, 64 bytes).
+/// A light as the shaders read it (`pbr::lights::GpuLight`, 96 bytes).
 #[repr(C)]
 #[derive(Clone, Copy, PartialEq, Debug, Default, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct GpuLight {
@@ -9,16 +9,21 @@ pub struct GpuLight {
     pub position_range: [f32; 4],
     /// Directional: unit vector to the light. Spot: unit vector the light shines along. w: kind.
     pub direction_kind: [f32; 4],
-    /// rgb: tint times lux (directional) or candela (point, spot).
+    /// rgb: tint times lux (directional), candela (point, spot) or luminance in nits (area).
     pub color_intensity: [f32; 4],
     /// x, y: spot angle scale and offset, z: 1 / range^2.
     pub spot: [f32; 4],
+    /// Area light: xyz half of the width side in world space, w: 1 for a two-sided light. Zero for other lights.
+    pub area_half_width: [f32; 4],
+    /// Area light: xyz half of the height side in world space. Zero for other lights.
+    pub area_half_height: [f32; 4],
 }
 
 impl GpuLight {
     pub const KIND_DIRECTIONAL: f32 = 0.0;
     pub const KIND_POINT: f32 = 1.0;
     pub const KIND_SPOT: f32 = 2.0;
+    pub const KIND_AREA: f32 = 3.0;
 
     /// Smallest range the shaders accept; a zero range would divide by zero.
     pub const MIN_RANGE: f32 = 1.0e-3;
@@ -31,7 +36,7 @@ impl GpuLight {
                 position_range: [0.0; 4],
                 direction_kind: direction_with(-light.direction(), Self::KIND_DIRECTIONAL),
                 color_intensity,
-                spot: [0.0; 4],
+                ..Self::default()
             },
             LightKind::Point => {
                 let (position, range) = positioned(light);
@@ -40,6 +45,7 @@ impl GpuLight {
                     direction_kind: direction_with(Vec3::NEG_Z, Self::KIND_POINT),
                     color_intensity,
                     spot: [0.0, 0.0, 1.0 / (range * range), 0.0],
+                    ..Self::default()
                 }
             }
             LightKind::Spot {
@@ -55,9 +61,32 @@ impl GpuLight {
                     direction_kind: direction_with(light.direction(), Self::KIND_SPOT),
                     color_intensity,
                     spot: [scale, offset, 1.0 / (range * range), 0.0],
+                    ..Self::default()
                 }
             }
+            LightKind::Area {
+                width,
+                height,
+                two_sided,
+            } => Self::area(light, width, height, two_sided),
             _ => Self::zeroed_directional(),
+        }
+    }
+
+    // The radiance of the rectangle (nits) times the tint is what the shader integrates over the solid angle it covers.
+    fn area(light: &Light, width: f32, height: f32, two_sided: bool) -> Self {
+        let (position, range) = positioned(light);
+        let radiance = light.color * light.luminance_nits().unwrap_or(0.0);
+        let side = |axis: Vec3, length: f32| axis.normalize_or_zero() * (0.5 * length);
+        let half_width = side(Vec3::from(light.transform.matrix3.x_axis), width);
+        let half_height = side(Vec3::from(light.transform.matrix3.y_axis), height);
+        Self {
+            position_range: [position.x, position.y, position.z, range],
+            direction_kind: direction_with(light.direction(), Self::KIND_AREA),
+            color_intensity: [radiance.x, radiance.y, radiance.z, 0.0],
+            spot: [0.0, 0.0, 1.0 / (range * range), 0.0],
+            area_half_width: [half_width.x, half_width.y, half_width.z, f32::from(u8::from(two_sided))],
+            area_half_height: [half_height.x, half_height.y, half_height.z, 0.0],
         }
     }
 
@@ -71,6 +100,10 @@ impl GpuLight {
 
     pub fn is_directional(&self) -> bool {
         self.direction_kind[3] == Self::KIND_DIRECTIONAL
+    }
+
+    pub fn is_area(&self) -> bool {
+        self.direction_kind[3] == Self::KIND_AREA
     }
 }
 
@@ -121,6 +154,11 @@ impl PackedLights {
 
     pub fn clustered(&self) -> &[GpuLight] {
         &self.lights[self.directional as usize..]
+    }
+
+    /// Whether the colour pass needs the permutation with the area light code and the LTC table.
+    pub fn has_area(&self) -> bool {
+        self.lights.iter().any(GpuLight::is_area)
     }
 }
 

@@ -16,10 +16,17 @@ pub enum LightKind {
         inner_angle: f32,
         outer_angle: f32,
     },
+    // A flat rectangle in the local XY plane, `width` along X and `height` along Y, emitting like a Lambertian surface
+    // towards local -Z (and towards +Z too when `two_sided`). `intensity` is its total luminous power (ADR-0048).
+    Area {
+        width: f32,
+        height: f32,
+        two_sided: bool,
+    },
 }
 
 // Physical units: `intensity` is illuminance in lux for a directional light and luminous power in lumens for a
-// point or spot light. `color` is a linear RGB tint (1.0 = no tint), not a brightness. The light shines along the
+// point, spot or area light. `color` is a linear RGB tint (1.0 = no tint), not a brightness. The light shines along the
 // local -Z axis of `transform`, like a camera looks.
 #[derive(Clone, Copy, PartialEq, Debug)]
 #[non_exhaustive]
@@ -67,6 +74,36 @@ impl Light {
         )
     }
 
+    // Rectangle of `width` x `height` metres emitting on one side (towards local -Z). `luminous_power_lumens` is the
+    // whole power: the luminance is `power / (pi * area)`, see `luminance_nits`.
+    pub fn area(transform: Affine3A, luminous_power_lumens: f32, width: f32, height: f32) -> Self {
+        Self::new(
+            LightKind::Area {
+                width,
+                height,
+                two_sided: false,
+            },
+            transform,
+            luminous_power_lumens,
+        )
+    }
+
+    // An area light that emits from both faces; its power is split equally between them.
+    #[must_use]
+    pub fn with_two_sided(self) -> Self {
+        match self.kind {
+            LightKind::Area { width, height, .. } => Self {
+                kind: LightKind::Area {
+                    width,
+                    height,
+                    two_sided: true,
+                },
+                ..self
+            },
+            _ => self,
+        }
+    }
+
     #[must_use]
     pub fn with_color(self, color: Vec3) -> Self {
         Self { color, ..self }
@@ -103,11 +140,34 @@ impl Light {
     }
 
     // Candela of a point or spot light. Spots use the same lumens / 4pi as points (glTF KHR_lights_punctual): the
-    // cone shapes the light, it does not concentrate the power.
+    // cone shapes the light, it does not concentrate the power. For an area light it is the peak, on the axis: a
+    // Lambertian emitter of power P has I(0) = P / pi (P / 2pi per face when two-sided).
     pub fn luminous_intensity_candela(&self) -> Option<f32> {
         match self.kind {
-            LightKind::Directional => None,
             LightKind::Point | LightKind::Spot { .. } => Some(self.intensity / (4.0 * std::f32::consts::PI)),
+            LightKind::Area { two_sided, .. } => Some(self.intensity / (std::f32::consts::PI * faces(two_sided))),
+            _ => None,
+        }
+    }
+
+    // Luminance of an area light in nits (cd / m^2), the same on every point and in every direction of an emitting
+    // face: L = P / (pi * A) per face, so that the radiant exitance pi * L * A adds up to P.
+    pub fn luminance_nits(&self) -> Option<f32> {
+        match self.kind {
+            LightKind::Area {
+                width,
+                height,
+                two_sided,
+            } => Some(self.intensity / (std::f32::consts::PI * faces(two_sided) * width * height)),
+            _ => None,
+        }
+    }
+
+    // Distance from the centre of an area light to its farthest corner.
+    pub fn area_circumradius(&self) -> Option<f32> {
+        match self.kind {
+            LightKind::Area { width, height, .. } => Some(0.5 * width.hypot(height)),
+            _ => None,
         }
     }
 
@@ -116,13 +176,14 @@ impl Light {
     }
 
     // Distance at which a point or spot light drops to `AUTO_RANGE_CUTOFF_LUX`, or the explicit range. Directional
-    // lights reach everywhere (`None`).
+    // lights reach everywhere (`None`). An area light never lights a point with more than its peak intensity over the
+    // squared distance to the rectangle (form factor <= A / (pi d^2)), so its radius is that distance plus the one
+    // from the centre to the farthest corner.
     pub fn influence_radius(&self) -> Option<f32> {
         let candela = self.luminous_intensity_candela()?;
-        Some(
-            self.range
-                .unwrap_or_else(|| (candela * self.color.max_element() / AUTO_RANGE_CUTOFF_LUX).sqrt()),
-        )
+        Some(self.range.unwrap_or_else(|| {
+            (candela * self.color.max_element() / AUTO_RANGE_CUTOFF_LUX).sqrt() + self.area_circumradius().unwrap_or(0.0)
+        }))
     }
 
     pub(crate) fn validate(&self) -> Result<(), SceneError> {
@@ -143,11 +204,19 @@ impl Light {
             && !(inner_angle > 0.0 && inner_angle <= outer_angle && outer_angle <= std::f32::consts::FRAC_PI_2)
         {
             Some("spot angles must satisfy 0 < inner <= outer <= pi/2")
+        } else if let LightKind::Area { width, height, .. } = self.kind
+            && !(width.is_finite() && width > 0.0 && height.is_finite() && height > 0.0)
+        {
+            Some("area light width and height must be positive")
         } else {
             None
         };
         reason.map_or(Ok(()), |reason| Err(SceneError::InvalidLight { reason }))
     }
+}
+
+fn faces(two_sided: bool) -> f32 {
+    if two_sided { 2.0 } else { 1.0 }
 }
 
 #[cfg(test)]
@@ -198,6 +267,31 @@ mod tests {
     }
 
     #[test]
+    fn area_luminance_times_area_times_pi_is_the_power() {
+        let light = Light::area(Affine3A::IDENTITY, 1000.0, 2.0, 0.5);
+
+        let luminance = light.luminance_nits().expect("area light");
+
+        assert!((luminance * std::f32::consts::PI * 1.0 - 1000.0).abs() < 1e-2);
+        let candela = light.luminous_intensity_candela().expect("area light");
+        assert!((candela - 1000.0 / std::f32::consts::PI).abs() < 1e-3, "I(0) = L * A = P / pi");
+        let two_sided = light.with_two_sided();
+        assert!((two_sided.luminance_nits().expect("area light") * 2.0 - luminance).abs() < 1e-3);
+        assert_eq!(Light::point(Affine3A::IDENTITY, 1.0).luminance_nits(), None);
+    }
+
+    #[test]
+    fn area_influence_radius_reaches_past_the_farthest_corner() {
+        let light = Light::area(Affine3A::IDENTITY, 800.0, 3.0, 4.0);
+        let candela = 800.0 / std::f32::consts::PI;
+
+        let radius = light.influence_radius().expect("area light");
+
+        assert!((radius - ((candela / AUTO_RANGE_CUTOFF_LUX).sqrt() + 2.5)).abs() < 1e-3);
+        assert_eq!(light.with_range(3.0).influence_radius(), Some(3.0));
+    }
+
+    #[test]
     fn invalid_lights_are_rejected() {
         let at = Affine3A::IDENTITY;
         let bad = [
@@ -208,6 +302,8 @@ mod tests {
             Light::spot(at, 1.0, 0.0, 0.5),
             Light::spot(at, 1.0, 0.6, 0.5),
             Light::spot(at, 1.0, 0.5, 2.0),
+            Light::area(at, 1.0, 0.0, 1.0),
+            Light::area(at, 1.0, 1.0, f32::NAN),
         ];
 
         for light in bad {
@@ -217,6 +313,7 @@ mod tests {
             );
         }
         assert!(Light::spot(at, 1.0, 0.3, 0.5).validate().is_ok());
+        assert!(Light::area(at, 1.0, 0.5, 2.0).validate().is_ok());
         assert!(matches!(
             Light::point(Affine3A::from_translation(Vec3::NAN), 1.0).validate(),
             Err(SceneError::NotFinite { .. })

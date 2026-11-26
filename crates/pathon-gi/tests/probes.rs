@@ -141,14 +141,14 @@ mod gpu {
         let bright = rig.sample(&beside_the_wall_in_a);
 
         for (index, sampled) in dark.iter().enumerate() {
-            eprintln!("dark room, {index}: {:?}", sampled);
+            eprintln!("dark room, {index}: {sampled:?}");
             assert!(
                 sampled.irradiance.x < 0.06,
                 "light leaked into the dark room: {sampled:?}"
             );
         }
         for (index, sampled) in bright.iter().enumerate() {
-            eprintln!("bright room, {index}: {:?}", sampled);
+            eprintln!("bright room, {index}: {sampled:?}");
             assert!(
                 (sampled.irradiance.x / 2.0 - 1.0).abs() < 0.12,
                 "the lit room is not lit: {sampled:?}"

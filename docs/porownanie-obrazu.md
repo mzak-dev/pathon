@@ -291,6 +291,70 @@ Na podstawie map różnic, przebiegów AOV wzorca i eksperymentów powyżej (wzo
 
 Co **nie** jest źródłem różnicy (zmierzone): ekspozycja i jednostki (emisja 1,00, tablica 0,91 do 1,08, niebo 0,94 do 0,99), orientacja IBL, szkło i transmisja (przebieg `Transmission Indirect` to 0 do 0,4% luminancji wzorca; `Transmission Direct` ~0), światło odbite zwierciadlanie (`Glossy` razem 7 do 8%: bias w maskach metalu 0,82 do 0,91 przy `reference/`). **AO** nie da się tu wydzielić bez techniki K04: wskazówką jest „stały ambient” z tabeli wyżej, który przejaskrawia wnętrza ławek 1,5×, czyli AO poprawi drewno i metal (dziś bias 0,78 do 0,95) dopiero razem z GI.
 
+## K12: sondy irradiancji
+
+26.11.2026, `pathon-gi` ([ADR-0049](adr/0049-gi-sondy-irradiancji.md), [strona crate'u](crates/pathon-gi.md)): siatka sond irradiancji z śledzeniem promieni w siatce wokseli, diffuse z sond zamiast diffuse IBL. RX 9070 XT (Vulkan, release), 960×540 z `--supersample 2`, wzorzec `reference/` (światła obszarowe, 4096 próbek, odszumiony), `lights-only`, kamery `renderCam`, `pathon_wide`, `pathon_reverse`. **„Przed” to pathon po K05, bez GI** (nie pierwszy pomiar K01: ten miał spoty zamiast świateł obszarowych). Polecenia:
+
+```sh
+python tools/scenes/compare_all.py                                                # przed
+python tools/scenes/compare_all.py "--viewer-args=--gi"                            # GI, woksel 10 cm
+python tools/scenes/compare_all.py "--viewer-args=--gi --gi-voxel 0.05 --gi-period 8"   # GI, woksel 5 cm
+```
+
+`--viewer-args` to nowa opcja `compare_all.py` (opcje przekazywane do `gltf_viewer`); viewer z `--gi` renderuje 120 klatek rozgrzewki, żeby sondy się ustaliły (`--gi-warmup`), a zapisuje ostatnią.
+
+### Metryki, średnia z trzech kamer (`reference`, `lights-only`)
+
+| Obraz | PSNR dB | SSIM | ΔE2000 śr. | ΔE2000 p95 | bias | bias bez okien |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| przed (bez GI) | 13,5 | 0,652 | 11,3 | 44,2 | 0,55 | 0,84 |
+| **GI, woksel 10 cm** | 15,4 | 0,673 | 10,0 | 31,9 | 0,77 | 1,04 |
+| **GI, woksel 5 cm** | **16,5** | **0,701** | **8,9** | **26,6** | 0,78 | 1,01 |
+| (pułap: pathon + GI wzorca, wzorzec obszarowy z K01) | 19,6 | 0,819 | 7,0 | 18,4 | 1,10 | |
+
+Po kamerach (woksel 5 cm; w nawiasie przed): `renderCam` PSNR 17,4 (13,6), SSIM 0,712 (0,653), ΔE 8,5 (11,5), p95 23,9 (41,9), bias 0,88 (0,59); `pathon_wide` 15,9 (12,9), 0,669 (0,604), 9,5 (12,1), 27,0 (48,7), 0,76 (0,53); `pathon_reverse` 16,2 (14,0), 0,722 (0,700), 8,8 (10,2), 29,1 (41,8), 0,71 (0,52).
+
+Wariant `ibl` (ten sam wzorzec): przed 13,6 / 0,614 / 13,0 / 39,2 / bias 0,70; po GI 10 cm 15,4 / 0,666 / 10,1 / 32,4 / 0,79; po GI 5 cm 16,6 / 0,697 / 9,0 / 27,1 / 0,79.
+
+### Luminancja w maskach (pathon / wzorzec, `renderCam`, `lights-only`; woksel 5 cm)
+
+| Maska | przed | po |
+| --- | ---: | ---: |
+| tablica | 1,00 | 1,03 |
+| podłoga | 0,97 | 1,00 |
+| ściany i sufit | 0,81 | 1,05 |
+| drewno | 0,78 | 0,92 |
+| metal | 0,82 | 0,82 |
+| blaty | 0,87 | 0,94 |
+| oświetlone bezpośrednio | 0,67 | 0,85 |
+| zacienione | 0,44 | 0,93 |
+| okna (ramy, żaluzje) | 0,14 | 0,63 |
+
+W pozostałych kamerach zacienione 0,37 → 0,65 (`pathon_wide`) i 0,31 → 0,60 (`pathon_reverse`), okna 0,17 → 0,44 i 0,16 → 0,39.
+
+### Wyciek środowiska (źródło 4 listy pięciu)
+
+Środowisko `Garage.hdr` dodawało do `bias` 27% (0,70 wobec 0,55 w średniej), po GI +1% (0,79 wobec 0,78): sondy widzą niebo tylko przez otwory, a ściany go zasłaniają. Podłoga w `ibl` wobec `lights-only` (`renderCam`): przed 1,57 wobec 0,97, po 1,11 wobec 1,00. Progi wariantu `ibl` mają teraz sens.
+
+### Stan względem progów
+
+| Metryka | Próg zielony | Przed | Po (5 cm) | Pasmo |
+| --- | --- | ---: | ---: | --- |
+| `bias_without_windows` | 0,90 do 1,10 | 0,84 | 1,01 | **zielone** (było żółte) |
+| `bias_total` | 0,90 do 1,10 | 0,55 | 0,78 | żółte (było czerwone) |
+| ΔE2000 średnie | do 7,5 | 11,3 | 8,9 | żółte (było czerwone) |
+| ΔE2000 p95 | do 20 | 44,2 | 26,6 | żółte |
+| SSIM | od 0,80 | 0,652 | 0,701 | żółte (było czerwone) |
+| PSNR | od 19,5 | 13,5 | 16,5 | żółte |
+
+### Co zostało i czego nie wiemy
+
+- **Okna** nadal niosą za mało światła (0,39 do 0,63 wzorca): to w dużej części oświetlenie pośrednie ich ram i żaluzji. Przy wokselu 10 cm cienkie elementy stają się pełnymi ścianami (woksel 5 cm poprawia SSIM o 0,03 i p95 o 5 punktów), ale czy to jedyna przyczyna, nie sprawdzono (wykluczyć trzeba jeszcze: szkło bez załamania, brak portalu światła dziennego w obu wzorcach, plamy sond przy oknach).
+- **Ściany i sufit** są o ok. 5 do 10% za jasne (1,05 do 1,09), a przy wzorcu `reference-spot` (inna lampa) 2,1 w `renderCam`: zmierzone pudełko Cornella ma +8% z konserwatywnej woksalizacji (ściany stoją do wokselu bliżej światła).
+- Zielone progi SSIM (0,80) i ΔE (7,5) są poza zasięgiem samej osi GI przy dzisiejszych materiałach i filtrowaniu: pułap z K01 (idealne GI wzorca) to SSIM 0,82 i ΔE 7,0 przy tym samym świetle bezpośrednim.
+- Artefakty widoczne w kolażach: plamy o rozmiarze odstępu sond na gładkich ścianach, ciemne obwódki przy krawędziach mebli (sonda blisko powierzchni), brak odbić dla obiektów mniejszych niż woksel.
+- Pomiar jest jeden (RX 9070 XT, Vulkan); GI jest losowe w kolejności listy komórek i obrocie promieni, ale deterministyczne w obrębie uruchomienia (3 powtórzenia goldena Cornella dały ten sam obraz).
+
 ## Progi: zielone, żółte, czerwone
 
 Skalibrowane 25.11.2026 na pierwszym pomiarze pathon i na eksperymencie „pathon + GI wzorca” (średnie z trzech kamer, `lights-only`, wzorzec `reference-spot` albo `reference`, referencja odszumiona, `--supersample 2`). Zasada:
@@ -322,10 +386,10 @@ Uwagi:
 
 | Różnica | Skutek | Kiedy znika |
 | --- | --- | --- |
-| **Brak GI w pathon** | 55 do 64% luminancji, patrz wyżej | K12 (sondy), K13 (SSGI); częściowo K04 (AO) |
+| **GI w pathon: tylko sondy z wokselami** | 55 do 64% luminancji; po K12 [zostaje](#k12-sondy-irradiancji) SSIM 0,70 zamiast pułapu 0,82 i jaśniejsze okna | K13 (SSGI), cieńsze woksele, K04 (AO) |
 | ~~**Światła obszarowe jako spoty**~~ | jasność o 6 do 78%, ΔE około 4 | **zrobione w K05** (prostokąty, LTC); od teraz bramkuj względem `reference/`, `--area-as-spot` i `reference-spot/` zostają do porównań |
 | **Okna: żaluzje i ramy bez GI** | 6 do 9% pikseli, 36 do 55% luminancji wzorca; pathon daje 6 do 19% tej jasności (pozycja 2 listy źródeł) | K12, K13 |
-| **Wyciek środowiska (`ibl`)** | pathon dodaje 23 do 51% luminancji z nieba, Cycles 0 do 3% (pozycja 4) | okluzja środowiska |
+| **Wyciek środowiska (`ibl`)** | **usunięty w K12** (diffuse z sond: +1% zamiast +27%); zostaje specular IBL zaciemniane widocznością nieba z sond | — |
 | **Okna bez portalu światła dziennego** | otwory w ścianie, w `lights-only` czarne; w obu wzorcach identycznie | nie znika (pathon i wzorzec tak samo; portal tylko w wzorcu A) |
 | **Materiały po eksporcie Cycles → Principled** | straty z [scenes.md](scenes.md): bump (37), korekcje koloru (21), mieszanie tekstur (12), atrybuty obiektu (16), shadery proceduralne (12), roughness z tekstury (9) | nie znika; oba renderery dostają te same przybliżone materiały, więc **w tym porównaniu nie liczy się jako błąd pathon**, ale pozostaje różnicą względem wzorca A (`classroom.blend`) |
 | **Model materiału** | Principled BSDF Cyclesa (wielokrotne rozpraszanie GGX, inny sposób łączenia diffuse i specular) a materiał standardowy pathon; transmisja: refrakcja a blend z alfą | częściowo K02; różnica modeli zostaje |

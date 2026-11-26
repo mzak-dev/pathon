@@ -74,6 +74,7 @@ pub struct PrepassKey {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[expect(clippy::struct_excessive_bools, reason = "one flag per shader permutation feature")]
 pub struct ForwardKey {
     pub variant: MaterialVariant,
     /// Also write the `diffuse` and `specular` slots.

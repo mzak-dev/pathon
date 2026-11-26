@@ -21,6 +21,8 @@ Oznaczone jako `pack-lib` od teraz: `pathon-mesh`, `pathon-scene`, `pathon-mater
 
 Uzupełnienie (25.11.2026): `pathon-shadow` jest też `pack-lib`. ADR-0044 zakłada, że `pathon-pbr` czyta wynik cieni (`ShadowFrame`, slot, moduł WGSL), a paczka nie może zależeć od paczki. Typy i moduł WGSL cieni to kontrakt wejścia oświetlenia, jak `IblEnvironment`; `ShadowPack` zostaje zwykłą paczką, którą dodaje aplikacja.
 
+Uzupełnienie (26.11.2026): `pathon-gi` jest też `pack-lib` ([ADR-0049](0049-gi-sondy-irradiancji.md)): `pathon-pbr` czyta `GiFrame` i moduł WGSL `gi::sample`, a `GiPack` zostaje zwykłą paczką. `pathon-gi` zależy od `pack-lib` `pathon-mesh`, `-scene`, `-material`, `-bindless`, `-ibl`.
+
 ## Konsekwencje
 
 - Zależność jest jawna w `Cargo.toml` i sprawdzana: dwa testy w `xtask/src/rules.rs` (paczka może użyć `pack-lib`, nie może innej paczki; `pack-lib` sam przestrzega granicy).

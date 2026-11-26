@@ -118,3 +118,7 @@ cargo test -p pathon-pbr                                                    # be
 $env:PATHON_TEST_BACKEND="vulkan"; cargo test -p pathon-pbr --features gpu-tests -- --test-threads=1
 cargo run -p pathon-examples --bin pbr_scene -- pbr_scene.png
 ```
+
+## Globalne oświetlenie (K12)
+
+Gdy w `Shared` jest `GiFrame` (publikuje go `GiPack` z [pathon-gi](pathon-gi.md)), `LightingFeature` buduje permutację `ForwardKey { gi: true }`: cztery bindingi od `GI_FIRST_BINDING` (po tablicy LTC; uniform objętości, dwa atlasy, sampler) i w shaderze `diffuse_środowiska = mix(diffuse_IBL, irradiancja_sond × albedo_dyfuzyjne × (1 − odbicie_spekularne), confidence)`; specular IBL jest mnożone przez `mix(1, widoczność_nieba, confidence × specular_occlusion)`. Okluzja materiału i wielokrotne odbicie działają dalej na wyniku. Bez `GiFrame` nic się nie zmienia (permutacja bez flagi ma układ sprzed K12). `PbrSettings::environment_intensity` nie skaluje światła z sond: ich skala nieba to `GiSettings::environment_intensity`.

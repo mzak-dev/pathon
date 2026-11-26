@@ -458,6 +458,11 @@ impl Atlases {
     }
 
     /// The interior texels of the irradiance tile in the direction `direction` (nearest texel).
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "an octahedral coordinate in 0..=1 times 8"
+    )]
     pub fn irradiance_towards(&self, index: u32, direction: Vec3) -> Vec3 {
         let encoded = pathon_gi::reference::oct_encode(direction.normalize());
         let (x0, y0) = self.tile_origin(index, IRRADIANCE_TILE);

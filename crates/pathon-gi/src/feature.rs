@@ -28,6 +28,7 @@ use crate::voxel::{VoxelGridUniforms, VoxelLayout};
 /// as they are, so the volume does not start dark.
 const WARMUP_FRAMES: u32 = 8;
 const JOB_STRIDE: u64 = 256;
+const JOB_STRIDE_BYTES: usize = 256;
 const RESTING: Access = Access::STORAGE_READ;
 const READ_WRITE: Access = Access::STORAGE_READ.union(Access::STORAGE_WRITE);
 // Ahead of the core's "clear output" (priority 0) in the same stage, so their order is not left to registration.
@@ -74,6 +75,7 @@ impl JobUniforms {
 }
 
 #[derive(Debug, Default)]
+#[expect(clippy::struct_excessive_bools, reason = "one flag per problem that is reported once")]
 struct Reported {
     settings: bool,
     inputs: bool,
@@ -343,7 +345,7 @@ impl GiFeature {
         let changed = rebuilt || self.scene_signature != Some(input.signature);
         let voxelize = if changed {
             self.scene_signature = Some(input.signature);
-            let plan = plan_voxelization(ctx, &input.jobs, binder.as_deref_mut())?;
+            let plan = plan_voxelization(ctx, &input.jobs, binder)?;
             if self.frames_in_volume > WARMUP_FRAMES {
                 self.frames_in_volume = WARMUP_FRAMES / 2;
             }
@@ -490,7 +492,7 @@ fn plan_voxelization(
     let mut groups: HashMap<u32, Option<BindGroupId>> = HashMap::new();
     let mut planned = Vec::with_capacity(jobs.len());
     for (index, job) in jobs.iter().enumerate() {
-        let start = index * JOB_STRIDE as usize;
+        let start = index * JOB_STRIDE_BYTES;
         let uniforms = JobUniforms::new(job);
         bytes[start..start + size_of::<JobUniforms>()].copy_from_slice(bytemuck::bytes_of(&uniforms));
         let textures = match binder.as_deref_mut() {

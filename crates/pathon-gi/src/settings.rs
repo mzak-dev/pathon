@@ -149,6 +149,7 @@ impl GiSettings {
     }
 
     /// Whether `other` needs another volume (and new probes) rather than another frame of the same one.
+    #[expect(clippy::float_cmp, reason = "any change of these settings, however small, builds another volume")]
     pub fn same_volume(&self, other: &Self) -> bool {
         self.bounds == other.bounds
             && self.probe_spacing == other.probe_spacing

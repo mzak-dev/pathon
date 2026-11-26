@@ -157,15 +157,15 @@ impl Room {
 }
 
 fn cosine_direction(normal: Vec3, rng: &mut Lcg) -> Vec3 {
-    let (u, v) = (rng.next_f32(), rng.next_f32());
-    let radius = u.sqrt();
-    let angle = std::f32::consts::TAU * v;
-    let (x, y) = (radius * angle.cos(), radius * angle.sin());
-    let z = (1.0 - u).max(0.0).sqrt();
+    let (first, second) = (rng.next_f32(), rng.next_f32());
+    let radius = first.sqrt();
+    let angle = std::f32::consts::TAU * second;
+    let (across, along) = (radius * angle.cos(), radius * angle.sin());
+    let up = (1.0 - first).max(0.0).sqrt();
     let helper = if normal.x.abs() > 0.9 { Vec3::Y } else { Vec3::X };
     let tangent = normal.cross(helper).normalize();
     let bitangent = normal.cross(tangent);
-    tangent * x + bitangent * y + normal * z
+    tangent * across + bitangent * along + normal * up
 }
 
 #[cfg(test)]

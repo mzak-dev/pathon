@@ -196,7 +196,17 @@ RX 9070 XT, Vulkan, `--bench 300` (render offscreen, `Rgba8UnormSrgb`, kamera `r
 | `classroom.glb` 1920×1080, `--per-material` | 10 / 195 840 | 2,20 ms (454 fps) | 2,05 ms | 2,56 ms |
 | `classroom.glb` 1920×1080, `--simple` | 10 / — | 1,78 ms (563 fps) | 1,77 ms | 2,40 ms |
 
-Passy GPU (`classroom.glb` 1920×1080, ms): prepass 0,81, forward 0,74, cień (4 kaskady) 0,12, klastry świateł 0,05, przezroczyste 0,04, niebo 0,03, bloom razem ok. 0,25 (prefiltr 0,12, reszta poniżej 0,03), ekspozycja 0,002, tonemapping 0,06. Prepass kosztuje tyle co kolor, bo każda z 862 instancji to osobne rysowanie bez cullingu (M4-11); GPU jest tu mało obciążone, więc czas GPU prawie nie zależy od rozdzielczości, a ścianę wyznacza CPU. W oknie ta scena trzyma 75 fps (vsync).
+Z globalnym oświetleniem (K12, `--gi`, [pathon-gi](crates/pathon-gi.md), stan po K05 i K12, najlepsze z 4 uruchomień `--bench 120`, 1920×1080, `renderCam`, `lights-only`):
+
+| Konfiguracja | Suma passów GPU | w tym GI | `pbr forward` | CPU | Ściana | Pamięć GI |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| bez GI | 1,65 ms | 0 | 1,20 ms | 1,5 ms | 2,0 ms | 0 |
+| `--gi` (3168 sond co 0,5 m, 128 promieni, woksel 10 cm, okres 4) | 3,83 ms | 1,70 ms (oświetlenie komórek 1,00, promienie 0,22, atlasy 0,48) | 1,67 ms | 2,6 ms | 4,2 ms | 43,5 MiB |
+| `--gi --gi-voxel 0.05 --gi-period 8` (2,3 mln wokseli) | 4,09 ms | 2,68 ms (2,03 / 0,33 / 0,32) | 1,09 ms | 2,9 ms | 4,9 ms | 112 MiB |
+
+Woksalizacja scen (606 tys. trójkątów, 846 rysowań) dzieje się tylko po zmianie sceny. Koszt CPU GI (ok. 1,1 ms) to zbieranie sceny co klatkę.
+
+Passy GPU (`classroom.glb` 1920×1080, ms, bez GI, stan sprzed K05): prepass 0,81, forward 0,74, cień (4 kaskady) 0,12, klastry świateł 0,05, przezroczyste 0,04, niebo 0,03, bloom razem ok. 0,25 (prefiltr 0,12, reszta poniżej 0,03), ekspozycja 0,002, tonemapping 0,06. Prepass kosztuje tyle co kolor, bo każda z 862 instancji to osobne rysowanie bez cullingu (M4-11); GPU jest tu mało obciążone, więc czas GPU prawie nie zależy od rozdzielczości, a ścianę wyznacza CPU. W oknie ta scena trzyma 75 fps (vsync).
 
 Dwa błędy `pathon-pbr` znalezione i naprawione przy tym pomiarze: (1) refleksja układu grupy 0 (parsowanie WGSL naga) działała co klatkę dla każdej permutacji, co dawało 14 ms CPU na klatkę zamiast 2 (cache w `PbrShaders`); (2) lista indeksów klastrów miała stałą pojemność 2²⁰ wpisów, a scena z 195 840 klastrami i światłami o zasięgu pokrywającym całą salę potrzebuje ponad 2 mln: przepełnienie skracało listy losowych klastrów i dawało poziome pasy bez światła (każdy kafel 16 px). Pojemność liczy się teraz jako `min(max_light_indices, klastry × światła)` (domyślny limit 2²⁴), więc przepełnienie nie jest możliwe bez jawnego, mniejszego limitu. Test klastrów kontra brute force tego nie łapał, bo sceny testowe mają mało klastrów; do M5 warto dodać `L0005` jako rzeczywistą diagnostykę (licznik przepełnienia jest liczony, ale nikt go nie czyta).
 ## Render referencyjny w Cyclesie

@@ -18,7 +18,7 @@ impl VoxelLayout {
     /// A grid with a cell of at least `size` metres that covers `bounds` plus one cell of margin on each side and has
     /// at most `max_cells` cells (the cell grows until it fits). `None` for a box that is not finite.
     pub fn fit(bounds: Aabb, size: f32, max_cells: u32) -> Option<Self> {
-        if !bounds.is_bounded() || !(size.is_finite() && size > 0.0) {
+        if !(bounds.is_bounded() && size.is_finite() && size > 0.0) {
             return None;
         }
         let mut size = size;

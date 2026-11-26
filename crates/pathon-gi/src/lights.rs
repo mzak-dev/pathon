@@ -75,6 +75,11 @@ const AREA_SAMPLE_SPACING: f32 = 0.7;
 const COSINE_EMITTER: f32 = 3.0;
 const TWO_SIDED_COSINE_EMITTER: f32 = 4.0;
 
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "a length in metres over the spacing, clamped to 1..=12 right after"
+)]
 fn samples_along(length: f32) -> u32 {
     ((length / AREA_SAMPLE_SPACING).ceil() as u32).clamp(1, MAX_AREA_SAMPLES_PER_SIDE)
 }
@@ -158,7 +163,11 @@ mod tests {
         // Each emitter shines with I(0) = L * dA; together they make L * A = P / pi on the axis.
         let on_axis: f32 = packed.iter().map(|sample| sample.color_intensity[0]).sum();
         assert!((on_axis - 1000.0 / std::f32::consts::PI).abs() < 0.1, "{on_axis}");
-        assert!(packed.iter().all(|sample| sample.direction_kind[3] == COSINE_EMITTER));
+        assert!(
+            packed
+                .iter()
+                .all(|sample| (sample.direction_kind[3] - COSINE_EMITTER).abs() < 1.0e-6)
+        );
     }
 
     #[test]

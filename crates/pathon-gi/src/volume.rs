@@ -24,7 +24,7 @@ impl ProbeLayout {
     /// A grid that covers `bounds`, with at most `max_probes` probes: the spacing grows until they fit. `None` for a
     /// box that is not finite or has no volume.
     pub fn fit(bounds: Aabb, spacing: f32, max_probes: u32) -> Option<Self> {
-        if !bounds.is_bounded() || !(spacing.is_finite() && spacing > 0.0) {
+        if !(bounds.is_bounded() && spacing.is_finite() && spacing > 0.0) {
             return None;
         }
         let extent = (bounds.max - bounds.min).max(Vec3::splat(1.0e-3));
@@ -143,10 +143,20 @@ impl GiVolumeUniforms {
     }
 
     /// Width and height of the irradiance atlas in texels.
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "the sizes were whole numbers of at most 4096 before they became floats"
+    )]
     pub fn irradiance_size(&self) -> (u32, u32) {
         (self.atlas[0] as u32, self.atlas[1] as u32)
     }
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "the sizes were whole numbers of at most 4096 before they became floats"
+    )]
     pub fn visibility_size(&self) -> (u32, u32) {
         (self.atlas[2] as u32, self.atlas[3] as u32)
     }

@@ -25,6 +25,10 @@ use pathon_mesh::{GeometryPool, IndexData, MeshData, MeshId, PoolDesc, VertexLay
 use pathon_rhi::{Backend, DeviceRequest, Format, PhysicalSize};
 use pathon_scene::{Aabb, InstanceDesc, Light, MaterialHandle, MeshHandle, Scene};
 
+pub mod sampler;
+
+use sampler::{Sampled, Sampler, SharedRequests};
+
 const ROW_ALIGNMENT: u32 = 256;
 
 pub fn backend_from_environment() -> Option<Backend> {
@@ -189,6 +193,7 @@ pub struct Rig {
     pub scene: Scene,
     pub target: TargetId,
     readback: SharedReadback,
+    requests: SharedRequests,
     quad: MeshId,
     frame: u64,
 }
@@ -216,7 +221,12 @@ fn quad(device: &dyn DeviceApi, pool: &mut GeometryPool) -> MeshId {
     .unwrap_or_else(|error| panic!("{}", error.to_diagnostic()))
 }
 
-fn builder(settings: GiSettings, backend: Option<Backend>, readback: &SharedReadback) -> pathon_core::RendererBuilder {
+fn builder(
+    settings: GiSettings,
+    backend: Option<Backend>,
+    readback: &SharedReadback,
+    requests: &SharedRequests,
+) -> pathon_core::RendererBuilder {
     Renderer::builder()
         .with_device_request(DeviceRequest {
             label: "gi test",
@@ -227,9 +237,10 @@ fn builder(settings: GiSettings, backend: Option<Backend>, readback: &SharedRead
         .with_feature(Readout {
             shared: Arc::clone(readback),
         })
+        .with_feature(Sampler::new(Arc::clone(requests)))
 }
 
-fn finish(renderer: Renderer, readback: SharedReadback, target: TargetId) -> Rig {
+fn finish(renderer: Renderer, readback: SharedReadback, requests: SharedRequests, target: TargetId) -> Rig {
     let mut renderer = renderer;
     let device = Arc::clone(renderer.device());
     let mut pool = GeometryPool::new(&*device, "gi test", VertexLayout::standard(), PoolDesc::default());
@@ -242,6 +253,7 @@ fn finish(renderer: Renderer, readback: SharedReadback, target: TargetId) -> Rig
         scene: Scene::new(),
         target,
         readback,
+        requests,
         quad,
         frame: 0,
     }
@@ -250,7 +262,8 @@ fn finish(renderer: Renderer, readback: SharedReadback, target: TargetId) -> Rig
 /// A rig on a real device, or `None` (the test is skipped) without an adapter.
 pub fn rig(test: &str, settings: GiSettings) -> Option<Rig> {
     let readback = SharedReadback::default();
-    let built = builder(settings, backend_from_environment(), &readback).build();
+    let requests = SharedRequests::default();
+    let built = builder(settings, backend_from_environment(), &readback, &requests).build();
     let mut renderer = gpu_or_skip(test, built, |error| {
         matches!(error, RenderError::Rhi(RhiError::NoAdapter(_)))
     })?;
@@ -258,19 +271,20 @@ pub fn rig(test: &str, settings: GiSettings) -> Option<Rig> {
     let target = renderer
         .add_offscreen_target(PhysicalSize::new(16, 16), Format::Rgba8Unorm)
         .expect("target");
-    Some(finish(renderer, readback, target))
+    Some(finish(renderer, readback, requests, target))
 }
 
 /// The same on the null device, which validates every barrier, binding and command.
 pub fn null_rig(settings: GiSettings) -> Rig {
     let readback = SharedReadback::default();
-    let mut renderer = builder(settings, Some(Backend::Null), &readback)
+    let requests = SharedRequests::default();
+    let mut renderer = builder(settings, Some(Backend::Null), &readback, &requests)
         .build()
         .unwrap_or_else(|error| panic!("{error}"));
     let target = renderer
         .add_offscreen_target(PhysicalSize::new(16, 16), Format::Rgba8Unorm)
         .expect("target");
-    finish(renderer, readback, target)
+    finish(renderer, readback, requests, target)
 }
 
 impl Rig {
@@ -367,6 +381,15 @@ impl Rig {
             all.extend(self.frame());
         }
         all
+    }
+
+    /// Runs one frame that evaluates the sampling function at `(position, normal)` pairs.
+    pub fn sample(&mut self, points: &[(Vec3, Vec3)]) -> Vec<Sampled> {
+        self.requests.lock().expect("mutex").points = points.to_vec();
+        let diagnostics = self.frame();
+        assert!(diagnostics.is_empty(), "{diagnostics:?}");
+        self.requests.lock().expect("mutex").points.clear();
+        sampler::decode(&**self.renderer.device(), &self.requests)
     }
 
     /// The atlases the last frame produced; panics when no frame published a volume.

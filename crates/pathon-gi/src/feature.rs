@@ -75,7 +75,10 @@ impl JobUniforms {
 }
 
 #[derive(Debug, Default)]
-#[expect(clippy::struct_excessive_bools, reason = "one flag per problem that is reported once")]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "one flag per problem that is reported once"
+)]
 struct Reported {
     settings: bool,
     inputs: bool,

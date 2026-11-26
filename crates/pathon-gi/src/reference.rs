@@ -23,7 +23,12 @@ pub fn oct_decode(encoded: [f32; 2]) -> Vec3 {
     let (x, y) = (encoded[0], encoded[1]);
     let z = 1.0 - x.abs() - y.abs();
     if z < 0.0 {
-        Vec3::new((1.0 - y.abs()) * sign_not_zero(x), (1.0 - x.abs()) * sign_not_zero(y), z).normalize()
+        Vec3::new(
+            (1.0 - y.abs()) * sign_not_zero(x),
+            (1.0 - x.abs()) * sign_not_zero(y),
+            z,
+        )
+        .normalize()
     } else {
         Vec3::new(x, y, z).normalize()
     }

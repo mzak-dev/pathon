@@ -2,14 +2,14 @@
 // atlases (one is read while the other is written, and they swap every frame).
 
 use pathon_api::rhi::{
-    BufferDesc, BufferId, BufferUsage, DeviceApi, Extent3d, Format, RhiError, SamplerDesc, TexelLayout, TextureCopy,
-    TextureDesc, TextureId, TextureUsage, TextureViewDesc,
+    Access, BufferDesc, BufferId, BufferUsage, CommandList, DeviceApi, Extent3d, Format, RhiError, SamplerDesc,
+    SubresourceRange, TexelLayout, TextureCopy, TextureDesc, TextureId, TextureUsage, TextureViewDesc,
 };
 use pathon_ibl::IblTexture;
 
 use crate::settings::GiSettings;
-use crate::voxel::{BYTES_PER_CELL, VoxelLayout};
 use crate::volume::ProbeLayout;
+use crate::voxel::{BYTES_PER_CELL, VoxelLayout};
 
 pub(crate) const ATLAS_FORMAT: Format = Format::Rgba16Float;
 /// Bytes of one ray in the ray buffer: two `vec4<f32>`.
@@ -36,7 +36,7 @@ fn atlas(
         width,
         height,
         ATLAS_FORMAT,
-        TextureUsage::SAMPLED | TextureUsage::STORAGE | TextureUsage::COPY_SRC,
+        TextureUsage::SAMPLED | TextureUsage::STORAGE | TextureUsage::COPY_SRC | TextureUsage::COPY_DST,
     );
     Ok((device.create_texture(&desc)?, desc))
 }
@@ -85,22 +85,50 @@ impl GiResources {
         let storage = BufferUsage::STORAGE | BufferUsage::COPY_DST;
         let buffer = |label, size: u64, usage| device.create_buffer(&BufferDesc { label, size, usage });
         let rays = u64::from(settings.probes_per_frame.min(volume.probe_count())) * u64::from(settings.rays_per_probe);
-        Ok(Self {
+        let resources = Self {
             volume,
             grid,
             settings,
             albedo: buffer("gi voxel albedo", cells * 4, storage | BufferUsage::COPY_SRC)?,
             emissive: buffer("gi voxel emission", cells * 4, storage)?,
-            radiance: buffer("gi voxel radiance", cells * (BYTES_PER_CELL - 8), storage | BufferUsage::COPY_SRC)?,
-            rays: buffer("gi rays", rays.max(1) * RAY_BYTES, storage | BufferUsage::COPY_SRC)?,
-            lights: buffer(
-                "gi lights",
-                u64::from(MIN_LIGHT_CAPACITY) * LIGHT_BYTES,
-                storage,
+            radiance: buffer(
+                "gi voxel radiance",
+                cells * (BYTES_PER_CELL - 8),
+                storage | BufferUsage::COPY_SRC,
             )?,
+            rays: buffer("gi rays", rays.max(1) * RAY_BYTES, storage | BufferUsage::COPY_SRC)?,
+            lights: buffer("gi lights", u64::from(MIN_LIGHT_CAPACITY) * LIGHT_BYTES, storage)?,
             light_capacity: MIN_LIGHT_CAPACITY,
             atlases: [AtlasPair::new(device, &volume, 0)?, AtlasPair::new(device, &volume, 1)?],
-        })
+        };
+        resources.rest(device)?;
+        Ok(resources)
+    }
+
+    // The graph imports the atlases as already written and sampleable: an upload of zeros brings them to that state.
+    fn rest(&self, device: &dyn DeviceApi) -> Result<(), RhiError> {
+        let mut list = CommandList::new();
+        for pair in &self.atlases {
+            for (texture, desc) in [
+                (pair.irradiance, &pair.irradiance_desc),
+                (pair.visibility, &pair.visibility_desc),
+            ] {
+                let (width, height) = (desc.size.width, desc.size.height);
+                let zeros = vec![0_u8; width as usize * height as usize * 8];
+                device.write_texture(
+                    &TextureCopy::whole(texture),
+                    &zeros,
+                    TexelLayout {
+                        offset: 0,
+                        bytes_per_row: width * 8,
+                        rows_per_image: height,
+                    },
+                    Extent3d::new_2d(width, height),
+                )?;
+                list.texture_access(texture, SubresourceRange::ALL, Access::COPY_DST, Access::SAMPLED);
+            }
+        }
+        device.submit(list)
     }
 
     /// A light buffer for at least `count` lights; the old one goes to the caller to be released.
@@ -173,6 +201,9 @@ pub(crate) fn black_cube(device: &dyn DeviceApi) -> Result<IblTexture, RhiError>
             depth_or_layers: 6,
         },
     )?;
+    let mut list = CommandList::new();
+    list.texture_access(texture, SubresourceRange::ALL, Access::COPY_DST, Access::SAMPLED);
+    device.submit(list)?;
     Ok(IblTexture {
         texture,
         view: device.create_texture_view(texture, &TextureViewDesc::cube())?,

@@ -81,9 +81,11 @@ pub(crate) fn gather(world: &RenderWorld, pool: &GeometryPool, materials: &Mater
         let mesh = instances.meshes()[slot].to_id::<MeshId>();
         let material_raw = instances.materials()[slot].raw().index();
         let material = if material_raw == u32::MAX { 0 } else { material_raw };
-        let (Some(info), Some(variant), Some(data)) =
-            (pool.mesh(mesh), materials.variant_at(material), materials.data_at(material))
-        else {
+        let (Some(info), Some(variant), Some(data)) = (
+            pool.mesh(mesh),
+            materials.variant_at(material),
+            materials.data_at(material),
+        ) else {
             input.skipped += 1;
             continue;
         };

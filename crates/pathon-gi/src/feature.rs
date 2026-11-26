@@ -21,8 +21,8 @@ use crate::lights::{GiLight, pack_lights};
 use crate::settings::{GiSettings, MAX_RAYS_PER_FRAME};
 use crate::shaders::{GiShaders, Pass};
 use crate::status::GiStatus;
-use crate::voxel::{VoxelGridUniforms, VoxelLayout};
 use crate::volume::{GiVolumeUniforms, ProbeLayout};
+use crate::voxel::{VoxelGridUniforms, VoxelLayout};
 
 /// Frames over which the hysteresis of a new volume ramps from none to the setting: the first frames take the new rays
 /// as they are, so the volume does not start dark.
@@ -30,6 +30,8 @@ const WARMUP_FRAMES: u32 = 8;
 const JOB_STRIDE: u64 = 256;
 const RESTING: Access = Access::STORAGE_READ;
 const READ_WRITE: Access = Access::STORAGE_READ.union(Access::STORAGE_WRITE);
+// Ahead of the core's "clear output" (priority 0) in the same stage, so their order is not left to registration.
+const PASS_PRIORITY: i32 = -10;
 const WORKGROUP: u32 = 64;
 const ATLAS_WORKGROUP: u32 = 8;
 
@@ -201,9 +203,7 @@ impl GiFeature {
             return Ok(false);
         };
         let unchanged = self.resources.as_ref().is_some_and(|resources| {
-            resources.settings.same_volume(&settings)
-                && resources.volume == volume
-                && resources.grid == grid
+            resources.settings.same_volume(&settings) && resources.volume == volume && resources.grid == grid
         });
         if unchanged {
             if let Some(resources) = &mut self.resources {
@@ -285,7 +285,10 @@ impl GiFeature {
             return None;
         }
         self.reported.pool = false;
-        let (pool, materials) = (ctx.shared().get::<GeometryPool>()?, ctx.shared().get::<MaterialTable>()?);
+        let (pool, materials) = (
+            ctx.shared().get::<GeometryPool>()?,
+            ctx.shared().get::<MaterialTable>()?,
+        );
         Some((gather(&world, pool, materials), pack_lights(&world)))
     }
 
@@ -303,8 +306,11 @@ impl GiFeature {
             Self::report_once(
                 ctx,
                 &mut self.reported.empty,
-                Diagnostic::warning("J0004", "GI found nothing to voxelize: no visible opaque instance has a mesh")
-                    .with_hint("give GiSettings::bounds to light a scene that is filled later"),
+                Diagnostic::warning(
+                    "J0004",
+                    "GI found nothing to voxelize: no visible opaque instance has a mesh",
+                )
+                .with_hint("give GiSettings::bounds to light a scene that is filled later"),
             );
             return Ok(None);
         };
@@ -393,7 +399,12 @@ impl GiFeature {
                 resources.settings.bounce_intensity,
                 resources.settings.depth_sharpness,
             ],
-            reach: [resources.grid.bounds().max.distance(resources.grid.bounds().min), 0.0, 0.0, 0.0],
+            reach: [
+                resources.grid.bounds().max.distance(resources.grid.bounds().min),
+                0.0,
+                0.0,
+                0.0,
+            ],
         };
         let Some(gpu) = self.gpu.as_mut() else {
             return Err(RhiError::Unsupported("GI used before setup"));
@@ -406,7 +417,7 @@ impl GiFeature {
         let pass_uniform = gpu.write_uniform(ctx, bytemuck::bytes_of(&pass))?;
 
         let status = GiStatus {
-            probes: probes,
+            probes,
             probe_spacing: resources.volume.spacing,
             voxel_cells: resources.grid.cell_count(),
             voxel_size: resources.grid.size,
@@ -440,17 +451,23 @@ impl GiFeature {
 /// A rotation that changes every frame: the rays of consecutive frames fall between each other, so the probes see more
 /// directions over time (Majercik et al. 2019).
 fn frame_rotation(frame: u32) -> Mat3 {
-    let mut state = u64::from(frame).wrapping_mul(0x9E37_79B9_7F4A_7C15).wrapping_add(0x1234_5678);
+    let mut state = u64::from(frame)
+        .wrapping_mul(0x9e37_79b9_7f4a_7c15)
+        .wrapping_add(0x1234_5678);
     let mut next = || {
         state ^= state >> 30;
-        state = state.wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        state = state.wrapping_mul(0xbf58_476d_1ce4_e5b9);
         state ^= state >> 27;
-        state = state.wrapping_mul(0x94D0_49BB_1331_11EB);
+        state = state.wrapping_mul(0x94d0_49bb_1331_11eb);
         state ^= state >> 31;
         (state >> 40) as f32 / (1u64 << 24) as f32
     };
     let axis = Vec3::new(next() - 0.5, next() - 0.5, next() - 0.5);
-    let axis = if axis.length_squared() > 1.0e-6 { axis.normalize() } else { Vec3::Y };
+    let axis = if axis.length_squared() > 1.0e-6 {
+        axis.normalize()
+    } else {
+        Vec3::Y
+    };
     Mat3::from_quat(Quat::from_axis_angle(axis, next() * std::f32::consts::TAU))
 }
 
@@ -573,7 +590,10 @@ impl RenderFeature for GiFeature {
             }
         }
         let first_view = self.plan.is_some();
-        let Some(resources) = self.resources.filter(|_| self.recorded.is_some_and(|(_, active)| active)) else {
+        let Some(resources) = self
+            .resources
+            .filter(|_| self.recorded.is_some_and(|(_, active)| active))
+        else {
             ctx.shared_mut().remove::<GiFrame>();
             return Ok(());
         };
@@ -602,7 +622,11 @@ impl RenderFeature for GiFeature {
             GiFrame {
                 uniforms: GiVolumeUniforms::new(&resources.volume, &resources.settings),
                 uniform_buffer: uniform,
-                sampler: self.gpu.as_ref().map(|gpu| gpu.sampler).ok_or(RhiError::Unsupported("GI used before setup"))?,
+                sampler: self
+                    .gpu
+                    .as_ref()
+                    .map(|gpu| gpu.sampler)
+                    .ok_or(RhiError::Unsupported("GI used before setup"))?,
                 irradiance,
                 visibility,
                 probe_count: resources.volume.probe_count(),
@@ -637,7 +661,11 @@ impl GiFeature {
         plan: Plan,
     ) -> Result<GiFrame, RhiError> {
         let (shaders_ptr, sampler) = {
-            let shaders = &mut self.shaders.as_mut().ok_or(RhiError::Unsupported("GI used before setup"))?.1;
+            let shaders = &mut self
+                .shaders
+                .as_mut()
+                .ok_or(RhiError::Unsupported("GI used before setup"))?
+                .1;
             let device = ctx.device();
             let mut pipelines = HashMap::new();
             for pass in [
@@ -650,7 +678,10 @@ impl GiFeature {
             ] {
                 pipelines.insert(pass, (shaders.pipeline(device, pass)?, shaders.group_zero_layout(pass)));
             }
-            ((pipelines, shaders.job_layout()), self.gpu.as_ref().map(|gpu| gpu.sampler))
+            (
+                (pipelines, shaders.job_layout()),
+                self.gpu.as_ref().map(|gpu| gpu.sampler),
+            )
         };
         let (pipelines, job_layout) = shaders_ptr;
         let sampler = sampler.ok_or(RhiError::Unsupported("GI used before setup"))?;
@@ -679,8 +710,18 @@ impl GiFeature {
         let import = |graph: &mut pathon_api::graph::GraphBuilder<'_>, name, texture, desc| {
             graph.import_texture(name, texture, desc, Access::SAMPLED, Access::SAMPLED)
         };
-        let previous_irradiance = import(graph, "gi irradiance previous", previous_pair.irradiance, previous_pair.irradiance_desc);
-        let previous_visibility = import(graph, "gi visibility previous", previous_pair.visibility, previous_pair.visibility_desc);
+        let previous_irradiance = import(
+            graph,
+            "gi irradiance previous",
+            previous_pair.irradiance,
+            previous_pair.irradiance_desc,
+        );
+        let previous_visibility = import(
+            graph,
+            "gi visibility previous",
+            previous_pair.visibility,
+            previous_pair.visibility_desc,
+        );
         let next_irradiance = import(graph, "gi irradiance", next_pair.irradiance, next_pair.irradiance_desc);
         let next_visibility = import(graph, "gi visibility", next_pair.visibility, next_pair.visibility_desc);
 
@@ -689,7 +730,11 @@ impl GiFeature {
             let (clear, clear_layout) = pipelines[&Pass::Clear];
             let (voxelize_pipeline, voxelize_layout) = pipelines[&Pass::Voxelize];
             let cells = plan.cells;
-            let mut pass = graph.add_pass(PassDesc::new("gi voxelize", Stage::Setup).side_effect());
+            let mut pass = graph.add_pass(
+                PassDesc::new("gi voxelize", Stage::Setup)
+                    .priority(PASS_PRIORITY)
+                    .side_effect(),
+            );
             let albedo = pass.modify_buffer(albedo, READ_WRITE);
             let emissive = pass.modify_buffer(emissive, READ_WRITE);
             let radiance = pass.modify_buffer(radiance, READ_WRITE);
@@ -761,7 +806,11 @@ impl GiFeature {
         // Light the voxels (direct light, the previous frame's probes as the later bounces).
         let (light, light_layout) = pipelines[&Pass::Light];
         let cells = plan.cells;
-        let mut pass = graph.add_pass(PassDesc::new("gi light voxels", Stage::Setup).side_effect());
+        let mut pass = graph.add_pass(
+            PassDesc::new("gi light voxels", Stage::Setup)
+                .priority(PASS_PRIORITY)
+                .side_effect(),
+        );
         let albedo = pass.modify_buffer(albedo, READ_WRITE);
         let emissive = pass.modify_buffer(emissive, READ_WRITE);
         let radiance = pass.modify_buffer(radiance, READ_WRITE);
@@ -769,8 +818,10 @@ impl GiFeature {
         let light_previous_irradiance = pass.read(previous_irradiance, Access::SAMPLED);
         let light_previous_visibility = pass.read(previous_visibility, Access::SAMPLED);
         pass.record(move |pass| {
-            let (previous_irradiance_view, previous_visibility_view) =
-                (pass.view(light_previous_irradiance)?, pass.view(light_previous_visibility)?);
+            let (previous_irradiance_view, previous_visibility_view) = (
+                pass.view(light_previous_irradiance)?,
+                pass.view(light_previous_visibility)?,
+            );
             let group = pass.create_bind_group(&BindGroupDesc {
                 label: "gi light voxels",
                 layout: light_layout,
@@ -804,7 +855,11 @@ impl GiFeature {
         let (trace, trace_layout) = pipelines[&Pass::Trace];
         let (environment, environment_sampler) = plan.environment;
         let batch_rays = plan.batch_rays;
-        let mut pass = graph.add_pass(PassDesc::new("gi trace probes", Stage::Setup).side_effect());
+        let mut pass = graph.add_pass(
+            PassDesc::new("gi trace probes", Stage::Setup)
+                .priority(PASS_PRIORITY)
+                .side_effect(),
+        );
         let albedo = pass.modify_buffer(albedo, READ_WRITE);
         let radiance = pass.modify_buffer(radiance, READ_WRITE);
         let rays = pass.modify_buffer(rays, READ_WRITE);
@@ -840,7 +895,11 @@ impl GiFeature {
         let (update_irradiance, irradiance_layout) = pipelines[&Pass::UpdateIrradiance];
         let (update_visibility, visibility_layout) = pipelines[&Pass::UpdateVisibility];
         let (irradiance_size, visibility_size) = (plan.atlas[0], plan.atlas[1]);
-        let mut pass = graph.add_pass(PassDesc::new("gi update probes", Stage::Setup).side_effect());
+        let mut pass = graph.add_pass(
+            PassDesc::new("gi update probes", Stage::Setup)
+                .priority(PASS_PRIORITY)
+                .side_effect(),
+        );
         let rays = pass.modify_buffer(rays, READ_WRITE);
         let read_irradiance = pass.read(previous_irradiance, Access::SAMPLED);
         let read_visibility = pass.read(previous_visibility, Access::SAMPLED);

@@ -100,7 +100,8 @@ impl GiSettings {
             (!(value.is_finite() && value > 0.0)).then(|| format!("{name} must be finite and positive, got {value}"))
         };
         let not_negative = |name: &str, value: f32| {
-            (!(value.is_finite() && value >= 0.0)).then(|| format!("{name} must be finite and not negative, got {value}"))
+            (!(value.is_finite() && value >= 0.0))
+                .then(|| format!("{name} must be finite and not negative, got {value}"))
         };
         if let Some(bounds) = self.bounds
             && !(bounds.is_bounded() && bounds.min.cmplt(bounds.max).all())

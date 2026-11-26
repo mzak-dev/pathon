@@ -150,7 +150,10 @@ fn decode(device: &dyn DeviceApi, buffer: BufferId, width: u32, height: u32) -> 
         for x in 0..width as usize {
             let start = y * row + x * 8;
             let channel = |index: usize| {
-                half_to_f32(u16::from_le_bytes([bytes[start + 2 * index], bytes[start + 2 * index + 1]]))
+                half_to_f32(u16::from_le_bytes([
+                    bytes[start + 2 * index],
+                    bytes[start + 2 * index + 1],
+                ]))
             };
             texels.push([channel(0), channel(1), channel(2), channel(3)]);
         }
@@ -191,7 +194,12 @@ pub struct Rig {
 }
 
 fn quad(device: &dyn DeviceApi, pool: &mut GeometryPool) -> MeshId {
-    let positions = [[-1.0_f32, -1.0, 0.0], [1.0, -1.0, 0.0], [1.0, 1.0, 0.0], [-1.0, 1.0, 0.0]];
+    let positions = [
+        [-1.0_f32, -1.0, 0.0],
+        [1.0, -1.0, 0.0],
+        [1.0, 1.0, 0.0],
+        [-1.0, 1.0, 0.0],
+    ];
     let surface: Vec<[f32; 9]> = positions
         .iter()
         .map(|p| [0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, p[0] * 0.5 + 0.5, p[1] * 0.5 + 0.5])
@@ -208,11 +216,7 @@ fn quad(device: &dyn DeviceApi, pool: &mut GeometryPool) -> MeshId {
     .unwrap_or_else(|error| panic!("{}", error.to_diagnostic()))
 }
 
-fn builder(
-    settings: GiSettings,
-    backend: Option<Backend>,
-    readback: &SharedReadback,
-) -> pathon_core::RendererBuilder {
+fn builder(settings: GiSettings, backend: Option<Backend>, readback: &SharedReadback) -> pathon_core::RendererBuilder {
     Renderer::builder()
         .with_device_request(DeviceRequest {
             label: "gi test",
@@ -302,11 +306,31 @@ impl Rig {
         let center = (min + max) * 0.5;
         let half = (max - min) * 0.5;
         let placements = [
-            (Vec3::new(max.x, center.y, center.z), Quat::from_rotation_y(-FRAC_PI_2), (half.z, half.y)),
-            (Vec3::new(min.x, center.y, center.z), Quat::from_rotation_y(FRAC_PI_2), (half.z, half.y)),
-            (Vec3::new(center.x, max.y, center.z), Quat::from_rotation_x(FRAC_PI_2), (half.x, half.z)),
-            (Vec3::new(center.x, min.y, center.z), Quat::from_rotation_x(-FRAC_PI_2), (half.x, half.z)),
-            (Vec3::new(center.x, center.y, max.z), Quat::from_rotation_y(std::f32::consts::PI), (half.x, half.y)),
+            (
+                Vec3::new(max.x, center.y, center.z),
+                Quat::from_rotation_y(-FRAC_PI_2),
+                (half.z, half.y),
+            ),
+            (
+                Vec3::new(min.x, center.y, center.z),
+                Quat::from_rotation_y(FRAC_PI_2),
+                (half.z, half.y),
+            ),
+            (
+                Vec3::new(center.x, max.y, center.z),
+                Quat::from_rotation_x(FRAC_PI_2),
+                (half.x, half.z),
+            ),
+            (
+                Vec3::new(center.x, min.y, center.z),
+                Quat::from_rotation_x(-FRAC_PI_2),
+                (half.x, half.z),
+            ),
+            (
+                Vec3::new(center.x, center.y, max.z),
+                Quat::from_rotation_y(std::f32::consts::PI),
+                (half.x, half.y),
+            ),
             (Vec3::new(center.x, center.y, min.z), Quat::IDENTITY, (half.x, half.y)),
         ];
         for ((position, rotation, size), wall) in placements.into_iter().zip(walls) {
@@ -367,7 +391,11 @@ impl Atlases {
 
     pub fn probe_cell(&self, index: u32) -> UVec3 {
         let counts = self.uniforms.counts();
-        UVec3::new(index % counts.x, (index / counts.x) % counts.y, index / (counts.x * counts.y))
+        UVec3::new(
+            index % counts.x,
+            (index / counts.x) % counts.y,
+            index / (counts.x * counts.y),
+        )
     }
 
     pub fn probe_position(&self, index: u32) -> Vec3 {
@@ -401,7 +429,9 @@ impl Atlases {
 
     /// Whether the probe holds nothing (it sits inside a solid cell).
     pub fn is_blank(&self, index: u32) -> bool {
-        self.irradiance_texels(index).iter().all(|t| t[0] == 0.0 && t[1] == 0.0 && t[2] == 0.0)
+        self.irradiance_texels(index)
+            .iter()
+            .all(|t| t[0] == 0.0 && t[1] == 0.0 && t[2] == 0.0)
     }
 
     /// The interior texels of the irradiance tile in the direction `direction` (nearest texel).
@@ -431,6 +461,9 @@ impl Atlases {
     pub fn bounds(&self) -> Aabb {
         let counts = self.uniforms.counts();
         let origin = self.uniforms.origin();
-        Aabb::new(origin, origin + (counts - UVec3::ONE).as_vec3() * self.uniforms.spacing())
+        Aabb::new(
+            origin,
+            origin + (counts - UVec3::ONE).as_vec3() * self.uniforms.spacing(),
+        )
     }
 }

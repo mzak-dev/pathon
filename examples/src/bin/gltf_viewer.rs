@@ -8,6 +8,7 @@
 // Options: --screenshot out.png [--camera N | --camera-name NAME | --eye x,y,z --target x,y,z [--fov DEG]] [--size WxH]
 //          [--supersample N] [--ev STOPS] [--no-shadows] [--auto-exposure] [--no-bloom] [--neutral]
 //          [--area-as-spot]  (area lights as the hemisphere spots of the file, as before K05)
+//          [--gi [--gi-spacing M] [--gi-voxel M] [--gi-rays N] [--gi-hysteresis H] [--gi-period FRAMES] [--gi-warmup FRAMES]]  (pathon-gi probes)
 //          [--dump-hdr out.npy] [--reference-like lights-only|ibl]  (the measuring mode, docs/porownanie-obrazu.md)
 // [--brute-force-lights]          [--env file.hdr | --env none] [--environment-intensity X] [--sky-intensity X]
 //          [--simple] [--per-material] [--bench FRAMES] [--backend vulkan|dx12|metal]
@@ -28,8 +29,9 @@ use pathon_examples::viewer::environment::{default_environment_path, load_enviro
 use pathon_examples::viewer::linear_dump::{render_linear, write_npy};
 use pathon_examples::viewer::screenshot::{ScreenshotRequest, render_screenshot, write_png};
 use pathon_examples::viewer::settings::{LightingMode, ReferenceLighting};
-use pathon_examples::viewer::stack::ViewerConfig;
+use pathon_examples::viewer::stack::{DEFAULT_GI_WARMUP, ViewerConfig};
 use pathon_examples::viewer::window::ViewerWindow;
+use pathon_gi::GiSettings;
 use pathon_post::Tonemapper;
 
 const SCENE_VARIABLE: &str = "PATHON_TEST_SCENE";
@@ -53,6 +55,8 @@ struct Options {
     tonemapper: Tonemapper,
     backend: Option<Backend>,
     load: LoadOptions,
+    gi: Option<GiSettings>,
+    gi_warmup: u32,
 }
 
 fn parse_size(text: &str) -> Result<(u32, u32), String> {
@@ -96,6 +100,8 @@ fn parse_options(args: impl Iterator<Item = String>) -> Result<Options, String> 
         tonemapper: Tonemapper::AcesFitted,
         backend: None,
         load: LoadOptions::default(),
+        gi: None,
+        gi_warmup: DEFAULT_GI_WARMUP,
     };
     let (mut eye, mut target, mut fov_degrees) = (None, None, None);
     while let Some(arg) = args.next() {
@@ -139,6 +145,30 @@ fn parse_options(args: impl Iterator<Item = String>) -> Result<Options, String> 
                 });
             }
             "--simple" => options.lighting = LightingMode::Simple,
+            "--gi" => {
+                options.gi.get_or_insert_with(GiSettings::default);
+            }
+            "--gi-warmup" => options.gi_warmup = parse_number("--gi-warmup", &value("--gi-warmup")?)?,
+            "--gi-spacing" => {
+                options.gi.get_or_insert_with(GiSettings::default).probe_spacing =
+                    parse_number("--gi-spacing", &value("--gi-spacing")?)?;
+            }
+            "--gi-voxel" => {
+                options.gi.get_or_insert_with(GiSettings::default).voxel_size =
+                    parse_number("--gi-voxel", &value("--gi-voxel")?)?;
+            }
+            "--gi-rays" => {
+                options.gi.get_or_insert_with(GiSettings::default).rays_per_probe =
+                    parse_number("--gi-rays", &value("--gi-rays")?)?;
+            }
+            "--gi-period" => {
+                options.gi.get_or_insert_with(GiSettings::default).voxel_relight_period =
+                    parse_number("--gi-period", &value("--gi-period")?)?;
+            }
+            "--gi-hysteresis" => {
+                options.gi.get_or_insert_with(GiSettings::default).hysteresis =
+                    parse_number("--gi-hysteresis", &value("--gi-hysteresis")?)?;
+            }
             "--per-material" => options.texture_path = PathPreference::PerMaterial,
             "--env" => {
                 let path = value("--env")?;
@@ -193,6 +223,8 @@ fn viewer_config(options: &Options) -> Result<ViewerConfig, String> {
         tonemapper: options.tonemapper,
         gpu_timestamps: false,
         backend: options.backend,
+        gi: options.gi.filter(|_| options.lighting == LightingMode::Pbr),
+        gi_warmup: options.gi_warmup,
     })
 }
 

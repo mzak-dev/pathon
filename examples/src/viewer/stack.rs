@@ -11,6 +11,7 @@ use pathon::api::glam::Vec3;
 use pathon::rhi::{DeviceRequest, Features};
 use pathon::{Renderer, RendererBuilder};
 use pathon_bindless::{BINDLESS_FEATURES, PathPreference};
+use pathon_gi::{GiPack, GiSettings};
 use pathon_ibl::{EquirectImage, IblPack, IblSettings, IblSource, SyntheticSky};
 use pathon_pbr::{LightAssignment, PbrPack, PbrSettings};
 use pathon_post::{ExposureMode, PostPack, PostSettings, Tonemapper};
@@ -28,6 +29,8 @@ const SUN_LIGHT_INDEX: u32 = 0;
 /// Shadows beyond this distance from the camera are not drawn: the classroom is 10 m across.
 const SHADOW_DISTANCE: f32 = 40.0;
 const SHADOW_RESOLUTION: u32 = 2048;
+/// Probes settle with the hysteresis of `GiSettings` (0.95): about 100 frames reach 99% of a static scene.
+pub const DEFAULT_GI_WARMUP: u32 = 120;
 
 #[derive(Clone, Debug)]
 pub struct ViewerConfig {
@@ -40,6 +43,10 @@ pub struct ViewerConfig {
     pub gpu_timestamps: bool,
     /// Forces a backend (the tests use the null device); `None` picks the best adapter.
     pub backend: Option<pathon::rhi::Backend>,
+    /// Global illumination from a probe volume (`--gi`); `None` lights the environment as before.
+    pub gi: Option<GiSettings>,
+    /// Frames rendered before the one that is kept, so the probes have converged (screenshots and `--dump-hdr`).
+    pub gi_warmup: u32,
 }
 
 impl Default for ViewerConfig {
@@ -51,6 +58,8 @@ impl Default for ViewerConfig {
             tonemapper: Tonemapper::AcesFitted,
             gpu_timestamps: false,
             backend: None,
+            gi: None,
+            gi_warmup: DEFAULT_GI_WARMUP,
         }
     }
 }
@@ -91,6 +100,10 @@ impl ViewerConfig {
             },
             ..PostSettings::default()
         };
+        let builder = match self.gi {
+            Some(gi) => builder.with_pack(GiPack::with_settings(gi)),
+            None => builder,
+        };
         builder
             .with_pack(IblPack::new())
             .with_shared(IblSource::new(environment, IblSettings::DESKTOP))
@@ -127,6 +140,9 @@ pub fn apply_settings(renderer: &mut Renderer, settings: &ViewerSettings, sun_di
         } else {
             LightAssignment::Clustered
         };
+    }
+    if let Some(gi) = shared.get_mut::<GiSettings>() {
+        gi.environment_intensity = settings.environment_intensity;
     }
     if let Some(scene) = shared.get_mut::<ShadowScene>() {
         scene.light = sun_direction

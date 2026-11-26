@@ -201,7 +201,7 @@ pub fn render_screenshot(
         .add_offscreen_target(request.render_size(), SCREENSHOT_FORMAT)
         .map_err(|error| error.to_string())?;
     let report = session
-        .render(target, request.aspect_ratio())
+        .render_settled(target, request.aspect_ratio())
         .map_err(|error| error.to_string())?;
     for diagnostic in &report.diagnostics {
         log::warn!("{diagnostic}");

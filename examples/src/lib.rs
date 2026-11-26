@@ -1,5 +1,6 @@
 // Shared helpers for the examples; see docs/examples.md.
 
+pub mod cornell;
 pub mod gltf_loader;
 pub mod hot_quad;
 pub mod viewer;

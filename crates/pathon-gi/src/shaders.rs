@@ -20,6 +20,7 @@ const BINDINGS_WGSL: &str = include_str!("../wgsl/bindings.wgsl");
 const VOXELS_WGSL: &str = include_str!("../wgsl/voxels.wgsl");
 const CLEAR_WESL: &str = include_str!("../wgsl/clear.wesl");
 const VOXELIZE_WESL: &str = include_str!("../wgsl/voxelize.wesl");
+const COMPACT_WESL: &str = include_str!("../wgsl/compact.wesl");
 const LIGHT_WESL: &str = include_str!("../wgsl/light.wesl");
 const TRACE_WESL: &str = include_str!("../wgsl/trace.wesl");
 const UPDATE_WESL: &str = include_str!("../wgsl/update.wesl");
@@ -38,6 +39,7 @@ pub fn modules() -> [(&'static str, &'static str); 2] {
 pub(crate) enum Pass {
     Clear,
     Voxelize,
+    Compact,
     Light,
     Trace,
     UpdateIrradiance,
@@ -49,6 +51,7 @@ impl Pass {
         match self {
             Self::Clear => "clear",
             Self::Voxelize => "voxelize",
+            Self::Compact => "compact",
             Self::Light => "light",
             Self::Trace => "trace",
             Self::UpdateIrradiance | Self::UpdateVisibility => "update",
@@ -59,6 +62,7 @@ impl Pass {
         match self {
             Self::Clear => "clear_voxels",
             Self::Voxelize => "voxelize",
+            Self::Compact => "compact_solid",
             Self::Light => "light_voxels",
             Self::Trace => "trace_probes",
             Self::UpdateIrradiance => "update_irradiance",
@@ -70,6 +74,7 @@ impl Pass {
         match self {
             Self::Clear => "gi clear voxels",
             Self::Voxelize => "gi voxelize",
+            Self::Compact => "gi compact solid cells",
             Self::Light => "gi light voxels",
             Self::Trace => "gi trace probes",
             Self::UpdateIrradiance => "gi update irradiance",
@@ -114,7 +119,8 @@ const STORAGE_TEXTURE: BindingType = BindingType::StorageTexture {
 /// Group 0 of a pass: the subset of the bindings of `bindings.wgsl` the pass reads or writes.
 pub(crate) fn group_zero_bindings(pass: Pass) -> Vec<BindGroupLayoutEntry> {
     let bindings: &[(u32, BindingType)] = match pass {
-        Pass::Clear => &[(1, UNIFORM), (3, STORAGE), (4, STORAGE), (5, STORAGE)],
+        Pass::Clear => &[(1, UNIFORM), (3, STORAGE), (4, STORAGE), (5, STORAGE), (15, STORAGE)],
+        Pass::Compact => &[(1, UNIFORM), (3, STORAGE), (15, STORAGE)],
         Pass::Voxelize => &[(1, UNIFORM), (3, STORAGE), (4, STORAGE)],
         Pass::Light => &[
             (0, UNIFORM),
@@ -124,6 +130,7 @@ pub(crate) fn group_zero_bindings(pass: Pass) -> Vec<BindGroupLayoutEntry> {
             (4, STORAGE),
             (5, STORAGE),
             (6, STORAGE_READ),
+            (15, STORAGE),
             (8, SAMPLED_2D),
             (9, SAMPLED_2D),
             (10, SAMPLER),
@@ -195,6 +202,7 @@ impl GiShaders {
         for (name, source) in [
             ("clear", CLEAR_WESL),
             ("voxelize", VOXELIZE_WESL),
+            ("compact", COMPACT_WESL),
             ("light", LIGHT_WESL),
             ("trace", TRACE_WESL),
             ("update", UPDATE_WESL),
@@ -208,6 +216,7 @@ impl GiShaders {
         for pass in [
             Pass::Clear,
             Pass::Voxelize,
+            Pass::Compact,
             Pass::Light,
             Pass::Trace,
             Pass::UpdateIrradiance,

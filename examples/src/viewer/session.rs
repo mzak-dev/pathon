@@ -24,6 +24,7 @@ pub struct Session {
     pub camera: FlyCamera,
     pub settings: ViewerSettings,
     pub lighting: LightingMode,
+    gi_warmup: u32,
     started: Instant,
     last_frame: Instant,
 }
@@ -68,6 +69,7 @@ impl Session {
             camera,
             settings: ViewerSettings::default(),
             lighting: config.lighting,
+            gi_warmup: if config.gi.is_some() { config.gi_warmup } else { 0 },
             started: Instant::now(),
             last_frame: Instant::now(),
         };
@@ -114,6 +116,15 @@ impl Session {
         };
         self.last_frame = now;
         self.render_input(&input)
+    }
+
+    /// Renders the free camera `gi_warmup` times and then once more, and returns the last frame's report: a picture
+    /// of a scene with a probe volume is the settled one only after the probes have converged.
+    pub fn render_settled(&mut self, target: TargetId, aspect_ratio: f32) -> Result<FrameReport, RenderError> {
+        for _ in 0..self.gi_warmup {
+            self.render(target, aspect_ratio)?;
+        }
+        self.render(target, aspect_ratio)
     }
 
     /// Renders `input` with the current settings; `delta_seconds` is up to the caller (the benchmark fixes it).

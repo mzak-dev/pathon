@@ -2104,6 +2104,7 @@ dependencies = [
  "pathon-bindless",
  "pathon-debug",
  "pathon-devtools",
+ "pathon-gi",
  "pathon-golden",
  "pathon-hot",
  "pathon-ibl",

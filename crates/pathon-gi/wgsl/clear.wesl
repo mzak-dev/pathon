@@ -6,6 +6,9 @@ import package::gi::common::GiVolume;
 @compute @workgroup_size(64)
 fn clear_voxels(@builtin(global_invocation_id) id: vec3<u32>) {
     let cell = id.x;
+    if (cell == 0u) {
+        atomicStore(&solid_cells[0], 0u);
+    }
     if (cell >= gi_grid.dims.w) {
         return;
     }

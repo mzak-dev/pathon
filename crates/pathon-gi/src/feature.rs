@@ -33,6 +33,7 @@ const READ_WRITE: Access = Access::STORAGE_READ.union(Access::STORAGE_WRITE);
 // Ahead of the core's "clear output" (priority 0) in the same stage, so their order is not left to registration.
 const PASS_PRIORITY: i32 = -10;
 const WORKGROUP: u32 = 64;
+const MAX_GROUPS: u32 = 65_535;
 const ATLAS_WORKGROUP: u32 = 8;
 
 /// The bytes of WGSL `GiPass`, 112 bytes in a uniform buffer.
@@ -104,6 +105,7 @@ impl Gpu {
 struct Plan {
     voxelize: Option<VoxelizePlan>,
     cells: u32,
+    slices: u32,
     batch_rays: u32,
     atlas: [(u32, u32); 2],
     grid_uniform: UniformSlice,
@@ -436,6 +438,7 @@ impl GiFeature {
         Ok(Some(Plan {
             voxelize,
             cells: resources.grid.cell_count(),
+            slices,
             batch_rays: batch * resources.settings.rays_per_probe,
             atlas: [resources.volume.irradiance_size(), resources.volume.visibility_size()],
             grid_uniform,
@@ -541,6 +544,11 @@ impl RenderFeature for GiFeature {
     // Before the passes that read the atlases.
     fn stage(&self) -> Stage {
         Stage::Setup
+    }
+
+    // The environment the rays see when they leave the scene is the one `IblPack` built this frame.
+    fn after(&self) -> &[&'static str] {
+        &["ibl"]
     }
 
     fn negotiate(&mut self, caps: &Caps) -> Negotiation {
@@ -671,6 +679,7 @@ impl GiFeature {
             for pass in [
                 Pass::Clear,
                 Pass::Voxelize,
+                Pass::Compact,
                 Pass::Light,
                 Pass::Trace,
                 Pass::UpdateIrradiance,
@@ -698,6 +707,7 @@ impl GiFeature {
             RESTING,
             RESTING,
         );
+        let solid = graph.import_buffer("gi solid cells", resources.solid, cells_bytes + 4, RESTING, RESTING);
         let rays_bytes = u64::from(plan.batch_rays.max(1)) * crate::gpu::RAY_BYTES;
         let rays = graph.import_buffer("gi rays", resources.rays, rays_bytes, RESTING, RESTING);
         let lights = graph.import_buffer(
@@ -726,8 +736,9 @@ impl GiFeature {
         let next_visibility = import(graph, "gi visibility", next_pair.visibility, next_pair.visibility_desc);
 
         let (grid_uniform, volume_uniform, pass_uniform) = (plan.grid_uniform, plan.volume_uniform, plan.pass_uniform);
-        let (albedo, emissive, radiance) = if let Some(voxelize) = plan.voxelize {
+        let (albedo, emissive, radiance, solid) = if let Some(voxelize) = plan.voxelize {
             let (clear, clear_layout) = pipelines[&Pass::Clear];
+            let (compact, compact_layout) = pipelines[&Pass::Compact];
             let (voxelize_pipeline, voxelize_layout) = pipelines[&Pass::Voxelize];
             let cells = plan.cells;
             let mut pass = graph.add_pass(
@@ -738,9 +749,23 @@ impl GiFeature {
             let albedo = pass.modify_buffer(albedo, READ_WRITE);
             let emissive = pass.modify_buffer(emissive, READ_WRITE);
             let radiance = pass.modify_buffer(radiance, READ_WRITE);
+            let solid = pass.modify_buffer(solid, READ_WRITE);
             pass.record(move |pass| {
-                let (albedo_buffer, emissive_buffer, radiance_buffer) =
-                    (pass.buffer(albedo), pass.buffer(emissive), pass.buffer(radiance));
+                let (albedo_buffer, emissive_buffer, radiance_buffer, solid_buffer) = (
+                    pass.buffer(albedo),
+                    pass.buffer(emissive),
+                    pass.buffer(radiance),
+                    pass.buffer(solid),
+                );
+                let compact_group = pass.create_bind_group(&BindGroupDesc {
+                    label: "gi compact",
+                    layout: compact_layout,
+                    entries: vec![
+                        uniform_entry(1, grid_uniform),
+                        buffer_entry(3, albedo_buffer),
+                        buffer_entry(15, solid_buffer),
+                    ],
+                })?;
                 let clear_group = pass.create_bind_group(&BindGroupDesc {
                     label: "gi clear",
                     layout: clear_layout,
@@ -749,6 +774,7 @@ impl GiFeature {
                         buffer_entry(3, albedo_buffer),
                         buffer_entry(4, emissive_buffer),
                         buffer_entry(5, radiance_buffer),
+                        buffer_entry(15, solid_buffer),
                     ],
                 })?;
                 let voxel_group = pass.create_bind_group(&BindGroupDesc {
@@ -796,16 +822,20 @@ impl GiFeature {
                     }
                     compute.dispatch(job.triangles.div_ceil(WORKGROUP), 1, 1);
                 }
+                compute.set_pipeline(compact);
+                compute.set_bind_group(0, compact_group);
+                compute.dispatch(cells.div_ceil(WORKGROUP), 1, 1);
                 Ok(())
             });
-            (albedo, emissive, radiance)
+            (albedo, emissive, radiance, solid)
         } else {
-            (albedo, emissive, radiance)
+            (albedo, emissive, radiance, solid)
         };
 
         // Light the voxels (direct light, the previous frame's probes as the later bounces).
         let (light, light_layout) = pipelines[&Pass::Light];
         let cells = plan.cells;
+        let slices = plan.slices;
         let mut pass = graph.add_pass(
             PassDesc::new("gi light voxels", Stage::Setup)
                 .priority(PASS_PRIORITY)
@@ -815,6 +845,7 @@ impl GiFeature {
         let emissive = pass.modify_buffer(emissive, READ_WRITE);
         let radiance = pass.modify_buffer(radiance, READ_WRITE);
         let lights = pass.modify_buffer(lights, READ_WRITE);
+        let solid = pass.modify_buffer(solid, READ_WRITE);
         let light_previous_irradiance = pass.read(previous_irradiance, Access::SAMPLED);
         let light_previous_visibility = pass.read(previous_visibility, Access::SAMPLED);
         pass.record(move |pass| {
@@ -833,6 +864,7 @@ impl GiFeature {
                     buffer_entry(4, pass.buffer(emissive)),
                     buffer_entry(5, pass.buffer(radiance)),
                     buffer_entry(6, pass.buffer(lights)),
+                    buffer_entry(15, pass.buffer(solid)),
                     texture_entry(8, previous_irradiance_view),
                     texture_entry(9, previous_visibility_view),
                     BindGroupEntry {
@@ -847,7 +879,10 @@ impl GiFeature {
             });
             compute.set_pipeline(light);
             compute.set_bind_group(0, group);
-            compute.dispatch(cells.div_ceil(WORKGROUP), 1, 1);
+            // One thread per face of a solid cell of the slice, at most `cells / slices` cells, in rows of 65535 groups.
+            let groups = (cells.div_ceil(slices) * 6).div_ceil(WORKGROUP);
+            let columns = groups.clamp(1, MAX_GROUPS);
+            compute.dispatch(columns, groups.div_ceil(columns).max(1), 1);
             Ok(())
         });
 

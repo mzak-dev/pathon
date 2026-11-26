@@ -46,7 +46,7 @@ def run(command, **kwargs):
 
 def render_pathon(args, lighting, camera, output):
     run([viewer_binary(), args.scene, "--camera-name", camera, "--reference-like", lighting, "--dump-hdr", output,
-         "--size", "960x540", "--supersample", args.supersample, "--backend", args.backend])
+         "--size", "960x540", "--supersample", args.supersample, "--backend", args.backend, *args.viewer_args.split()])
 
 
 def docs_collage(collage_path, output, title):
@@ -116,6 +116,7 @@ def main():
     parser.add_argument("--cameras", default=",".join(CAMERAS))
     parser.add_argument("--supersample", default="2", help="box average of N x N samples per pixel (the Cycles pixel filter is a 1 px box)")
     parser.add_argument("--backend", default="vulkan")
+    parser.add_argument("--viewer-args", default="", help="extra gltf_viewer options, e.g. \"--gi\"")
     parser.add_argument("--out-dir", default="out/k01")
     parser.add_argument("--no-build", action="store_true", help="use the gltf_viewer binary that is already built")
     parser.add_argument("--no-render", action="store_true", help="reuse the .npy files of an earlier run")

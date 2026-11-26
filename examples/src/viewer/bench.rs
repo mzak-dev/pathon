@@ -87,6 +87,8 @@ pub struct BenchReport {
     pub passes: Vec<PassTime>,
     /// CPU time spent recording the commands of each graph pass (the closure of the pass), per frame.
     pub cpu_passes: Vec<(&'static str, f64)>,
+    /// What the probe volume looks like (`--gi`), for the line under the table.
+    pub gi: Option<String>,
 }
 
 impl BenchReport {
@@ -186,6 +188,11 @@ pub fn run_benchmark(
         cpu_milliseconds: cpu.as_secs_f64() * 1000.0 / frames_f,
         passes,
         cpu_passes,
+        gi: session
+            .renderer
+            .shared()
+            .get::<pathon_gi::GiStatus>()
+            .map(ToString::to_string),
     })
 }
 
@@ -213,6 +220,9 @@ pub fn format_report(report: &BenchReport) -> String {
     }
     for (pass, milliseconds) in &report.cpu_passes {
         let _ = writeln!(text, "  CPU {pass:<24} {milliseconds:>7.3} ms");
+    }
+    if let Some(gi) = &report.gi {
+        let _ = writeln!(text, "  GI {gi}");
     }
     text
 }

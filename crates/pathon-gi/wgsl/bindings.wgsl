@@ -56,3 +56,5 @@ struct GpuLight {
 @group(0) @binding(12) var next_visibility: texture_storage_2d<rgba16float, write>;
 @group(0) @binding(13) var environment: texture_cube<f32>;
 @group(0) @binding(14) var environment_sampler: sampler;
+// Element 0: the number of solid cells; then their indices (built by `compact_solid`, read by `light_voxels`).
+@group(0) @binding(15) var<storage, read_write> solid_cells: array<atomic<u32>>;

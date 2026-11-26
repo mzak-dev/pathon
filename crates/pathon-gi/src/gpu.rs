@@ -68,6 +68,8 @@ pub(crate) struct GiResources {
     pub albedo: BufferId,
     pub emissive: BufferId,
     pub radiance: BufferId,
+    /// The count of solid cells and their indices.
+    pub solid: BufferId,
     pub rays: BufferId,
     pub lights: BufferId,
     pub light_capacity: u32,
@@ -91,11 +93,8 @@ impl GiResources {
             settings,
             albedo: buffer("gi voxel albedo", cells * 4, storage | BufferUsage::COPY_SRC)?,
             emissive: buffer("gi voxel emission", cells * 4, storage)?,
-            radiance: buffer(
-                "gi voxel radiance",
-                cells * (BYTES_PER_CELL - 8),
-                storage | BufferUsage::COPY_SRC,
-            )?,
+            radiance: buffer("gi voxel radiance", cells * 24, storage | BufferUsage::COPY_SRC)?,
+            solid: buffer("gi solid cells", (cells + 1) * 4, storage)?,
             rays: buffer("gi rays", rays.max(1) * RAY_BYTES, storage | BufferUsage::COPY_SRC)?,
             lights: buffer("gi lights", u64::from(MIN_LIGHT_CAPACITY) * LIGHT_BYTES, storage)?,
             light_capacity: MIN_LIGHT_CAPACITY,
@@ -168,6 +167,7 @@ impl GiResources {
             self.albedo.into(),
             self.emissive.into(),
             self.radiance.into(),
+            self.solid.into(),
             self.rays.into(),
             self.lights.into(),
         ];

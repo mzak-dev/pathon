@@ -10,8 +10,9 @@ pub struct VoxelLayout {
     pub dims: UVec3,
 }
 
-/// Bytes of the voxel buffers per cell: albedo, emission and the radiance of six faces, a word each.
-pub const BYTES_PER_CELL: u64 = 4 * (2 + 6);
+/// Bytes of the voxel buffers per cell: albedo, emission, the radiance of six faces and a place in the list of solid
+/// cells, a word each.
+pub const BYTES_PER_CELL: u64 = 4 * (2 + 6 + 1);
 
 impl VoxelLayout {
     /// A grid with a cell of at least `size` metres that covers `bounds` plus one cell of margin on each side and has

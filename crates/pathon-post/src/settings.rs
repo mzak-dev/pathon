@@ -109,6 +109,9 @@ pub enum Tonemapper {
     AcesFitted,
     /// Khronos PBR Neutral: keeps base colours of materials below the shoulder, compresses only highlights.
     PbrNeutral,
+    /// No curve and no upper clamp: the exposed scene colour as it is, for float targets that a tool reads back
+    /// (image comparison). On an 8-bit target it clips at 1.
+    Linear,
 }
 
 impl Tonemapper {
@@ -116,6 +119,7 @@ impl Tonemapper {
         match self {
             Self::AcesFitted => 0,
             Self::PbrNeutral => 1,
+            Self::Linear => 2,
         }
     }
 }

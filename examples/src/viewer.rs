@@ -7,6 +7,8 @@ pub mod camera;
 pub mod controls;
 pub mod environment;
 mod gpu_data;
+pub mod linear_dump;
+pub mod npy;
 pub mod screenshot;
 pub mod session;
 pub mod settings;

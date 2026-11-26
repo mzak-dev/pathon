@@ -82,6 +82,9 @@ fn fs_tonemap(input: FullscreenOutput) -> @location(0) vec4<f32> {
     if (HAS_BLOOM) {
         color += textureSampleLevel(bloom, linear_sampler, input.uv, 0.0).rgb * params.bloom_intensity;
     }
+    if (OPERATOR == 2u) {
+        return vec4<f32>(color, 1.0);
+    }
     var display: vec3<f32>;
     if (OPERATOR == 1u) {
         display = pbr_neutral(color);

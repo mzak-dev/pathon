@@ -260,7 +260,7 @@ Wspólny tonemap do metryk LDR: PBR Neutral (jest w `pathon-post`) zastosowany i
 ### Użycie w pracy nad techniką
 
 1. PR techniki dołącza tabelę ΔFLIP, ΔSSIM, ΔE i bias przed i po (wzorzec B, trzy kamery, dwa warianty oświetlenia).
-2. Bramka regresji: żadna metryka nie pogarsza się o więcej niż 5% względnie bez uzasadnienia w PR. **Progi bezwzględne ustalamy po K01**, gdy znamy punkt startu (dziś nie ma żadnego pomiaru).
+2. Bramka regresji: żadna metryka nie pogarsza się o więcej niż 5% względnie bez uzasadnienia w PR. Progi bezwzględne i punkt startu pathon (pierwszy pomiar, 25.11.2026) są w [porownanie-obrazu.md](porownanie-obrazu.md#progi-zielone-żółte-czerwone).
 3. Golden images (ADR-0025) zostają osobną siatką regresji względem samego pathon; porównanie z Cyclesem jest ręczne lub nocne, nie w CI.
 4. Każda technika z tabeli „Inwentarz” ma w opisie PR przypisane pasma Cyclesa, które powinna poprawić (np. GTAO → `AO` i `Indirect Diffuse` w zakamarkach).
 

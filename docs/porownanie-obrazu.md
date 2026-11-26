@@ -2,7 +2,7 @@
 
 Stan na 25.11.2026. Protokół mierzenia, jak daleko obraz pathon jest od ścieżkowego renderu Blendera tej samej sceny. Opis scen: [scenes.md](scenes.md); uzasadnienie i kontekst (wzorce A i B, lista technik): [filament-reference.md](filament-reference.md#protokół-porównania-z-cyclesem-scena-classroom). Tu jest część praktyczna: polecenia, ustawienia, jak czytać liczby i pierwsze wyniki wzorca.
 
-Zrobione w K01: render wzorca w Blenderze (`tools/scenes/render_reference.py`) i komparator (`tools/scenes/compare.py`). **Nie zrobione:** strona pathon (przykład zapisujący `hdr` do pliku, patrz [Kontrakt strony pathon](#kontrakt-strony-pathon)), więc **żadnego pomiaru pathon jeszcze nie ma**; progi poniżej są propozycją opartą na obrazach pomocniczych, nie na wynikach renderera.
+Zrobione w K01: render wzorca w Blenderze (`tools/scenes/render_reference.py`), komparator (`tools/scenes/compare.py`), strona pathon (`gltf_viewer --dump-hdr … --reference-like …`, [Strona pathon](#strona-pathon)), polecenie `python tools/scenes/compare_all.py` uruchamiające całość i **pierwszy pomiar renderera** ([Pierwszy pomiar pathon](#pierwszy-pomiar-pathon)). Progi zielone/żółte/czerwone są skalibrowane na tym pomiarze ([Progi](#progi-zielone-żółte-czerwone)).
 
 ## Wymagania
 
@@ -71,20 +71,38 @@ Okna: obiekty `dayLight_portal` zostały pominięte przy eksporcie, więc w wari
 - **Światło obszarowe:** prostokąt o mocy P jednostronny Lambert, natężenie osiowe P/π W/sr (zmierzone). Spot z `.glb` (półsferyczny, strumień zachowany) ma P/(2π), czyli **o połowę mniej na osi**; to znana różnica pathon przed K05 (światła powierzchniowe).
 - **Stała kalibracyjna: K = 1, ekspozycja pathon 1/683.** `radiancja_Blender = radiancja_pathon_przed_ekspozycją / 683`. Wyznaczona raz (`--calibrate-exposure` zapisuje pomiar do `reference.json`) i **nie dostrajana per obraz**. Emisja materiałów: Blender podaje ją w W/m²/sr jako radiancję, glTF w nitach (cd/m²), więc pathon musi traktować `emissive · emissive_strength` z mnożnikiem 683 przed ekspozycją (tak robi viewer). Rozbieżność „czynnik rzędu π” z [scenes.md](scenes.md) **nie występuje**: konwencje eksportu i importu są odwrotne, światła zgadzają się co do jednostki.
 
-## Kontrakt strony pathon
+## Strona pathon
 
-Strony pathon jeszcze nie ma. Żeby `compare.py` mógł ją porównać, przykład w `examples/` (na bazie M4-10) ma zapisać:
+`gltf_viewer` zapisuje liniowy slot `hdr` bez tonemappingu (szczegóły w [examples.md](examples.md#viewer-sceny-testowej-gltf_viewer)):
 
-| Wymaganie | Wartość |
+```sh
+cargo run --release -p pathon-examples --bin gltf_viewer -- test-assets/classroom/classroom.glb \
+  --camera-name renderCam --reference-like lights-only --dump-hdr out/lights-only_renderCam.npy --size 960x540 --supersample 2 --backend vulkan
+```
+
+| Wymaganie wzorca | Jak spełnia je pathon |
 | --- | --- |
-| Plik | `<kamera>.npy` (float32, kształt `[540, 960, 3]`, wiersz 0 u góry, liniowy Rec.709, **bez tonemappingu**, ekspozycja 1/683 zastosowana); alternatywnie Radiance `.hdr` albo `.exr` |
-| Kamera | ta z `.glb` o danej nazwie; `main` ma tylko `renderCam` |
-| Wariant `lights-only` | bez ambientu i bez IBL (viewer ma dziś ambient 400/150 lx i emisję ×683: wyłączyć ambient) |
-| Wariant `ibl` | `Garage.hdr`, siła 1, bez obrotu (konwencja pathon-ibl) |
-| Antyaliasing | `no-taa`: jedna klatka z `--supersample 2`; `taa-converged` dopiero z K06 |
-| Cienie, ekspozycja, tonemap | tonemap robi komparator (PBR Neutral); pathon zapisuje liniowe |
+| Plik | `.npy` float32 `[540, 960, 3]`, wiersz 0 u góry, liniowy Rec.709; nagłówek NPY 1.0 pisze `viewer::npy` (bez zależności), test w `cargo test -p pathon-examples --lib`; `np.load` w `compare.py` czyta go bez zmian |
+| Bez tonemappingu, ekspozycja 1/683 | `Tonemapper::Linear` w `pathon-post` (bez krzywej i bez obcinania z góry) na celu `Rgba16Float`, ekspozycja ręczna `2^-ev = 1/683`, odczyt połówek zmiennoprzecinkowych do f32 (błąd względny 2^-11, czyli 0,05%). Zapisany obraz to dokładnie `hdr × 1/683` z passów pbr, więc `--test-scale` zostaje 1 |
+| Kamery | `--camera-name` (`renderCam`, `pathon_wide`, `pathon_reverse`) albo indeks z logu: 0 = `pathon_reverse`, 1 = `pathon_wide`, 2 = `renderCam` (kolejność z `.glb`, **nie** jak `--cameras` wzorca). `yfov` z `.glb`, proporcje 960:540 |
+| Bez ambientu, bloomu, auto-ekspozycji | `--reference-like` ustawia `ViewerSettings::reference_like`: bloom i ekspozycja automatyczna wyłączone; ambient istnieje tylko w trybie `--simple` |
+| `lights-only` | siła środowiska (światło) i tła 0: okna pokazują czerń, jak świat Blendera |
+| `ibl` | `env/Garage.hdr` obok sceny, siła światła i tła **683** (W/m²/sr Blendera → jednostki fotometryczne pathon), **bez obrotu świata**: konwencja `pathon-ibl` (środek obrazu na −Z) jest równoważna obrotowi Z = −90° we wzorcu |
+| Antyaliasing | `--supersample N` renderuje N razy większy obraz i uśrednia bloki N×N w świetle liniowym (filtr box 1 px, jak wzorzec); protokół używa N = 2 |
+| Światła, cienie | bez zmian względem viewera: światła `.glb` (lux, kandele), cień tylko od słońca, emisja ×683 |
+
+**Weryfikacja jednostek i orientacji IBL na pikselach nieba.** W wariancie `ibl` wybrano piksele, w których przebieg `Environment` Cyclesa to ponad 90% jasności (czyste tło widoczne przez otwory okien): pathon daje tam **0,99 / 0,99 / 0,94** jasności Cyclesa (`renderCam` / `pathon_wide` / `pathon_reverse`, 1234 do 6142 pikseli), korelacja przestrzenna 0,99 / 0,89 / 0,92. Skala 683 i orientacja bez obrotu są więc zgodne; odchylenie 6% w `pathon_reverse` nie zostało zbadane. Emisja (lampy) ma bias 1,00 we wszystkich kamerach, a podświetlenie tablicy 0,91 do 1,08: **ekspozycja i jednostki nie są źródłem błędu.**
 
 ## Krok 2: porównanie
+
+**Całość jednym poleceniem** (buduje `gltf_viewer`, renderuje 3 kamery × `lights-only` i `ibl`, porównuje z `reference-spot/` i `reference/`, zapisuje `out/k01/summary.md` z tabelami gotowymi do wklejenia do PR-a techniki):
+
+```sh
+python tools/scenes/compare_all.py
+```
+
+Opcje: `--references reference-spot`, `--lightings lights-only`, `--cameras renderCam`, `--supersample N`, `--out-dir`, `--no-build`, `--no-render` (ponowne porównanie zapisanych `.npy`), `--raw` (surowy wzorzec), `--docs-dir docs/scenes/reference` (kolaże 960×540). Potrzebuje `numpy` i `Pillow` (FLIP, jeśli interpreter ma `flip_evaluator`) oraz katalogów wzorców w `test-assets/classroom/`. Poniżej to samo krok po kroku.
+
 
 ```sh
 python tools/scenes/compare.py \
@@ -110,6 +128,7 @@ Oba obrazy przechodzą ten sam tonemap **PBR Neutral** (Khronos) i kodowanie sRG
 | `delta_e2000_mean` / `_p95` | CIEDE2000 po tonemapie do sRGB | wierność koloru i jasności; p95 łapie duże błędy lokalne (brak cienia, brak odbicia) |
 | `flip` | NVIDIA ꟻLIP: `ldr_mean`, `ldr_p95` na obrazie po tonemapie, `hdr_mean`, `hdr_p95` na liniowym | błąd „postrzegany”; 0 = identyczne, 1 = skrajnie różne |
 | `bias_total` | średnia luminancja liniowa pathon / wzorzec | błąd energii: < 1 za ciemno |
+| `bias_without_windows` | to samo poza maską `windows` | okna to 6 do 9% pikseli i do połowy luminancji wzorca, więc ten bias pokazuje resztę sceny |
 | `per_mask.<maska>.bias_linear`, `bias_ev`, `delta_e2000_mean` | to samo w masce | gdzie jest błąd; maski: `board`, `floor`, `windows` (ramy i żaluzje), `walls_ceiling`, `wood_furniture`, `metal`, `plastic_desk_tops` z indeksu materiału, oraz `direct_lit`, `direct_shadowed` (połowa pikseli o większym i mniejszym Diffuse Direct), `emissive` |
 | `reference_energy_share` | udział terminów Cyclesa w luminancji obrazu | patrz [Co zawiera różnicę](#co-zawiera-różnicę) |
 
@@ -177,21 +196,105 @@ Wzorzec `real` (domyślny) zastępuje dwa półsferyczne spoty z `.glb` prostok�
 
 (obie strony `lights-only` odszumione). Sam przybliżony kształt lampy za oknem to więc **od 6 do 78% jasności**, a ΔE2000 i SSIM wyglądają przy tym łagodnie, bo tonemap PBR Neutral spłaszcza jasne partie: **`bias_total` jest warunkiem koniecznym i nie wolno bramkować wyłącznie ΔE czy SSIM**. Do bramkowania technik w okresie przed K05 używaj `reference-spot/` (ta sama struktura plików, 1024 próbki, odszumione i surowe, oba warianty światła); po K05 przełącz się na `reference/`. W obu wzorcach mierzy się to samo: kamery, materiały, ekspozycja, GI.
 
-## Progi: zielone, żółte, czerwone (propozycja)
+## Pierwszy pomiar pathon
 
-Zaproponowane po obejrzeniu pierwszych wyników, **kotwice to obrazy pomocnicze z tabeli wyżej, a nie wyniki pathon** (pomiaru pathon nie ma). Zasada: zielone = obraz nie do odróżnienia od ścieżkowego renderu w ok. 500 próbek, żółte = widoczne różnice, ale lepsze niż stały ambient, czerwone = nie lepsze niż stały ambient. Średnie z trzech kamer na wzorcu `reference-spot` albo `reference`, referencja odszumiona.
+25.11.2026 (stan `main` @ c16faed plus K01), `python tools/scenes/compare_all.py`, RX 9070 XT (Vulkan, release), `gltf_viewer --reference-like … --supersample 2`, 960×540, referencje odszumione (`reference-spot/`: 1024 próbki, **te same spoty co pathon**; `reference/`: 4096 próbek, prawdziwe światła obszarowe). Render jednego obrazu pathon trwa ok. 3 s razem z wczytaniem sceny, cała seria 12 obrazów i 24 porównań ok. 40 s. To stan **przed jakąkolwiek techniką z listy K02 do K22**: pathon bez GI, bez AO, bez cieni lamp punktowych i bez świateł powierzchniowych.
+
+### Metryki na kamerę
+
+| Wzorzec | Światło | Kamera | PSNR dB | SSIM | ΔE2000 śr. | ΔE2000 p95 | FLIP LDR | FLIP HDR | bias | bias bez okien |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| spot | lights-only | `renderCam` | 13,8 | 0,663 | 10,6 | 42,4 | 0,335 | 0,522 | 0,38 | 0,76 |
+| spot | lights-only | `pathon_wide` | 13,4 | 0,630 | 11,2 | 46,4 | 0,333 | 0,546 | 0,41 | 0,67 |
+| spot | lights-only | `pathon_reverse` | 13,7 | 0,710 | 10,0 | 43,5 | 0,338 | 0,498 | 0,31 | 0,60 |
+| **spot** | **lights-only** | **średnia** | **13,6** | **0,667** | **10,6** | **44,1** | **0,335** | **0,522** | **0,37** | **0,68** |
+| obszarowe | lights-only | `renderCam` | 13,3 | 0,639 | 12,1 | 42,7 | 0,375 | 0,567 | 0,40 | 0,57 |
+| obszarowe | lights-only | `pathon_wide` | 12,8 | 0,598 | 12,3 | 49,1 | 0,366 | 0,580 | 0,54 | 0,84 |
+| obszarowe | lights-only | `pathon_reverse` | 14,0 | 0,701 | 10,1 | 41,8 | 0,347 | 0,525 | 0,55 | 0,91 |
+| **obszarowe** | **lights-only** | **średnia** | **13,4** | **0,646** | **11,5** | **44,5** | **0,362** | **0,557** | **0,50** | **0,77** |
+| spot | ibl | `renderCam` | 14,1 | 0,658 | 11,3 | 40,0 | 0,380 | 0,550 | 0,47 | 0,94 |
+| spot | ibl | `pathon_wide` | 13,7 | 0,614 | 12,0 | 42,3 | 0,390 | 0,583 | 0,49 | 0,80 |
+| spot | ibl | `pathon_reverse` | 13,3 | 0,617 | 14,5 | 33,3 | 0,482 | 0,648 | 0,47 | 0,88 |
+| **spot** | **ibl** | **średnia** | **13,7** | **0,630** | **12,6** | **38,6** | **0,417** | **0,593** | **0,48** | **0,88** |
+| obszarowe | ibl | `renderCam` | 13,6 | 0,629 | 12,5 | 40,5 | 0,414 | 0,594 | 0,50 | 0,71 |
+| obszarowe | ibl | `pathon_wide` | 13,2 | 0,583 | 12,9 | 44,5 | 0,415 | 0,620 | 0,64 | 0,98 |
+| obszarowe | ibl | `pathon_reverse` | 13,5 | 0,610 | 14,3 | 34,0 | 0,484 | 0,654 | 0,83 | 1,31 |
+| **obszarowe** | **ibl** | **średnia** | **13,5** | **0,607** | **13,2** | **39,6** | **0,438** | **0,623** | **0,66** | **1,00** |
+
+`bias bez okien` to luminancja pathon do wzorca poza maską `windows` (nowe pole `bias_without_windows` w `compare.py`): **okna to 6 do 9% pikseli, a niosą 49 do 55% luminancji wzorca `spot`** (36 do 47% w `reference/`), więc `bias_total` jest w połowie miarą jednego regionu. Pełne metryki (także `per_mask`, udziały terminów AOV) zapisuje `compare_all.py` w `<out>/<wzorzec>/<światło>/<kamera>_metrics.json`.
+
+Bias luminancji pathon do wzorca w maskach (`lights-only`; `-` = kamera nie widzi tablicy):
+
+| Wzorzec | Kamera | okna | ściany i sufit | podłoga | drewno | metal | blaty | tablica | oświetlone | zacienione | emisja |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| spot | `renderCam` | 0,06 | 0,51 | 0,85 | 0,79 | 0,85 | 0,95 | 0,93 | 0,40 | 0,34 | 1,00 |
+| spot | `pathon_wide` | 0,13 | 0,55 | 0,97 | 0,89 | 0,87 | 0,95 | 0,91 | 0,45 | 0,33 | 1,00 |
+| spot | `pathon_reverse` | 0,08 | 0,60 | 0,84 | 0,82 | 0,83 | 0,65 | - | 0,40 | 0,19 | 1,00 |
+| obszarowe | `renderCam` | 0,10 | 0,26 | 0,97 | 0,78 | 0,82 | 0,87 | 1,08 | 0,38 | 0,44 | 1,00 |
+| obszarowe | `pathon_wide` | 0,19 | 0,81 | 0,99 | 0,84 | 0,81 | 0,88 | 1,02 | 0,66 | 0,37 | 1,00 |
+| obszarowe | `pathon_reverse` | 0,16 | 0,97 | 0,90 | 0,95 | 0,91 | 0,88 | - | 0,75 | 0,31 | 1,00 |
+
+Wpływ antyaliasingu (`spot`, `lights-only`, średnia kamer): `--supersample 1` daje SSIM 0,637 / ΔE 11,1 / PSNR 13,3, `2` daje 0,667 / 10,6 / 13,6, `4` daje 0,676 / 10,5 / 13,7 (FLIP LDR 0,339 / 0,335 / 0,335). Protokół używa 2: reszta zysku jest poniżej 0,01 SSIM.
+
+![renderCam, spot](scenes/reference/compare-reference-spot-lights-only-renderCam.png)
+![pathon_wide, spot](scenes/reference/compare-reference-spot-lights-only-pathon_wide.png)
+![pathon_reverse, spot](scenes/reference/compare-reference-spot-lights-only-pathon_reverse.png)
+
+Kolaże (`docs/scenes/reference/compare-*.png`, 960×540): wzorzec odszumiony, pathon, mapa ΔE2000 (żółty = 20), stosunek luminancji (czerwony: pathon jaśniejszy, niebieski: ciemniejszy, ±2 EV). Te same trzy kamery dla wzorca `reference/` (światła obszarowe) leżą obok jako `compare-reference-lights-only-*.png`.
+
+### Eksperyment: pathon z doklejonym oświetleniem pośrednim Cyclesa
+
+Żeby oddzielić brak GI od reszty różnic, do obrazu pathon dodano oświetlenie pośrednie wzorca (`odszumiony wzorzec − przebiegi bezpośrednie i emisja`, `lights-only`) i porównano z wzorcem. To pułap tego, co da samo GI, gdy bezpośrednie światło, materiały i filtrowanie zostają takie jak dziś (średnie z trzech kamer):
+
+| Wzorzec | Obraz | PSNR dB | SSIM | ΔE2000 śr. | ΔE2000 p95 | FLIP LDR | bias |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| spot | pathon dziś | 13,6 | 0,667 | 10,6 | 44,1 | 0,335 | 0,37 |
+| spot | pathon + GI wzorca | 20,0 | 0,830 | 6,7 | 17,3 | 0,286 | 1,02 |
+| obszarowe | pathon dziś | 13,4 | 0,646 | 11,5 | 44,5 | 0,362 | 0,50 |
+| obszarowe | pathon + GI wzorca | 19,6 | 0,819 | 7,0 | 18,4 | 0,295 | 1,10 |
+
+Sama oś GI zamyka większość odległości, ale **nie do zera**: z idealnym GI zostaje ΔE około 7, SSIM 0,82 i FLIP 0,29. To podłoga do czasu poprawy światła bezpośredniego (cienie lamp, światła powierzchniowe), materiałów i filtrowania.
+
+### Pięć największych źródeł różnicy
+
+Na podstawie map różnic, przebiegów AOV wzorca i eksperymentów powyżej (wzorzec `spot` = te same światła; liczby dla `renderCam` / `pathon_wide` / `pathon_reverse`, o ile nie napisano inaczej). Pozycje nakładają się: okna (2) są w większości oświetleniem pośrednim (1).
+
+| # | Źródło | Dowód liczbowy | Technika |
+| --- | --- | --- | --- |
+| 1 | **Brak oświetlenia pośredniego (GI)** | oświetlenie pośrednie to 75 / 52 / 70% luminancji wzorca `spot` (55 / 61 / 65% w `reference/`); dodanie go do pathon podnosi PSNR 13,6 → 20,0, SSIM 0,67 → 0,83, ΔE 10,6 → 6,7, p95 44 → 17 | K12, K13, część K04 |
+| 2 | **Okna: żaluzje i ramy** (część GI, ale najbardziej widoczna) | 6 / 8 / 9% pikseli niesie 54 / 49 / 55% luminancji (`reference/`: 36 / 46 / 47%); pathon daje tam 6 / 13 / 8% jasności wzorca (`reference/`: 10 / 19 / 16%), ΔE w oknach 52 / 46 / 37 wobec 8,1 / 8,0 / 7,4 w reszcie; 69 / 69 / 75% całego oświetlenia pośredniego leży w oknach; bezpośrednio dostają tylko 5 / 28 / 6% swojej jasności. Poza oknami bias to 0,76 / 0,67 / 0,60, nie 0,38 / 0,41 / 0,31. Czy to światło przez szczeliny żaluzji czy transmisja materiału, nie sprawdzono | K12 (sondy), K13, ewentualnie materiał żaluzji |
+| 3 | **Brak cieni lamp punktowych i spotów** (`ShadowPack` rysuje tylko cień słońca) | w zacienionej połowie pikseli pathon daje 2,08 / 1,79 / 2,57 razy więcej światła bezpośredniego niż Cycles (w oświetlonej: 1,28 / 0,68 / 0,84); połowa pikseli, która u Cyclesa ma 26 / 14 / 10% światła bezpośredniego, u pathon ma 37 / 30 / 26% | K03, K10 |
+| 4 | **Wyciek środowiska w wariancie `ibl`** (brak widoczności nieba) | środowisko dodaje do pathon +25 / +23 / +51% luminancji `lights-only`, we wzorcu +0,5 / +2,5 / −0,3% (4 do 20 razy za dużo; w trzeciej kamerze wzorzec nie dodaje nic); podłoga ×1,39 / 1,64 / 1,32 wzorca przy ×0,85 / 0,97 / 0,84 bez IBL; ΔE średnie `ibl` 12,6 wobec 10,6, FLIP LDR 0,417 wobec 0,335. IBL tu pogarsza obraz, bo wnętrze dostaje całe niebo | K12 (okluzja środowiska), K04 |
+| 5 | **Światła obszarowe jako spoty oraz reszta: filtrowanie, materiały, aliasing** | podmiana wzorca `spot` na `reference/` przesuwa `bias_total` pathon z 0,38 / 0,41 / 0,31 na 0,40 / 0,54 / 0,55 i pogarsza SSIM o 0,02 (cały pomiar), czyli sam kształt lampy za oknem przesuwa bias nawet o 0,24; po dodaniu idealnego GI zostaje ΔE około 7 i SSIM 0,82; aliasing: bez `--supersample` SSIM niższy o 0,03 | K05 (światła powierzchniowe), K06 (TAA), K02 |
+
+Co **nie** jest źródłem różnicy (zmierzone): ekspozycja i jednostki (emisja 1,00, tablica 0,91 do 1,08, niebo 0,94 do 0,99), orientacja IBL, szkło i transmisja (przebieg `Transmission Indirect` to 0 do 0,4% luminancji wzorca; `Transmission Direct` ~0), światło odbite zwierciadlanie (`Glossy` razem 7 do 8%: bias w maskach metalu 0,82 do 0,91 przy `reference/`). **AO** nie da się tu wydzielić bez techniki K04: wskazówką jest „stały ambient” z tabeli wyżej, który przejaskrawia wnętrza ławek 1,5×, czyli AO poprawi drewno i metal (dziś bias 0,78 do 0,95) dopiero razem z GI.
+
+## Progi: zielone, żółte, czerwone
+
+Skalibrowane 25.11.2026 na pierwszym pomiarze pathon i na eksperymencie „pathon + GI wzorca” (średnie z trzech kamer, `lights-only`, wzorzec `reference-spot` albo `reference`, referencja odszumiona, `--supersample 2`). Zasada:
+
+- **czerwone** = nie lepsze niż pathon przed K02 do K22 (punkt startu zmierzony wyżej),
+- **zielone** = co najmniej tak dobre jak pathon z idealnym GI przy dzisiejszym świetle bezpośrednim i materiałach (pułap samego GI), czyli bliżej wzorca, niż potrafi sama oś GI,
+- **żółte** = pomiędzy.
 
 | Metryka | Zielone | Żółte | Czerwone | Kotwice |
 | --- | --- | --- | --- | --- |
-| `bias_total` | 0,90 do 1,10 | 0,76 do 0,90 albo 1,10 do 1,30 | poniżej 0,76 albo powyżej 1,30 | stały ambient 0,76, bez GI 0,40 |
-| ΔE2000 średnie | do 6 | 6 do 11 | powyżej 11 | szum 512 próbek 5,0; stały ambient 11,6 |
-| ΔE2000 p95 | do 15 | 15 do 26 | powyżej 26 | szum 512 próbek 14,1; stały ambient 26,3 |
-| SSIM | od 0,80 | 0,67 do 0,80 | poniżej 0,67 | stały ambient 0,67 |
-| FLIP LDR średnie | do 0,15 | 0,15 do 0,40 | powyżej 0,40 | szum 512 próbek 0,10; stały ambient 0,44 |
-| PSNR dB | od 23 | 16 do 23 | poniżej 16 | szum 512 próbek 23,2; stały ambient 15,5 |
-| `per_mask.*.bias_linear` | 0,85 do 1,18 | 0,70 do 0,85 albo 1,18 do 1,40 | poza | |
+| `bias_total` | 0,90 do 1,10 | 0,75 do 0,90 albo 1,10 do 1,30 | poniżej 0,75 albo powyżej 1,30 | start 0,37 (`spot`) i 0,50 (`reference`); z GI 1,02 i 1,10 |
+| `bias_without_windows` | 0,90 do 1,10 | 0,75 do 0,90 albo 1,10 do 1,30 | poniżej 0,75 albo powyżej 1,30 | start 0,68 i 0,77 |
+| ΔE2000 średnie | do 7,5 | 7,5 do 10,6 | powyżej 10,6 | start 10,6 (`spot`), 11,5 (`reference`); z GI 6,7 i 7,0; szum 512 próbek 5,0 |
+| ΔE2000 p95 | do 20 | 20 do 44 | powyżej 44 | start 44,1 i 44,5; z GI 17,3 i 18,4 |
+| SSIM | od 0,80 | 0,67 do 0,80 | poniżej 0,67 | start 0,667 i 0,646; z GI 0,830 i 0,819 |
+| FLIP LDR średnie | do 0,30 | 0,30 do 0,34 | powyżej 0,34 | start 0,335 i 0,362; z GI 0,286 i 0,295. Wąskie żółte pasmo: FLIP słabo odróżnia „bez GI” od „z GI” |
+| PSNR dB | od 19,5 | 13,6 do 19,5 | poniżej 13,6 | start 13,6 i 13,4; z GI 20,0 i 19,6 |
+| `per_mask.*.bias_linear` (bez `windows`) | 0,85 do 1,18 | 0,70 do 0,85 albo 1,18 do 1,40 | poza | start 0,51 do 0,97 (ściany 0,26 do 0,97) |
 
-Uwagi: (1) `bias_total` czytaj razem z ΔE (patrz wyżej: spot zamiast światła obszarowego daje łagodne ΔE przy biasie 1,78); to zbiór progów dla **całego obrazu**; maski czytamy względnie (poprawa względem poprzedniego pomiaru), bo w cieniu i w oknach nawet dobry render ma duże błędy. (2) Progi bezwzględne należy zrewidować po pierwszym pomiarze pathon; do tego czasu obowiązuje reguła z [filament-reference.md](filament-reference.md#użycie-w-pracy-nad-techniką): żadna metryka nie pogarsza się o więcej niż 5% względnie bez uzasadnienia, a PR techniki dołącza tabelę przed i po. (3) FLIP i SSIM zależą od szumu referencji; zawsze używaj `*_denoised.exr` i tego samego pliku przed i po.
+Uwagi:
+
+1. **Zielone nie znaczy „nie do odróżnienia”.** Pułap samego GI to ΔE około 7 i SSIM 0,82, więc po dodaniu GI pathon wciąż różni się od Cyclesa widocznie. Progi „nie do odróżnienia od Cyclesa w 500 próbkach” (ΔE do 6, p95 do 15, SSIM od 0,80, PSNR od 23, z poprzedniej propozycji) są nieosiągalne przy dzisiejszych cieniach lamp, materiałach i filtrowaniu i wrócą po K03, K05, K06. Szum wzorca (ΔE 2,1, SSIM 0,78 przy 4096 próbkach, patrz wyżej) sam zjada część zakresu SSIM: powyżej 0,85 mierzy się głównie szum referencji.
+2. **`bias_total` czytaj z `bias_without_windows`**: okna to 6 do 9% pikseli i 36 do 55% luminancji wzorca, więc sam `bias_total` pokazuje głównie ich stan. `bias_total` zostaje warunkiem koniecznym (nie bramkuj wyłącznie ΔE czy SSIM: spot zamiast światła obszarowego daje łagodne ΔE przy biasie 1,78 w innych kamerach). Maski czytamy względnie (poprawa względem poprzedniego pomiaru), bo w cieniu i w oknach nawet dobry render ma duże błędy.
+3. Obowiązuje reguła z [filament-reference.md](filament-reference.md#użycie-w-pracy-nad-techniką): żadna metryka nie pogarsza się o więcej niż 5% względnie bez uzasadnienia, a PR techniki dołącza tabelę przed i po (`compare_all.py` drukuje ją gotową do wklejenia). Progi absolutne rewidujemy po każdej technice, która przesuwa punkt startu (K03, K05, K12).
+4. FLIP i SSIM zależą od szumu referencji; zawsze używaj `*_denoised.exr` i tego samego pliku przed i po. Wariant `ibl` mierzy dziś głównie wyciek środowiska (pozycja 4 listy źródeł): jego progi mają sens dopiero po okluzji środowiska.
+5. Wzorzec: do bramkowania w okresie przed K05 używaj `reference-spot/`, po K05 `reference/`.
 
 ## Znane różnice, których nie usuniemy
 
@@ -199,10 +302,12 @@ Uwagi: (1) `bias_total` czytaj razem z ΔE (patrz wyżej: spot zamiast światła
 | --- | --- | --- |
 | **Brak GI w pathon** | 55 do 64% luminancji, patrz wyżej | K12 (sondy), K13 (SSGI); częściowo K04 (AO) |
 | **Światła obszarowe jako spoty** | jasność o 6 do 78%, ΔE około 4 | K05; do tego czasu `reference-spot/` |
+| **Okna: żaluzje i ramy bez GI** | 6 do 9% pikseli, 36 do 55% luminancji wzorca; pathon daje 6 do 19% tej jasności (pozycja 2 listy źródeł) | K12, K13 |
+| **Wyciek środowiska (`ibl`)** | pathon dodaje 23 do 51% luminancji z nieba, Cycles 0 do 3% (pozycja 4) | okluzja środowiska |
 | **Okna bez portalu światła dziennego** | otwory w ścianie, w `lights-only` czarne; w obu wzorcach identycznie | nie znika (pathon i wzorzec tak samo; portal tylko w wzorcu A) |
 | **Materiały po eksporcie Cycles → Principled** | straty z [scenes.md](scenes.md): bump (37), korekcje koloru (21), mieszanie tekstur (12), atrybuty obiektu (16), shadery proceduralne (12), roughness z tekstury (9) | nie znika; oba renderery dostają te same przybliżone materiały, więc **w tym porównaniu nie liczy się jako błąd pathon**, ale pozostaje różnicą względem wzorca A (`classroom.blend`) |
 | **Model materiału** | Principled BSDF Cyclesa (wielokrotne rozpraszanie GGX, inny sposób łączenia diffuse i specular) a materiał standardowy pathon; transmisja: refrakcja a blend z alfą | częściowo K02; różnica modeli zostaje |
-| **Cienie lamp punktowych** | Cycles: promień 0, ostre; pathon: PCF o skończonej szerokości (K03) | K03/K10 |
+| **Cienie lamp punktowych** | Cycles: promień 0, ostre; pathon: dziś **brak** (cień tylko od słońca), potem PCF o skończonej szerokości; pozycja 3 listy źródeł | K03/K10 |
 | **Filtrowanie tekstur** | Cycles bez mipmap i anizotropii (filtr liniowy), pathon z mipmapami i anizotropią | nie znika; widać na dalekich, skośnych teksturach |
 | **Antyaliasing** | Cycles: filtr box 1 px z 4096 próbek; pathon: `--supersample 2` albo TAA | K06 |
 | **Kaustyki i objętość** | wyłączone w Cyclesie; w eksporcie pominięto też objętość i kurz | — |
@@ -212,12 +317,13 @@ Uwagi: (1) `bias_total` czytaj razem z ΔE (patrz wyżej: spot zamiast światła
 
 ## Zastrzeżenia
 
-- **Nie ma jeszcze żadnego pomiaru pathon.** Kontrakt strony pathon (plik `.npy` z liniowym `hdr`, ekspozycja 1/683) jest spisany, ale przykład, który go zapisuje, nie istnieje; komparator sprawdzono na obrazach pomocniczych i na wzorcu względem siebie. Jednostki światła (K = 1) zmierzono w Blenderze, ale nie po stronie pathon.
-- Progi są propozycją zakotwiczoną w obrazach pomocniczych.
+- **Pomiar pathon jest jeden** (25.11.2026, RX 9070 XT, Vulkan, jedna maszyna). Wyniki zależą od sterownika w granicach szumu odczytu połówek; powtarzalność między GPU nie była badana. Obraz pathon jest deterministyczny w obrębie jednego sterownika (bez TAA, bez losowości).
+- Jednostki światła (K = 1) sprawdzono po obu stronach: po stronie Blendera pomiarem, po stronie pathon na emisji (bias 1,00) i na pikselach nieba (0,94 do 0,99, patrz [Strona pathon](#strona-pathon)). Orientację IBL jako **oświetlenia** (nie tła) sprawdza dopiero technika z okluzją środowiska, bo dziś wyciek środowiska zagłusza różnicę.
+- Eksperyment „pathon + GI wzorca” używa oświetlenia pośredniego z odszumionego wzorca minus bezpośredniego z surowego; to oszacowanie, nie osobny render, więc ΔE i SSIM tej wersji niosą resztkę szumu odszumiacza.
+- Pozycje listy pięciu źródeł różnicy są oszacowaniami z AOV i map różnic, nie pomiarami przez wyłączanie pojedynczych cech w pathon; źródło 3 (brak cieni lamp punktowych) wynika z tego, że `ShadowPack` rysuje tylko cień słońca, a nie z osobnego renderu z cieniami.
 - Skrypt Blendera i komparator uruchomiono tylko na Windows (Blender 5.2.2, HIP RT, Python 3.11, numpy 2.4, Pillow 12). Blender 4.5 nie ma w tej instalacji `blender.exe`; API 5.x (media_type) może nie działać na 4.x.
 - Licencja `classroom` i `Garage.hdr` nadal do potwierdzenia ([scenes.md](scenes.md)); PNG w `docs/scenes/reference/` są jej wynikami, więc obowiązuje to samo zastrzeżenie.
 - Wzorzec A (`classroom.blend` z oryginalnymi materiałami, portalami i światłami) **nie jest zrenderowany**: skrypt obsługuje tylko `.glb`.
 - Cryptomatte zastąpiono indeksem materiału (Material Index); maski po obiekcie nie ma.
-- Nie ma metryki RMSE względnego w paśmie Indirect Diffuse (wymaga osobnego przebiegu po stronie pathon).
+- Nie ma metryki RMSE względnego w paśmie Indirect Diffuse (wymaga osobnego przebiegu oświetlenia pośredniego po stronie pathon).
 - FLIP: pakiet `flip-evaluator` jest w PyPI na licencji BSD-3-Clause (LICENSE repozytorium NVlabs/flip: „BSD 3-Clause”); używamy go jako zewnętrznego narzędzia dev w venv poza repozytorium, bez zależności Cargo. Zainstalowano go w venv w katalogu roboczym tego zadania (wersja 1.7), nie globalnie.
-

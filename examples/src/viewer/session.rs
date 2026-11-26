@@ -129,7 +129,7 @@ impl Session {
 
     /// Renders `input` with the current settings; `delta_seconds` is up to the caller (the benchmark fixes it).
     pub fn render_input(&mut self, input: &FrameInput) -> Result<FrameReport, RenderError> {
-        apply_settings(&mut self.renderer, &self.settings, self.assets.sun_direction);
+        apply_settings(&mut self.renderer, &self.settings, &self.assets);
         self.renderer.render_frame(input)
     }
 
@@ -152,8 +152,24 @@ impl Session {
                 if self.settings.bloom { "on" } else { "off" },
             ),
         };
+        let local = self
+            .renderer
+            .shared()
+            .get::<pathon_shadow::LocalShadowReport>()
+            .map_or_else(
+                || "off".to_owned(),
+                |report| {
+                    format!(
+                        "{} of {} lights ({} tiles drawn, {} kept)",
+                        report.lights.len(),
+                        report.candidates,
+                        report.rendered_tiles,
+                        report.cached_tiles
+                    )
+                },
+            );
         format!(
-            "camera at ({:.2}, {:.2}, {:.2}) fov {:.0} deg, exposure {exposure}, {light}, sun shadows {}",
+            "camera at ({:.2}, {:.2}, {:.2}) fov {:.0} deg, exposure {exposure}, {light}, sun shadows {}, local shadows {local}",
             position.x,
             position.y,
             position.z,

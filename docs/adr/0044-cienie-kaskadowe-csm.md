@@ -39,7 +39,7 @@ Zakres głębi każdej kaskady sięga do najbliższego rzucającego cień, któr
 
 ## Odłożone (z uzasadnieniem)
 
-- **Światła punktowe i reflektory (kostka / perspektywa).** `ShadowScene` ma jedno światło, ale `light_index` w uniformie i w funkcji WGSL oraz tablica warstw zostawiają miejsce na kilka świateł; kostki i perspektywa wymagają cube / `CubeArray` w grafie (ADR-0020, aneks: graf nie ma cube'a) i osobnego budżetu pamięci. Zadanie osobne, gdy pbr będzie miał pętlę po światłach.
+- **Światła punktowe i reflektory (kostka / perspektywa).** *Zrobione w [ADR-0050](0050-cienie-swiatel-punktowych-i-reflektorow.md) (atlas map perspektywicznych zamiast kostki).* Pierwotny opis: `ShadowScene` ma jedno światło, ale `light_index` w uniformie i w funkcji WGSL oraz tablica warstw zostawiają miejsce na kilka świateł; kostki i perspektywa wymagają cube / `CubeArray` w grafie (ADR-0020, aneks: graf nie ma cube'a) i osobnego budżetu pamięci. Zadanie osobne, gdy pbr będzie miał pętlę po światłach.
 - **Miękkie cienie zmienne (PCSS, Fernando 2005) i warianty wariancyjne (VSM / EVSM).** Wymagają wyszukiwania zasłaniających i mipów albo rozmycia momentów w `Rgba32Float`; `Pcf5` daje stałą miękkość. Wrócimy po M4-17 z pomiarem kosztu.
 - **Cienie kontaktowe w przestrzeni ekranu.** Marsz promienia po slocie `depth` zamyka szczeliny, których nie zamyka mapa o skończonej rozdzielczości; to funkcja po stronie oświetlenia (pbr / SSAO), nie paczki cieni.
 - **Perspektywiczne warpowanie map (LiSPSM / TSM).** Nie łączy się ze stabilizacją, którą wybraliśmy; kaskady dają większość zysku.

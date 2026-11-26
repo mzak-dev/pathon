@@ -11,7 +11,9 @@ import package::pbr::hooks::shadow_factor;
 import package::pbr::area::{LtcEntry, area_evaluate};
 import package::pbr::lights::{GpuLight, KIND_AREA, light_sample};
 import package::pbr::occlusion::{gtao_multi_bounce, specular_ao_lagarde};
-import package::shadow::sample::{ShadowCascades, shadow_factor_directional};
+import package::shadow::sample::{
+    LocalShadows, ShadowCascades, shadow_factor_directional, shadow_local_tile_index, shadow_local_visibility,
+};
 
 @group(0) @binding(0) var<uniform> frame: Frame;
 @group(0) @binding(1) var<storage, read> materials: array<MaterialData>;
@@ -23,6 +25,7 @@ import package::shadow::sample::{ShadowCascades, shadow_factor_directional};
 // SHADOW_BINDINGS
 // LTC_BINDING
 // GI_BINDINGS
+// LOCAL_SHADOW_BINDINGS
 
 // What `shadow_factor_directional` needs about the fragment besides its position; `shade` fills it once so that the
 // light loop keeps its signature.
@@ -100,7 +103,11 @@ fn add_area_light(
     diffuse: ptr<function, vec3<f32>>,
     specular: ptr<function, vec3<f32>>,
 ) {
-    let visibility = shadow_factor(index, surface.position);
+    var visibility = shadow_factor(index, surface.position);
+    @if(local_shadows) {
+        // Shadowed from the centre of the rectangle, as a point light (the host opted in): no penumbra of its own.
+        visibility = visibility * local_shadow_factor(index, surface.position, shadow_context.normal, shadow_context.pixel);
+    }
     if (visibility <= 0.0) {
         return;
     }
@@ -129,6 +136,10 @@ fn add_light(
         }
     }
     let lit = light_sample(light, surface.position);
+    // Outside the range or the cone nothing arrives, and a shadow map lookup would only confirm it.
+    if (lit.radiance.x + lit.radiance.y + lit.radiance.z <= 0.0) {
+        return;
+    }
     var visibility = shadow_factor(index, surface.position);
     @if(shadows) {
         visibility = visibility * shadow_factor_directional(
@@ -141,6 +152,9 @@ fn add_light(
             shadow_context.view_depth,
             shadow_context.pixel,
         );
+    }
+    @if(local_shadows) {
+        visibility = visibility * local_shadow_factor(index, surface.position, shadow_context.normal, shadow_context.pixel);
     }
     if (visibility <= 0.0) {
         return;

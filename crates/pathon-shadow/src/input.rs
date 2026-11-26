@@ -1,9 +1,11 @@
 use std::ops::Range;
 
 use pathon_api::glam::{Affine3A, Vec3};
-use pathon_api::rhi::BufferId;
+use pathon_api::rhi::{BufferId, Id};
 use pathon_mesh::{GeometryPool, MeshError, MeshId};
 use pathon_scene::{Aabb, InstanceFlags, Light, LightKind, RenderWorld};
+
+use crate::local::{LocalShadowLight, packed_indices};
 
 /// The directional light that casts the cascaded shadows.
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -94,12 +96,34 @@ impl ShadowCaster {
     }
 }
 
-/// What the shadow pack renders each frame, kept in `Shared`: the light and the casters. The host (or the lighting
-/// pack) refills it before every frame; with no `light` there are no shadows and no [`crate::ShadowFrame`].
+/// Which lights of a `RenderWorld` `ShadowScene::use_local_lights` offers for shadow maps.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct LocalLightFilter {
+    /// Offer only the lights flagged `casts_shadows`; otherwise every point and spot light competes for the maps.
+    pub only_casting: bool,
+    /// Offer area lights too, shadowed from their centre as if they were point lights. The penumbra of a real
+    /// rectangle is lost and a long light shadowed from its middle is wrong near its ends: off by default.
+    pub area_as_point: bool,
+}
+
+impl Default for LocalLightFilter {
+    fn default() -> Self {
+        Self {
+            only_casting: true,
+            area_as_point: false,
+        }
+    }
+}
+
+/// What the shadow pack renders each frame, kept in `Shared`: the lights and the casters. The host (or the lighting
+/// pack) refills it before every frame; with no `light` there are no cascades and no [`crate::ShadowFrame`], with no
+/// local lights there are no [`crate::LocalShadowFrame`].
 #[derive(Clone, Debug, Default)]
 pub struct ShadowScene {
     pub light: Option<DirectionalShadowLight>,
+    local_lights: Vec<LocalShadowLight>,
     casters: Vec<ShadowCaster>,
+    local_maps_invalid: bool,
 }
 
 impl ShadowScene {
@@ -145,6 +169,51 @@ impl ShadowScene {
                 .push(bounds.map_or(caster, |bounds| caster.with_bounds(bounds)));
         }
         self.casters.len()
+    }
+
+    /// The point and spot lights that compete for shadow maps (`ShadowSettings::max_local_lights` of them win).
+    pub fn local_lights(&self) -> &[LocalShadowLight] {
+        &self.local_lights
+    }
+
+    pub fn clear_local_lights(&mut self) {
+        self.local_lights.clear();
+    }
+
+    pub fn add_local_light(&mut self, light: LocalShadowLight) {
+        self.local_lights.push(light);
+    }
+
+    /// Replaces the local lights with those of `world` that pass `filter`. `key` is the light's handle, so a light keeps
+    /// its map from frame to frame; `light_index` is where `pathon-pbr` puts it in its light array (directional lights
+    /// first, then the others in the order `RenderWorld::lights` iterates them), whatever the order in the scene.
+    /// Returns how many lights are offered.
+    pub fn use_local_lights(&mut self, world: &RenderWorld, filter: LocalLightFilter) -> usize {
+        self.local_lights.clear();
+        let lights = world.lights();
+        let indices = packed_indices(lights.iter().map(|(_, light)| light));
+        for ((id, light), index) in lights.iter().zip(indices) {
+            if filter.only_casting && !light.casts_shadows {
+                continue;
+            }
+            let raw = id.raw();
+            let key = u64::from(raw.generation()) << 32 | u64::from(raw.index());
+            if let Some(local) = LocalShadowLight::from_light(light, key, index, filter.area_as_point) {
+                self.local_lights.push(local);
+            }
+        }
+        self.local_lights.len()
+    }
+
+    /// Tells the pack that the content of the meshes behind some casters changed without the casters themselves
+    /// changing (a mesh rewritten in place): every map of a local light is rendered again next frame. Moving or
+    /// replacing a caster needs no such call.
+    pub fn invalidate_local_maps(&mut self) {
+        self.local_maps_invalid = true;
+    }
+
+    pub(crate) fn take_local_invalidation(&mut self) -> bool {
+        std::mem::take(&mut self.local_maps_invalid)
     }
 
     /// Takes the first directional light of `world` that casts shadows. `light_index` counts lights in the order
@@ -262,5 +331,46 @@ mod tests {
             Some(2),
             "a point light does not count"
         );
+    }
+
+    #[test]
+    fn local_lights_are_offered_with_the_index_pbr_gives_them() {
+        let mut scene = Scene::new();
+        scene.extract(|writer| {
+            writer
+                .spawn_light(&Light::point(Affine3A::IDENTITY, 800.0).with_shadows())
+                .expect("point");
+            writer
+                .spawn_light(&Light::directional(Affine3A::IDENTITY, 1.0e5).with_shadows())
+                .expect("sun");
+            writer
+                .spawn_light(&Light::spot(Affine3A::IDENTITY, 800.0, 0.2, 0.5))
+                .expect("spot without shadows");
+            writer
+                .spawn_light(&Light::area(Affine3A::IDENTITY, 800.0, 1.0, 1.0).with_shadows())
+                .expect("area");
+        });
+        let mut shadows = ShadowScene::new();
+
+        let offered = shadows.use_local_lights(scene.world(), LocalLightFilter::default());
+        assert_eq!(offered, 1, "only the point light asks for shadows, areas are off");
+        assert_eq!(
+            shadows.local_lights()[0].light_index,
+            1,
+            "the sun comes first in the pbr array"
+        );
+
+        let everything = shadows.use_local_lights(
+            scene.world(),
+            LocalLightFilter {
+                only_casting: false,
+                area_as_point: true,
+            },
+        );
+        assert_eq!(everything, 3);
+        let indices: Vec<u32> = shadows.local_lights().iter().map(|light| light.light_index).collect();
+        assert_eq!(indices, [1, 2, 3]);
+        let keys: std::collections::HashSet<u64> = shadows.local_lights().iter().map(|light| light.key).collect();
+        assert_eq!(keys.len(), 3, "every light has its own key");
     }
 }

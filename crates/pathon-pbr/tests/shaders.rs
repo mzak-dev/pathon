@@ -7,12 +7,12 @@ use pathon_gi::GiBindings;
 use pathon_material::{MaterialHooks, MaterialVariant};
 use pathon_mesh::VertexLayout;
 use pathon_pbr::{
-    ClusterPipeline, ForwardKey, GI_FIRST_BINDING, LTC_BINDING, PbrShaders, PrepassKey, SHADOW_FIRST_BINDING,
-    TEXTURE_GROUP,
+    ClusterPipeline, ForwardKey, GI_FIRST_BINDING, LOCAL_SHADOW_FIRST_BINDING, LTC_BINDING, PbrShaders, PrepassKey,
+    SHADOW_FIRST_BINDING, TEXTURE_GROUP,
 };
 use pathon_rhi::{Features, NullDevice};
 use pathon_shader::{ShaderFeatures, ShaderKey, reflect_bind_groups};
-use pathon_shadow::ShadowBindings;
+use pathon_shadow::{LocalShadowBindings, ShadowBindings};
 
 fn binder(device: &NullDevice, preference: PathPreference) -> TextureBinder {
     TextureBinder::new(
@@ -73,6 +73,7 @@ fn forward_and_prepass_pipelines_exist_for_all_forty_eight_permutations_on_both_
                             shadows,
                             area,
                             gi: false,
+                            local_shadows: false,
                         },
                         &layouts,
                         textures,
@@ -103,6 +104,7 @@ fn the_pack_works_without_a_texture_binder() {
                 shadows: false,
                 area: false,
                 gi: false,
+                local_shadows: false,
             },
             &layouts,
             None,
@@ -131,6 +133,7 @@ fn the_shadow_permutation_adds_the_three_shadow_bindings_and_nothing_else() {
             shadows,
             area: false,
             gi: false,
+            local_shadows: false,
         }
         .shader_key();
         let wgsl = shaders
@@ -160,6 +163,7 @@ fn the_area_permutation_adds_the_ltc_table_after_the_shadow_bindings() {
             shadows,
             area,
             gi: false,
+            local_shadows: false,
         }
         .shader_key();
         let wgsl = shaders
@@ -213,6 +217,7 @@ fn the_gi_permutation_adds_the_probe_volume_after_the_ltc_binding() {
             shadows: false,
             area: false,
             gi,
+            local_shadows: false,
         }
         .shader_key();
         let wgsl = shaders.wgsl(&key).unwrap_or_else(|error| panic!("gi {gi}: {error}"));
@@ -246,11 +251,79 @@ fn every_material_permutation_has_a_pipeline_with_the_probe_volume() {
                         shadows,
                         area,
                         gi: true,
+                        local_shadows: false,
                     },
                     &layouts,
                     Some(binder.layout()),
                 )
                 .unwrap_or_else(|error| panic!("{variant:?} shadows {shadows} area {area}: {error}"));
+        }
+    }
+}
+
+#[test]
+fn the_local_shadow_permutation_adds_its_bindings_after_every_other_flag() {
+    let mut shaders = PbrShaders::new(&MaterialHooks::default()).expect("modules register");
+    let bindings = |shaders: &mut PbrShaders, local_shadows: bool, gi: bool| {
+        let key = ForwardKey {
+            variant: MaterialVariant::default(),
+            split: false,
+            shadows: false,
+            area: false,
+            gi,
+            local_shadows,
+        }
+        .shader_key();
+        let wgsl = shaders
+            .wgsl(&key)
+            .unwrap_or_else(|error| panic!("local shadows {local_shadows} gi {gi}: {error}"));
+        let group = reflect_bind_groups(&wgsl, &["vs", "fs"]).expect("reflection").remove(0);
+        group.entries.iter().map(|entry| entry.binding).collect::<Vec<_>>()
+    };
+
+    let without = bindings(&mut shaders, false, false);
+    let with = bindings(&mut shaders, true, false);
+    let with_gi = bindings(&mut shaders, true, true);
+
+    assert_eq!(without, (0..SHADOW_FIRST_BINDING).collect::<Vec<_>>());
+    let local: Vec<u32> =
+        (LOCAL_SHADOW_FIRST_BINDING..LOCAL_SHADOW_FIRST_BINDING + LocalShadowBindings::COUNT).collect();
+    assert_eq!(
+        with,
+        without.iter().copied().chain(local.iter().copied()).collect::<Vec<_>>()
+    );
+    let volume: Vec<u32> = (GI_FIRST_BINDING..GI_FIRST_BINDING + GiBindings::COUNT).collect();
+    assert_eq!(
+        with_gi,
+        without.iter().copied().chain(volume).chain(local).collect::<Vec<_>>(),
+        "the probe volume keeps its place"
+    );
+}
+
+#[test]
+fn every_material_permutation_has_a_pipeline_with_local_shadows() {
+    let layouts = VertexLayout::standard().vertex_buffer_layouts();
+    let device = NullDevice::with_features(BINDLESS_FEATURES);
+    let binder = binder(&device, PathPreference::Auto);
+    let mut shaders = PbrShaders::new(&hooks_for(&binder)).expect("modules register");
+
+    for variant in MaterialVariant::all() {
+        for (shadows, area, gi) in [(false, false, false), (true, true, true)] {
+            shaders
+                .forward_pipeline(
+                    &device,
+                    ForwardKey {
+                        variant,
+                        split: false,
+                        shadows,
+                        area,
+                        gi,
+                        local_shadows: true,
+                    },
+                    &layouts,
+                    Some(binder.layout()),
+                )
+                .unwrap_or_else(|error| panic!("{variant:?} shadows {shadows} area {area} gi {gi}: {error}"));
         }
     }
 }

@@ -10,13 +10,16 @@ use pathon_bindless::TextureBinder;
 use pathon_gi::{GI_TEXTURE_ACCESS, GiBindings, GiFrame};
 use pathon_ibl::{IblBindings, IblEnvironment};
 use pathon_material::{AlphaKind, MaterialHooks, MaterialVariant};
-use pathon_shadow::{SHADOW_MAP, SHADOW_MAP_ACCESS, ShadowBindings, ShadowFrame};
+use pathon_shadow::{
+    LocalShadowBindings, LocalShadowFrame, SHADOW_LOCAL_MAP, SHADOW_MAP, SHADOW_MAP_ACCESS, ShadowBindings, ShadowFrame,
+};
 
 use crate::cluster::{COUNTERS_SIZE, ClusterBuffers, ClusterParams, ClusterPipeline, RANGE_SIZE};
 use crate::context::PbrContext;
 use crate::prepass::{draw_list, with_context};
 use crate::shaders::{
-    ForwardKey, GI_FIRST_BINDING, IBL_FIRST_BINDING, LTC_BINDING, RenderPipeline, SHADOW_FIRST_BINDING,
+    ForwardKey, GI_FIRST_BINDING, IBL_FIRST_BINDING, LOCAL_SHADOW_FIRST_BINDING, LTC_BINDING, RenderPipeline,
+    SHADOW_FIRST_BINDING,
 };
 
 /// Assigns the lights to clusters in compute, then draws the opaque and masked meshes (`Stage::Opaque`) and the blended
@@ -90,6 +93,10 @@ fn record_lighting(
     let shadow_frame = ctx.shared().get::<ShadowFrame>().copied();
     let shadow_map = ctx.slot(SHADOW_MAP).zip(shadow_frame);
     let shadows = shadow_map.is_some();
+    // The same for the atlas of point and spot lights: the frame and the slot, or no local shadows in this view.
+    let local_frame = ctx.shared().get::<LocalShadowFrame>().copied();
+    let local_map = ctx.slot(SHADOW_LOCAL_MAP).zip(local_frame);
+    let local_shadows = local_map.is_some();
     // The probe volume of this frame, when `GiPack` published one.
     let gi_frame = ctx.shared().get::<GiFrame>().copied();
     let gi = gi_frame.is_some();
@@ -119,6 +126,7 @@ fn record_lighting(
                         shadows,
                         area,
                         gi,
+                        local_shadows,
                     },
                     &frame.draws.vertex_buffers,
                     texture_layout,
@@ -207,6 +215,7 @@ fn record_lighting(
     let ranges_read = pass.read_buffer(ranges, Access::STORAGE_READ);
     let indices_read = pass.read_buffer(indices, Access::STORAGE_READ);
     let shadow_read = shadow_map.map(|(map, frame)| (pass.read(map, SHADOW_MAP_ACCESS), frame));
+    let local_read = local_map.map(|(map, frame)| (pass.read(map, SHADOW_MAP_ACCESS), frame));
     let gi_read = gi_frame.map(|frame| {
         (
             frame,
@@ -239,6 +248,7 @@ fn record_lighting(
         let ranges = pass.buffer(ranges_read);
         let indices = pass.buffer(indices_read);
         let shadows = shadow_bindings(pass, shadow_read.as_ref())?;
+        let local_shadows = local_shadow_bindings(pass, local_read.as_ref())?;
         let gi = gi_bindings(pass, gi_read)?;
         let groups = frame_groups(
             pass,
@@ -252,6 +262,7 @@ fn record_lighting(
                 indices,
                 environment,
                 shadows,
+                local_shadows,
                 ltc_table,
                 gi,
             },
@@ -285,6 +296,7 @@ fn record_lighting(
     let ranges_read = pass.read_buffer(ranges, Access::STORAGE_READ);
     let indices_read = pass.read_buffer(indices, Access::STORAGE_READ);
     let shadow_read = shadow_map.map(|(map, frame)| (pass.read(map, SHADOW_MAP_ACCESS), frame));
+    let local_read = local_map.map(|(map, frame)| (pass.read(map, SHADOW_MAP_ACCESS), frame));
     let gi_read = gi_frame.map(|frame| {
         (
             frame,
@@ -299,6 +311,7 @@ fn record_lighting(
         let ranges = pass.buffer(ranges_read);
         let indices = pass.buffer(indices_read);
         let shadows = shadow_bindings(pass, shadow_read.as_ref())?;
+        let local_shadows = local_shadow_bindings(pass, local_read.as_ref())?;
         let gi = gi_bindings(pass, gi_read)?;
         let groups = frame_groups(
             pass,
@@ -312,6 +325,7 @@ fn record_lighting(
                 indices,
                 environment,
                 shadows,
+                local_shadows,
                 ltc_table,
                 gi,
             },
@@ -354,6 +368,9 @@ struct FrameBindings {
     environment: IblEnvironment,
     /// The cascade uniforms and the view of the map array, when the permutation has the `shadows` flag.
     shadows: Option<(ShadowFrame, TextureViewId)>,
+    /// The uniforms of the point and spot lights and the view of their atlas, when the permutation has the
+    /// `local_shadows` flag.
+    local_shadows: Option<(LocalShadowFrame, TextureViewId)>,
     /// The table of the area lights, when the permutation has the `area_lights` flag.
     ltc_table: Option<pathon_api::rhi::BufferId>,
     /// The volume of the probes and the views of its atlases, when the permutation has the `gi` flag.
@@ -366,6 +383,15 @@ fn shadow_bindings(
 ) -> Result<Option<(ShadowFrame, TextureViewId)>, RhiError> {
     read.copied()
         .map(|(map, frame)| Ok((frame, pass.view_with(map, &ShadowBindings::map_view_desc())?)))
+        .transpose()
+}
+
+fn local_shadow_bindings(
+    pass: &mut pathon_api::graph::PassContext<'_>,
+    read: Option<&(pathon_api::graph::TextureHandle, LocalShadowFrame)>,
+) -> Result<Option<(LocalShadowFrame, TextureViewId)>, RhiError> {
+    read.copied()
+        .map(|(map, frame)| Ok((frame, pass.view_with(map, &LocalShadowBindings::atlas_view_desc())?)))
         .transpose()
 }
 
@@ -429,6 +455,12 @@ fn frame_groups(
                 if let Some((frame, map_view)) = bindings.shadows {
                     entries
                         .extend(ShadowBindings::starting_at(SHADOW_FIRST_BINDING).bind_group_entries(&frame, map_view));
+                }
+                if let Some((frame, atlas_view)) = bindings.local_shadows {
+                    entries.extend(
+                        LocalShadowBindings::starting_at(LOCAL_SHADOW_FIRST_BINDING)
+                            .bind_group_entries(&frame, atlas_view),
+                    );
                 }
                 if let Some(table) = bindings.ltc_table {
                     entries.push(BindGroupEntry {

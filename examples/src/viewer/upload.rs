@@ -21,7 +21,7 @@ use pathon_mesh::{GeometryPool, IndexData, MeshData, MeshId, PoolDesc, VertexLay
 use pathon_scene::{
     Aabb, CameraDesc, CameraId, InstanceDesc, LightKind, MaterialHandle, MeshHandle, RenderWorld, Scene, Snapshot,
 };
-use pathon_shadow::ShadowCaster;
+use pathon_shadow::{LocalLightFilter, LocalShadowLight, ShadowCaster, ShadowScene};
 use pathon_texture::{ColorSpace, Texture, TextureLoader, TextureSource, Variant};
 
 use super::settings::LightingMode;
@@ -104,6 +104,10 @@ pub struct ViewerAssets {
     pub shadow_casters: Vec<ShadowCaster>,
     /// The way the first directional light shines: the sun that `ShadowScene` shadows.
     pub sun_direction: Option<Vec3>,
+    /// The point and spot lights as candidates for shadow maps, indexed as `PbrPack` indexes them; the second list
+    /// has the area lights too (shadowed from their centre).
+    pub local_lights: Vec<LocalShadowLight>,
+    pub local_lights_with_areas: Vec<LocalShadowLight>,
 }
 
 /// Everything the `--simple` pack draws from. Immutable after the upload, so the render side shares it through an
@@ -456,6 +460,22 @@ fn shadow_casters(
     casters
 }
 
+// The local lights of the snapshot as shadow candidates, with and without the area lights.
+fn local_shadow_lights(world: &RenderWorld) -> (Vec<LocalShadowLight>, Vec<LocalShadowLight>) {
+    let mut scene = ShadowScene::new();
+    let mut offered = |area_as_point| {
+        scene.use_local_lights(
+            world,
+            LocalLightFilter {
+                only_casting: false,
+                area_as_point,
+            },
+        );
+        scene.local_lights().to_vec()
+    };
+    (offered(false), offered(true))
+}
+
 fn first_sun_direction(world: &RenderWorld) -> Option<Vec3> {
     world
         .lights()
@@ -574,6 +594,8 @@ fn upload_simple(device: &dyn DeviceApi, scene: &LoadedScene) -> Result<Uploaded
         textures,
         shadow_casters: Vec::new(),
         sun_direction: first_sun_direction(&snapshot),
+        local_lights: local_shadow_lights(&snapshot).0,
+        local_lights_with_areas: local_shadow_lights(&snapshot).1,
         snapshot: Arc::clone(&snapshot),
         cameras,
         main_camera: scene.main_camera,
@@ -684,6 +706,8 @@ fn upload_pbr(
     let assets = ViewerAssets {
         shadow_casters: shadow_casters(&snapshot, &pool, &materials, &material_ids),
         sun_direction: first_sun_direction(&snapshot),
+        local_lights: local_shadow_lights(&snapshot).0,
+        local_lights_with_areas: local_shadow_lights(&snapshot).1,
         stats: stats(scene, uploaded.len()),
         textures: uploaded,
         snapshot,

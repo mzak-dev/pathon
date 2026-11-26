@@ -221,3 +221,164 @@ fn shadow_factor_directional(
     let fade_width = max(shadows.tuning.y * far, 1.0e-4);
     return mix(1.0, visibility, saturate((far - view_depth) / fade_width));
 }
+
+// ---- point and spot lights ----
+//
+// The maps of every local light share one atlas (a depth texture, reverse-Z). A spot light has one tile, a point light six,
+// one per axis direction in the order +X, -X, +Y, -Y, +Z, -Z, each rendered with a field of view a little wider than 90
+// degrees so that the filter never reads the neighbouring tile: the face is picked by the largest component of the
+// receiver's offset from the light, with no hardware cube sampling and no seam. A tile stores near / d, where d is the
+// distance along its axis (an infinite far plane), so a receiver is lit when its own near / d is at least the stored one.
+// The shader that owns the entry point declares the bindings and the `local_shadow_factor` helper
+// (pathon_shadow::LocalShadowBindings) and the helper calls the functions below.
+
+struct LocalShadowLight {
+    // xyz: position, w: near plane of the light's maps.
+    position_near: vec4<f32>,
+    // x: light index, y: first tile, z: 1 for a point light (six tiles), 0 for a spot light.
+    ids: vec4<u32>,
+}
+
+struct LocalShadowTile {
+    // World to clip space of the tile: x and y in -1..1 over its field of view, w the distance along its axis.
+    view_projection: mat4x4<f32>,
+    // xy: offset of the tile in the atlas as a fraction, z: its size as a fraction, w: metres per texel per metre of
+    // distance along the axis.
+    rect: vec4<f32>,
+}
+
+struct LocalShadows {
+    lights: array<LocalShadowLight, 16>,
+    tiles: array<LocalShadowTile, 64>,
+    // x: number of lights, y: filter, z: flags (bit 0: rotate the filter per pixel).
+    counts: vec4<u32>,
+    // x: atlas side in texels, y: 1 / atlas side, z: constant bias in metres, w: relative bias.
+    tuning: vec4<f32>,
+    // x: normal offset in texels of the map at the receiver's distance.
+    normal: vec4<f32>,
+}
+
+// The face of a point light's map that looks at `offset`, the vector from the light to a receiver.
+fn shadow_local_face(offset: vec3<f32>) -> u32 {
+    let a = abs(offset);
+    if (a.x >= a.y && a.x >= a.z) {
+        return select(0u, 1u, offset.x < 0.0);
+    }
+    if (a.y >= a.z) {
+        return select(2u, 3u, offset.y < 0.0);
+    }
+    return select(4u, 5u, offset.z < 0.0);
+}
+
+fn shadow_local_tile_index(light: LocalShadowLight, world_position: vec3<f32>) -> u32 {
+    if (light.ids.z == 0u) {
+        return light.ids.y;
+    }
+    return light.ids.y + shadow_local_face(world_position - light.position_near.xyz);
+}
+
+fn shadow_local_tap(
+    atlas: texture_depth_2d,
+    shadow_sampler: sampler_comparison,
+    uv: vec2<f32>,
+    depth: f32,
+) -> f32 {
+    return textureSampleCompareLevel(atlas, shadow_sampler, uv, depth);
+}
+
+// `shadow_pcf3` over the atlas: a box filter three texels wide in four taps, `uv` in the atlas, `size` its side.
+fn shadow_local_pcf3(
+    atlas: texture_depth_2d,
+    shadow_sampler: sampler_comparison,
+    uv: vec2<f32>,
+    depth: f32,
+    size: f32,
+) -> f32 {
+    let p = uv * size;
+    let whole = floor(p);
+    let fraction = p - whole;
+
+    let low = min(vec2<f32>(1.0), vec2<f32>(1.5) - fraction);
+    let high = max(vec2<f32>(0.0), fraction - vec2<f32>(0.5));
+    let first_weight = low + vec2<f32>(1.0);
+    let second_weight = vec2<f32>(1.0) + high;
+    let first = (whole - vec2<f32>(0.5) + vec2<f32>(1.0) / first_weight) / size;
+    let second = (whole + vec2<f32>(1.5) + high / second_weight) / size;
+
+    var sum = first_weight.x * first_weight.y * shadow_local_tap(atlas, shadow_sampler, first, depth);
+    sum += second_weight.x * first_weight.y *
+        shadow_local_tap(atlas, shadow_sampler, vec2<f32>(second.x, first.y), depth);
+    sum += first_weight.x * second_weight.y *
+        shadow_local_tap(atlas, shadow_sampler, vec2<f32>(first.x, second.y), depth);
+    sum += second_weight.x * second_weight.y * shadow_local_tap(atlas, shadow_sampler, second, depth);
+    return sum / 9.0;
+}
+
+fn shadow_local_pcf5(
+    atlas: texture_depth_2d,
+    shadow_sampler: sampler_comparison,
+    uv: vec2<f32>,
+    depth: f32,
+    size: f32,
+    rotation: vec2<f32>,
+) -> f32 {
+    let radius = SHADOW_PCF5_RADIUS_TEXELS / size;
+    var sum = 0.0;
+    for (var tap = 0u; tap < 16u; tap += 1u) {
+        let disc = shadow_poisson[tap];
+        let turned = vec2<f32>(disc.x * rotation.x - disc.y * rotation.y, disc.x * rotation.y + disc.y * rotation.x);
+        sum += shadow_local_tap(atlas, shadow_sampler, uv + turned * radius, depth);
+    }
+    return sum * 0.0625;
+}
+
+// The visibility of a light at a surface, 0 in shadow and 1 lit. `tile` is the one `shadow_local_tile_index` picked.
+// `normal` is the geometric normal (unit length), `pixel` the fragment's `@builtin(position).xy`. A receiver the tile
+// does not cover (outside the cone of a spot light) is lit.
+fn shadow_local_visibility(
+    light: LocalShadowLight,
+    tile: LocalShadowTile,
+    counts: vec4<u32>,
+    tuning: vec4<f32>,
+    normal_bias_texels: f32,
+    atlas: texture_depth_2d,
+    shadow_sampler: sampler_comparison,
+    world_position: vec3<f32>,
+    normal: vec3<f32>,
+    pixel: vec2<f32>,
+) -> f32 {
+    // Normal offset: the bias grows where the surface is seen at a grazing angle and with the size of a texel there.
+    let to_light = light.position_near.xyz - world_position;
+    let cos_theta = clamp(dot(normal, to_light * inverseSqrt(max(dot(to_light, to_light), 1.0e-8))), 0.0, 1.0);
+    let sin_theta = sqrt(1.0 - cos_theta * cos_theta);
+    let axis_depth = (tile.view_projection * vec4<f32>(world_position, 1.0)).w;
+    let moved = world_position + normal * (sin_theta * normal_bias_texels * tile.rect.w * axis_depth);
+
+    let clip = tile.view_projection * vec4<f32>(moved, 1.0);
+    let near = light.position_near.w;
+    if (clip.w <= near) {
+        return 1.0;
+    }
+    let tile_uv = clip.xy / clip.w * vec2<f32>(0.5, -0.5) + vec2<f32>(0.5);
+    // A filter that reaches past the edge of the tile would read the next one: the last 2.5 texels of a tile, which
+    // only the outside of a spot light's cone ever reaches, count as lit.
+    let edge = 2.5 / (tile.rect.z * tuning.x);
+    if (any(tile_uv < vec2<f32>(edge)) || any(tile_uv > vec2<f32>(1.0 - edge))) {
+        return 1.0;
+    }
+    // The receiver moves towards the light by a constant and a share of its distance before it is compared.
+    let depth = near / max(clip.w * (1.0 - tuning.w) - tuning.z, near);
+    let uv = tile.rect.xy + tile_uv * tile.rect.z;
+    if (counts.y == SHADOW_FILTER_HARD) {
+        return shadow_local_tap(atlas, shadow_sampler, uv, depth);
+    }
+    if (counts.y == SHADOW_FILTER_PCF3) {
+        return shadow_local_pcf3(atlas, shadow_sampler, uv, depth, tuning.x);
+    }
+    var rotation = vec2<f32>(1.0, 0.0);
+    if ((counts.z & 1u) != 0u) {
+        let angle = SHADOW_TAU * shadow_interleaved_gradient_noise(pixel);
+        rotation = vec2<f32>(cos(angle), sin(angle));
+    }
+    return shadow_local_pcf5(atlas, shadow_sampler, uv, depth, tuning.x, rotation);
+}

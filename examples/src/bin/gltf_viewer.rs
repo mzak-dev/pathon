@@ -6,7 +6,8 @@
 //   PATHON_TEST_SCENE=test-assets/classroom/classroom-lite.glb cargo run --release -p pathon-examples --bin gltf_viewer
 //
 // Options: --screenshot out.png [--camera N | --camera-name NAME | --eye x,y,z --target x,y,z [--fov DEG]] [--size WxH]
-//          [--supersample N] [--ev STOPS] [--no-shadows] [--auto-exposure] [--no-bloom] [--neutral]
+//          [--supersample N] [--ev STOPS] [--no-shadows] [--no-local-shadows] [--area-shadows]
+//          [--local-shadow-lights N] [--auto-exposure] [--no-bloom] [--neutral]
 //          [--area-as-spot]  (area lights as the hemisphere spots of the file, as before K05)
 //          [--gi [--gi-spacing M] [--gi-voxel M] [--gi-rays N] [--gi-hysteresis H] [--gi-period FRAMES] [--gi-warmup
 // FRAMES]]  (pathon-gi probes)          [--dump-hdr out.npy] [--reference-like lights-only|ibl]  (the measuring mode,
@@ -128,6 +129,12 @@ fn parse_options(args: impl Iterator<Item = String>) -> Result<Options, String> 
             "--target" => target = Some(parse_vec3("--target", &value("--target")?)?),
             "--fov" => fov_degrees = Some(parse_number("--fov", &value("--fov")?)?),
             "--no-shadows" => request.sun_shadows = false,
+            "--no-local-shadows" => request.local_shadows = false,
+            "--area-shadows" => request.area_shadows = true,
+            "--redraw-local-shadows" => request.redraw_local_shadows = true,
+            "--local-shadow-lights" => {
+                request.local_shadow_lights = Some(parse_number("--local-shadow-lights", &value(&arg)?)?);
+            }
             "--auto-exposure" => request.auto_exposure = true,
             "--no-bloom" => request.bloom = false,
             "--brute-force-lights" => request.brute_force_lights = true,

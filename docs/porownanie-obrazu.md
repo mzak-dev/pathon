@@ -285,7 +285,7 @@ Na podstawie map różnic, przebiegów AOV wzorca i eksperymentów powyżej (wzo
 | --- | --- | --- | --- |
 | 1 | **Brak oświetlenia pośredniego (GI)** | oświetlenie pośrednie to 75 / 52 / 70% luminancji wzorca `spot` (55 / 61 / 65% w `reference/`); dodanie go do pathon podnosi PSNR 13,6 → 20,0, SSIM 0,67 → 0,83, ΔE 10,6 → 6,7, p95 44 → 17 | K12, K13, część K04 |
 | 2 | **Okna: żaluzje i ramy** (część GI, ale najbardziej widoczna) | 6 / 8 / 9% pikseli niesie 54 / 49 / 55% luminancji (`reference/`: 36 / 46 / 47%); pathon daje tam 6 / 13 / 8% jasności wzorca (`reference/`: 10 / 19 / 16%), ΔE w oknach 52 / 46 / 37 wobec 8,1 / 8,0 / 7,4 w reszcie; 69 / 69 / 75% całego oświetlenia pośredniego leży w oknach; bezpośrednio dostają tylko 5 / 28 / 6% swojej jasności. Poza oknami bias to 0,76 / 0,67 / 0,60, nie 0,38 / 0,41 / 0,31. Czy to światło przez szczeliny żaluzji czy transmisja materiału, nie sprawdzono | K12 (sondy), K13, ewentualnie materiał żaluzji |
-| 3 | **Brak cieni lamp punktowych i spotów** (`ShadowPack` rysuje tylko cień słońca) | w zacienionej połowie pikseli pathon daje 2,08 / 1,79 / 2,57 razy więcej światła bezpośredniego niż Cycles (w oświetlonej: 1,28 / 0,68 / 0,84); połowa pikseli, która u Cyclesa ma 26 / 14 / 10% światła bezpośredniego, u pathon ma 37 / 30 / 26% | K03, K10 |
+| 3 | **Brak cieni lamp punktowych i spotów** (`ShadowPack` rysuje tylko cień słońca) | w zacienionej połowie pikseli pathon daje 2,08 / 1,79 / 2,57 razy więcej światła bezpośredniego niż Cycles (w oświetlonej: 1,28 / 0,68 / 0,84); połowa pikseli, która u Cyclesa ma 26 / 14 / 10% światła bezpośredniego, u pathon ma 37 / 30 / 26% | K03 (zrobione: stosunek w zacienionej połowie 2,08 / 1,79 / 2,57 → 1,86 / 1,66 / 2,33, [wyniki](#k03-cienie-świateł-punktowych-i-reflektorów)), K10 (prawdziwy cień światła obszarowego) |
 | 4 | **Wyciek środowiska w wariancie `ibl`** (brak widoczności nieba) | środowisko dodaje do pathon +25 / +23 / +51% luminancji `lights-only`, we wzorcu +0,5 / +2,5 / −0,3% (4 do 20 razy za dużo; w trzeciej kamerze wzorzec nie dodaje nic); podłoga ×1,39 / 1,64 / 1,32 wzorca przy ×0,85 / 0,97 / 0,84 bez IBL; ΔE średnie `ibl` 12,6 wobec 10,6, FLIP LDR 0,417 wobec 0,335. IBL tu pogarsza obraz, bo wnętrze dostaje całe niebo | K12 (okluzja środowiska), K04 |
 | 5 | **Światła obszarowe jako spoty oraz reszta: filtrowanie, materiały, aliasing** | podmiana wzorca `spot` na `reference/` przesuwa `bias_total` pathon z 0,38 / 0,41 / 0,31 na 0,40 / 0,54 / 0,55 i pogarsza SSIM o 0,02 (cały pomiar), czyli sam kształt lampy za oknem przesuwa bias nawet o 0,24; po dodaniu idealnego GI zostaje ΔE około 7 i SSIM 0,82; aliasing: bez `--supersample` SSIM niższy o 0,03 | K05 (światła powierzchniowe), K06 (TAA), K02 |
 
@@ -362,6 +362,94 @@ Pudełko Cornella z `gi_cornell` (kolejno: samo środowisko, z sondami; wymiana 
 - Zielone progi SSIM (0,80) i ΔE (7,5) są poza zasięgiem samej osi GI przy dzisiejszych materiałach i filtrowaniu: pułap z K01 (idealne GI wzorca) to SSIM 0,82 i ΔE 7,0 przy tym samym świetle bezpośrednim.
 - Artefakty widoczne w kolażach: plamy o rozmiarze odstępu sond na gładkich ścianach, ciemne obwódki przy krawędziach mebli (sonda blisko powierzchni), brak odbić dla obiektów mniejszych niż woksel.
 - Pomiar jest jeden (RX 9070 XT, Vulkan); GI jest losowe w kolejności listy komórek i obrocie promieni, ale deterministyczne w obrębie uruchomienia (3 powtórzenia goldena Cornella dały ten sam obraz).
+
+## K03: cienie świateł punktowych i reflektorów
+
+26.11.2026, `pathon-shadow` z cieniami świateł lokalnych ([ADR-0050](adr/0050-cienie-swiatel-punktowych-i-reflektorow.md), [strona crate'u](crates/pathon-shadow.md#światła-punktowe-i-reflektory-k03)). Ten sam protokół (`compare_all.py`, 960×540, `--supersample 2`, Vulkan, RX 9070 XT, wzorzec `reference/` odszumiony, 3 kamery). **„Przed” to ta sama binarka `gltf_viewer` z `--no-local-shadows`** (nie osobny build): jej wiersz zgadza się co do cyfry z wierszami „przed” z K05 i K12 (13,47 / 0,652 / 11,27 / 44,2 / 0,55), więc różnica jest tylko cieniem. „Po” to ustawienia domyślne: **7 świateł punktowych ma cienie** (sześć lamp sufitowych i lampa korytarza), światła obszarowe (wypełnienie za oknem, podświetlenie tablicy) nie. FLIP nie jest w tabelach: `flip_evaluator` nie jest zainstalowany w interpreterze tej sesji (instalacja z sieci poza zakresem zadania). Polecenia:
+
+```sh
+python tools/scenes/compare_all.py "--viewer-args=--no-local-shadows"   # przed
+python tools/scenes/compare_all.py                                       # po (domyślnie 7 świateł z cieniami)
+python tools/scenes/compare_all.py "--viewer-args=--area-shadows"        # światła obszarowe z cieniem z centrum (8 z 9 świateł ma mapy)
+python tools/scenes/compare_all.py "--viewer-args=--gi --gi-voxel 0.05 --gi-period 8"   # z GI (jak w K12), z flagą `--no-local-shadows` dla „przed”
+```
+
+### Metryki, średnia z trzech kamer (`lights-only`)
+
+| Wzorzec, obraz | PSNR dB | SSIM | ΔE2000 śr. | ΔE2000 p95 | bias | bias bez okien |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `reference/`, przed | 13,47 | 0,652 | 11,27 | 44,2 | 0,55 | 0,84 |
+| `reference/`, **po** | 13,30 | 0,658 | 11,34 | 46,1 | 0,52 | 0,80 |
+| `reference/`, po, światła obszarowe z cieniem z centrum | 13,28 | 0,658 | 11,38 | 46,2 | 0,52 | 0,80 |
+| `reference/`, z GI (woksel 5 cm), przed | 16,50 | 0,701 | 8,95 | 26,6 | 0,78 | 1,01 |
+| `reference/`, z GI, **po** | **16,67** | **0,720** | **8,53** | 26,7 | 0,76 | 0,98 |
+| `reference-spot/` (lampy obszarowe jako spoty), przed | 13,61 | 0,667 | 10,64 | 44,1 | 0,37 | 0,68 |
+| `reference-spot/`, **po** (`--area-as-spot`: spoty mają cienie) | 13,40 | 0,673 | 10,76 | 46,3 | 0,35 | 0,65 |
+| `reference/`, wariant `ibl`, przed | 13,58 | 0,614 | 12,96 | 39,2 | 0,70 | 1,07 |
+| `reference/`, `ibl`, **po** | 13,70 | 0,632 | 12,42 | 39,6 | 0,68 | 1,03 |
+
+Wynik jest **skromny**: SSIM rośnie o 0,006 do 0,019, ΔE średnie z GI spada o 0,4, PSNR bez GI trochę spada. To nie błąd: cienie tylko odbierają światło, a pathon bez GI jest już za ciemny w większości masek (bias 0,55), więc odjęcie światła w zacienionych miejscach pogarsza PSNR i p95, dopóki nie ma oświetlenia pośredniego, które wraca w te miejsca. Z GI ten sam cień daje najlepsze liczby, jakie ten pomiar widział (SSIM 0,720, ΔE 8,53).
+
+### Luminancja w maskach (pathon / wzorzec, `reference/`, `lights-only`, bez GI; `renderCam` / `pathon_wide` / `pathon_reverse`)
+
+| Maska | przed | po |
+| --- | --- | --- |
+| podłoga | 0,97 / 0,98 / 0,89 | 0,87 / 0,85 / 0,76 |
+| drewno | 0,78 / 0,83 / 0,92 | 0,72 / 0,78 / 0,82 |
+| metal | 0,82 / 0,81 / 0,90 | 0,74 / 0,77 / 0,78 |
+| ściany i sufit | 0,81 / 0,80 / 0,88 | 0,79 / 0,78 / 0,85 |
+| oświetlone bezpośrednio | 0,67 / 0,64 / 0,68 | 0,65 / 0,63 / 0,66 |
+| zacienione | 0,44 / 0,37 / 0,31 | 0,39 / 0,35 / 0,28 |
+
+### Źródło nr 3 z listy pięciu: światło bezpośrednie w zacienionej połowie pikseli
+
+Ta sama miara co w K01 (`reference-spot/`, światło bezpośrednie pathon `lights-only` bez GI wobec sumy przebiegów bezpośrednich wzorca, maska = połowa pikseli o najmniejszym `Diffuse Direct` wzorca), polecenie `python tools/scenes/direct_ratio.py out/k03-before out/k03-after [--reference reference-spot]` (nowy skrypt). „Przed” z `--area-as-spot` odtwarza K01 co do cyfry (2,08 / 1,79 / 2,57).
+
+| | `renderCam` | `pathon_wide` | `pathon_reverse` |
+| --- | ---: | ---: | ---: |
+| `reference-spot/`, zacieniona połowa, przed | 2,08 | 1,79 | 2,57 |
+| `reference-spot/`, zacieniona połowa, **po** (spoty z cieniem) | **1,86** | **1,66** | **2,33** |
+| `reference/`, zacieniona połowa, przed | 2,08 | 1,74 | 2,46 |
+| `reference/`, zacieniona połowa, **po** | **1,87** | **1,61** | **2,21** |
+| `reference/`, po, światła obszarowe z cieniem z centrum | 1,86 | 1,62 | 2,22 |
+
+Cienie lamp obniżają ten stosunek o ok. 10% (nadmiar ponad 1,0 o ok. 20%): reszta, około dwukrotności, siedzi gdzie indziej. Mapy robią to, co mają (testy numeryczne: 0 przecieków i 0 acne na 8961 odbiornikach w pokoju z sześciu stron), a powód skromnego wyniku jest w scenie, nie w technice:
+
+- **Światło wypełniające za oknem dominuje** (szacunek z kandeli, nie pomiar tego pomiaru: 213 437 cd przy ok. 4 m daje rzędu 10 000 lx, lampy sufitowe po 1087 cd przy ok. 2,5 m rzędu 170 lx, czyli dziesiątki razy mniej), a jest światłem obszarowym. Prostokąt 0,75 × 8,3 m stoi tuż przy płaszczyźnie okien (węzeł `exterior_fillLight`: x = 4,05, y = 2,6). Cień z jednego punktu w środku prostokąta (`--area-shadows`: 8 z 9 świateł ma mapy, 48 kafli) **nie zmienia nic mierzalnego** (zacieniona połowa 1,86 wobec 1,87, bias w maskach równy do 0,01): źródło leży w otworze okna, a LTC całkuje cały prostokąt, więc punkt nie widzi tego, co widzi 8 m listwy. Dopóki światło obszarowe nie dostanie prawdziwego cienia (wiele próbek prostokąta), nadmiar w głębi sali zostaje. Stąd w ADR domyślne `area_as_point: false`.
+- **Żaluzje i ramy okien** nie rzucają cienia od światła za oknem (transparentne powierzchnie nie są rzucającymi w viewerze, a ramy są drobne względem jednego punktu), a we wzorcu blokują większość tego światła.
+- **Nie sprawdzono**, czy szklane klosze lamp sufitowych (nieprzezroczyste w Cyclesie dla promieni cienia, a w pathon wyłączone z rzucających jako blend) zmieniają jasność lamp: lampa w kloszu daje w Cyclesie inny obraz niż punkt w środku kuli bez przeszkód.
+
+Czyli: K03 jest potrzebne i poprawne (lampy nie świecą przez ławki i ściany: podłoga 0,97 → 0,87 wzorca w `renderCam`), ale **nie zamyka źródła nr 3 samo**; największy kawałek to światło obszarowe z cieniem (K10) i żaluzje.
+
+### Koszt klatki (classroom, `renderCam`, 1920×1080, `lights-only`, `--bench 120`, najlepsze z 4 uruchomień, RX 9070 XT, Vulkan, release)
+
+| Ustawienie | GPU passy łącznie | w tym `pbr forward` | w tym `shadow local` | ściana zegara |
+| --- | ---: | ---: | ---: | ---: |
+| bez cieni lokalnych | 1,56 ms | 1,14 | brak | 1,85 ms |
+| 4 światła z cieniem, mapy z pamięci podręcznej | 2,08 | 1,64 | 0 (pass się nie zapisuje) | 2,23 |
+| 7 świateł (wszystkie punktowe), z pamięci podręcznej | 2,45 | 1,98 | 0 | 2,80 |
+| 8 świateł (z obszarowymi jako punktami), z pamięci podręcznej | 2,41 | 1,94 | 0 | 2,84 |
+| 4 światła, mapy rysowane od nowa co klatkę (`--redraw-local-shadows`) | 2,60 | 1,70 | 0,43 | 3,03 |
+| 7 świateł, rysowane co klatkę | 3,33 | 2,00 | 0,86 | 3,89 |
+| 8 świateł, rysowane co klatkę | 3,45 | 1,96 | 1,02 | 3,93 |
+
+Koszt w stanie ustalonym (statyczna scena, mapy z pamięci) to **cena próbkowania w passie koloru**: +0,5 ms przy 4 światłach i +0,85 ms przy 7 (pbr forward 1,14 → 1,98 ms, +74%): każdy piksel liczy filtr 4 próbek dla każdego z siedmiu świateł, których zasięg obejmuje całą salę. Rysowanie map to dodatkowe 0,43 / 0,86 / 1,02 ms przy 4 / 7 / 8 światłach (443 tys. trójkątów sceny, sześć ścian na światło), ale płaci się je tylko w klatce, w której światło albo rzucający w jego zasięgu się zmienił. Co klatkę ten sam pomiar to 3,33 ms zamiast 1,56 ms. Pierwsza klatka rysuje wszystko (7 świateł = 42 kafle). Klasyczne tanie ulepszenia, których nie zrobiono: pominięcie próbkowania dla powierzchni odwróconej od światła (ryzyko dla materiałów cienkich i transmisji), filtr `Hard` zamiast `Pcf3` (4 próbki → 1), indeks mapy zapisany w tablicy świateł zamiast szukania po indeksie w uniformie.
+
+### Obrazy
+
+![Lampy sufitowe bez i z cieniami lokalnymi (`pathon_wide`, `lights-only`)](scenes/reference/k03-local-shadows-before-after.png)
+
+Z GI i cieniami lokalnymi (`renderCam`: Cycles, pathon, ΔE, stosunek luminancji):
+
+![renderCam z GI i cieniami lokalnymi](scenes/reference/k03-compare-reference-lights-only-renderCam-gi.png)
+
+Scena testowa `shadows_local` (reflektor i dwa światła punktowe; test GPU, golden):
+
+![shadows_local](scenes/reference/k03-shadows-local.png)
+
+### Jak liczy się miara „zacieniona połowa”
+
+Maska `direct_shadowed` to połowa pikseli o najmniejszym przebiegu `Diffuse Direct` wzorca (`compare.py`, `build_masks`); miara to średnia luminancja obrazu pathon (`lights-only`, bez GI i bez środowiska, więc wyłącznie światło bezpośrednie) podzielona przez średnią luminancję sumy przebiegów bezpośrednich wzorca (`direct_only_image`) w tej masce. Wzorzec bierze przebiegi z surowego (nieodszumionego) EXR, bo odszumiony ich nie ma.
 
 ## Progi: zielone, żółte, czerwone
 

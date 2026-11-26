@@ -49,14 +49,85 @@ fn key_of(caster: &ShadowCaster) -> BufferKey {
     (caster.vertex_buffer, caster.index_buffer, caster.vertex_stride)
 }
 
+pub(crate) fn is_drawable(caster: &ShadowCaster) -> bool {
+    caster.index_count > 0 && caster.model.is_finite()
+}
+
+/// The drawable casters grouped by the buffers they use (groups in the order they first appear), with a slot in the
+/// model matrix array for each, so that a group is a contiguous range of it.
+#[derive(Clone, Debug)]
+pub(crate) struct CasterGroups<'a> {
+    groups: Vec<(BufferKey, Vec<&'a ShadowCaster>)>,
+    slots: Vec<Vec<u32>>,
+    /// Model matrix of every drawable caster, indexed by `Draw::caster`.
+    pub models: Vec<Mat4>,
+}
+
+impl<'a> CasterGroups<'a> {
+    pub(crate) fn new(casters: &'a [ShadowCaster]) -> Self {
+        let mut groups: Vec<(BufferKey, Vec<&ShadowCaster>)> = Vec::new();
+        for caster in casters.iter().filter(|caster| is_drawable(caster)) {
+            let key = key_of(caster);
+            match groups.iter_mut().find(|(candidate, _)| *candidate == key) {
+                Some((_, members)) => members.push(caster),
+                None => groups.push((key, vec![caster])),
+            }
+        }
+        let mut models = Vec::new();
+        let mut slots: Vec<Vec<u32>> = Vec::with_capacity(groups.len());
+        for (_, members) in &groups {
+            slots.push(
+                members
+                    .iter()
+                    .map(|caster| {
+                        models.push(Mat4::from(caster.model));
+                        u32::try_from(models.len() - 1).unwrap_or(u32::MAX)
+                    })
+                    .collect(),
+            );
+        }
+        Self { groups, slots, models }
+    }
+
+    /// The draws of the casters `accepts` says yes to, grouped; a group with none is left out.
+    pub(crate) fn batches(&self, mut accepts: impl FnMut(&ShadowCaster) -> bool) -> Vec<Batch> {
+        self.groups
+            .iter()
+            .zip(&self.slots)
+            .filter_map(|((key, members), slots)| {
+                let draws: Vec<Draw> = members
+                    .iter()
+                    .zip(slots)
+                    .filter(|(caster, _)| accepts(caster))
+                    .map(|(caster, slot)| Draw {
+                        index_count: caster.index_count,
+                        first_index: caster.first_index,
+                        base_vertex: caster.base_vertex,
+                        caster: *slot,
+                    })
+                    .collect();
+                (!draws.is_empty()).then_some(Batch {
+                    vertex_buffer: key.0,
+                    vertex_stride: key.2,
+                    index_buffer: key.1,
+                    draws,
+                })
+            })
+            .collect()
+    }
+}
+
 pub(crate) fn plan_frame(
     casters: &[ShadowCaster],
     frustum: &CameraFrustum,
     basis: LightBasis,
     settings: &ShadowSettings,
 ) -> FramePlan {
-    let drawable = |caster: &&ShadowCaster| caster.index_count > 0 && caster.model.is_finite();
-    let boxes: Vec<Aabb> = casters.iter().filter(drawable).map(|caster| caster.bounds).collect();
+    let boxes: Vec<Aabb> = casters
+        .iter()
+        .filter(|caster| is_drawable(caster))
+        .map(|caster| caster.bounds)
+        .collect();
     let cascades = plan_cascades(
         frustum,
         &basis,
@@ -71,65 +142,16 @@ pub(crate) fn plan_frame(
             casters: &boxes,
         },
     );
-
-    // Casters grouped by the buffers they use, groups in the order they first appear.
-    let mut groups: Vec<(BufferKey, Vec<&ShadowCaster>)> = Vec::new();
-    for caster in casters.iter().filter(drawable) {
-        let key = key_of(caster);
-        match groups.iter_mut().find(|(candidate, _)| *candidate == key) {
-            Some((_, members)) => members.push(caster),
-            None => groups.push((key, vec![caster])),
-        }
-    }
-
-    let mut models = Vec::new();
-    let mut slots: Vec<Vec<u32>> = Vec::with_capacity(groups.len());
-    for (_, members) in &groups {
-        slots.push(
-            members
-                .iter()
-                .map(|caster| {
-                    models.push(Mat4::from(caster.model));
-                    u32::try_from(models.len() - 1).unwrap_or(u32::MAX)
-                })
-                .collect(),
-        );
-    }
-
+    let groups = CasterGroups::new(casters);
     let batches = cascades
         .iter()
-        .map(|cascade| {
-            groups
-                .iter()
-                .zip(&slots)
-                .filter_map(|((key, members), slots)| {
-                    let draws: Vec<Draw> = members
-                        .iter()
-                        .zip(slots)
-                        .filter(|(caster, _)| cascade.may_receive_from(&basis, &caster.bounds))
-                        .map(|(caster, slot)| Draw {
-                            index_count: caster.index_count,
-                            first_index: caster.first_index,
-                            base_vertex: caster.base_vertex,
-                            caster: *slot,
-                        })
-                        .collect();
-                    (!draws.is_empty()).then_some(Batch {
-                        vertex_buffer: key.0,
-                        vertex_stride: key.2,
-                        index_buffer: key.1,
-                        draws,
-                    })
-                })
-                .collect()
-        })
+        .map(|cascade| groups.batches(|caster| cascade.may_receive_from(&basis, &caster.bounds)))
         .collect();
-
     FramePlan {
         cascades,
         basis,
         batches,
-        models,
+        models: groups.models,
     }
 }
 

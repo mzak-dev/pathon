@@ -115,6 +115,11 @@ pub const CODES: &[CodeInfo] = &[
     code("D0001", "shadow setting out of range repaired"),
     code("D0002", "shadow light direction is not usable"),
     code("D0003", "camera projection unsupported by shadow cascades"),
+    code(
+        "D0101",
+        "point or spot light found no room for a shadow map in the atlas",
+    ),
+    code("D0102", "point or spot light unusable for shadows and skipped"),
     code("L0001", "invalid PBR settings"),
     code("L0002", "geometry pool vertex layout does not fit the PBR shaders"),
     code("L0003", "instance skipped: its mesh or material is unknown"),

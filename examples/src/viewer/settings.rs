@@ -45,6 +45,14 @@ pub struct ViewerSettings {
     /// Emission in glTF files from Blender is in watts, lights are in lumens: this brings the two to one scale.
     pub emissive_scale: f32,
     pub sun_shadows: bool,
+    /// The point and spot lights of the scene compete for shadow maps (`ShadowSettings::max_local_lights` of them).
+    pub local_shadows: bool,
+    /// Area lights get a shadow too, from their centre as if they were point lights (an approximation).
+    pub area_shadows: bool,
+    /// `ShadowSettings::max_local_lights`: how many lights have a shadow map at once.
+    pub local_shadow_lights: u32,
+    /// Draws every shadow map of the local lights again every frame, to time the frame without the cache.
+    pub redraw_local_shadows: bool,
     /// Scale of the environment as light (`PbrSettings::environment_intensity`): the units of the HDR picture are
     /// not lux, and nothing here tells the room from the outdoors, so this is the one knob of the skylight.
     pub environment_intensity: f32,
@@ -64,6 +72,10 @@ impl Default for ViewerSettings {
             ambient_ground_lux: 150.0,
             emissive_scale: 683.0,
             sun_shadows: true,
+            local_shadows: true,
+            area_shadows: false,
+            local_shadow_lights: 8,
+            redraw_local_shadows: false,
             environment_intensity: 300.0,
             sky_intensity: 6000.0,
             brute_force_lights: false,

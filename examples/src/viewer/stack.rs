@@ -7,7 +7,6 @@
 
 use std::sync::Arc;
 
-use pathon::api::glam::Vec3;
 use pathon::rhi::{DeviceRequest, Features};
 use pathon::{Renderer, RendererBuilder};
 use pathon_bindless::{BINDLESS_FEATURES, PathPreference};
@@ -130,7 +129,7 @@ pub fn fill_shadow_casters(renderer: &mut Renderer, assets: &ViewerAssets) {
 }
 
 /// Pushes the viewer's settings into the packs' own settings before a frame.
-pub fn apply_settings(renderer: &mut Renderer, settings: &ViewerSettings, sun_direction: Option<Vec3>) {
+pub fn apply_settings(renderer: &mut Renderer, settings: &ViewerSettings, assets: &ViewerAssets) {
     let shared = renderer.shared_mut();
     shared.insert(*settings);
     if let Some(pbr) = shared.get_mut::<PbrSettings>() {
@@ -145,9 +144,27 @@ pub fn apply_settings(renderer: &mut Renderer, settings: &ViewerSettings, sun_di
         gi.environment_intensity = settings.environment_intensity;
     }
     if let Some(scene) = shared.get_mut::<ShadowScene>() {
-        scene.light = sun_direction
+        scene.light = assets
+            .sun_direction
             .filter(|_| settings.sun_shadows)
             .map(|direction| DirectionalShadowLight::new(direction, SUN_LIGHT_INDEX));
+        scene.clear_local_lights();
+        if settings.redraw_local_shadows {
+            scene.invalidate_local_maps();
+        }
+        if settings.local_shadows {
+            let lights = if settings.area_shadows {
+                &assets.local_lights_with_areas
+            } else {
+                &assets.local_lights
+            };
+            for light in lights {
+                scene.add_local_light(*light);
+            }
+        }
+    }
+    if let Some(shadows) = shared.get_mut::<ShadowSettings>() {
+        shadows.max_local_lights = settings.local_shadow_lights;
     }
     if let Some(post) = shared.get_mut::<PostSettings>() {
         post.bloom.enabled = settings.bloom;

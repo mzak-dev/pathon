@@ -17,7 +17,7 @@ use pathon_pbr::{LightAssignment, PbrPack, PbrSettings};
 use pathon_post::{BloomSettings, ExposureMode, ExposureSettings, PostPack, PostSettings};
 use pathon_rhi::{Format, NullDevice};
 use pathon_scene::Light;
-use pathon_shadow::{DirectionalShadowLight, ShadowPack, ShadowScene, ShadowSettings};
+use pathon_shadow::{DirectionalShadowLight, LocalLightFilter, ShadowPack, ShadowScene, ShadowSettings};
 use support::Lcg;
 use support::probe::{Probe, ProbeReader};
 use support::scene::{Content, Harness, add_content_with, instance, null_harness, scale_translate};
@@ -153,6 +153,25 @@ fn shadow_the_sun(harness: &mut Harness) {
     shared.insert(pool);
 }
 
+// The point and spot lights of the scene compete for shadow maps: `use_local_lights` gives each the index it has in the
+// light array of the pbr pack.
+fn shadow_the_local_lights(harness: &mut Harness) {
+    let shared = harness.renderer.shared_mut();
+    let pool = shared.remove::<GeometryPool>().expect("the host's pool");
+    let scene = shared.get_mut::<ShadowScene>().expect("ShadowPack inserts the scene");
+    let casters = scene.fill_from_world(harness.scene.world(), &pool);
+    assert!(casters > 0, "the test scene has casters");
+    let offered = scene.use_local_lights(
+        harness.scene.world(),
+        LocalLightFilter {
+            only_casting: false,
+            area_as_point: false,
+        },
+    );
+    assert_eq!(offered, 4, "three point lights and a spot light");
+    shared.insert(pool);
+}
+
 fn with_shadows(builder: pathon_core::RendererBuilder) -> pathon_core::RendererBuilder {
     base_builder(builder.with_pack(ShadowPack::with_settings(ShadowSettings::COMPACT)))
 }
@@ -208,6 +227,41 @@ fn the_shadowed_scene_validates_without_a_light_to_shadow() {
     lights(&mut harness);
 
     assert_no_errors(&harness.render(golden_camera()));
+}
+
+#[test]
+fn the_scene_with_shadows_of_local_lights_validates_on_the_null_device() {
+    let mut harness = null_harness(SIZE, Format::Rgba8Unorm, with_shadows);
+    objects(&mut harness, PathPreference::Auto);
+    lights(&mut harness);
+    shadow_the_sun(&mut harness);
+    shadow_the_local_lights(&mut harness);
+
+    for frame in 0..3 {
+        let diagnostics = harness.render(golden_camera());
+
+        assert!(diagnostics.is_empty(), "frame {frame}: {diagnostics:?}");
+    }
+}
+
+#[test]
+fn local_shadows_alone_validate_without_a_sun_and_the_same_way_after_a_second_view() {
+    let mut harness = null_harness(SIZE, Format::Rgba8Unorm, with_shadows);
+    objects(&mut harness, PathPreference::Auto);
+    lights(&mut harness);
+    shadow_the_local_lights(&mut harness);
+
+    assert!(harness.render(golden_camera()).is_empty());
+    assert!(
+        harness
+            .render(pathon_api::Camera::look_at(
+                Vec3::new(-4.0, 2.0, 5.0),
+                Vec3::new(0.0, -0.4, 0.0),
+                50.0_f32.to_radians(),
+                1.0,
+            ))
+            .is_empty()
+    );
 }
 
 #[cfg(feature = "gpu-tests")]
@@ -346,6 +400,46 @@ mod gpu {
             .filter(|(lit, shadowed)| luminance(shadowed) > luminance(lit) * 1.02 + 0.01)
             .count();
         assert!(darker > 400, "the shadow darkens only {darker} pixels");
+        assert_eq!(brighter, 0, "shadows must only remove light");
+        assert!(shadowed.iter().all(|texel| texel.iter().all(|value| value.is_finite())));
+    }
+
+    #[test]
+    fn the_shadows_of_the_local_lights_darken_the_floor_and_only_remove_light() {
+        let test = "the_shadows_of_the_local_lights_darken_the_floor_and_only_remove_light";
+        let render = |local: bool| -> Option<Vec<[f32; 4]>> {
+            let mut readers = None;
+            let mut harness = harness(test, SIZE, Format::Rgba8Unorm, |builder| {
+                let (builder, split) = configure_split(with_shadows(builder));
+                readers = Some(split);
+                builder
+            })?;
+            objects(&mut harness, PathPreference::Auto);
+            lights(&mut harness);
+            if local {
+                shadow_the_local_lights(&mut harness);
+            }
+            assert_no_errors(&harness.render(golden_camera()));
+            let device = std::sync::Arc::clone(harness.renderer.device());
+            Some(halves(&readers?[0], &*device))
+        };
+        let (Some(unshadowed), Some(shadowed)) = (render(false), render(true)) else {
+            return;
+        };
+
+        let luminance = |texel: &[f32; 4]| texel[0] + texel[1] + texel[2];
+        let darker = unshadowed
+            .iter()
+            .zip(&shadowed)
+            .filter(|(lit, shadowed)| luminance(shadowed) < luminance(lit) * 0.8)
+            .count();
+        let brighter = unshadowed
+            .iter()
+            .zip(&shadowed)
+            .filter(|(lit, shadowed)| luminance(shadowed) > luminance(lit) * 1.02 + 0.01)
+            .count();
+        eprintln!("{darker} pixels are darker with the shadows of the local lights, {brighter} brighter");
+        assert!(darker > 150, "the shadows darken only {darker} pixels");
         assert_eq!(brighter, 0, "shadows must only remove light");
         assert!(shadowed.iter().all(|texel| texel.iter().all(|value| value.is_finite())));
     }

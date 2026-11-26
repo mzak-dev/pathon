@@ -27,9 +27,11 @@ use pathon_api::{Camera, RecordCtx, RenderFeature, SetupCtx, Slot};
 use pathon_mesh::{GeometryPool, IndexData, MeshData, MeshId, PoolDesc, VertexLayout};
 use pathon_shader::{ShaderFeatures, ShaderKey, ShaderLibrary, reflect_bind_groups};
 use pathon_shadow::{
-    DirectionalShadowLight, SHADOW_MAP, SHADOW_MAP_ACCESS, ShadowBindings, ShadowCaster, ShadowFrame, ShadowScene,
-    modules,
+    DirectionalShadowLight, LocalShadowLight, SHADOW_MAP, SHADOW_MAP_ACCESS, ShadowBindings, ShadowCaster, ShadowFrame,
+    ShadowScene, modules,
 };
+
+pub mod local;
 
 pub const AMBIENT: f32 = 0.15;
 pub const ALBEDO: f32 = 0.8;
@@ -288,8 +290,29 @@ impl RenderFeature for Host {
             scene.add_caster(*caster);
         }
         scene.light = Some(DirectionalShadowLight::new(direction, 0));
+        if let Some(local) = ctx.shared().get::<LocalLights>().cloned() {
+            let scene = ctx
+                .shared_mut()
+                .get_mut::<ShadowScene>()
+                .expect("ShadowPack inserts the scene");
+            scene.clear_local_lights();
+            for light in local.lights {
+                scene.add_local_light(light);
+            }
+            if !local.with_sun {
+                scene.light = None;
+            }
+        }
         Ok(())
     }
+}
+
+/// The point and spot lights the host offers the shadow pack, set by the test in `Shared` (the sun is off unless
+/// `with_sun`).
+#[derive(Clone, Debug, Default)]
+pub struct LocalLights {
+    pub lights: Vec<LocalShadowLight>,
+    pub with_sun: bool,
 }
 
 // ---- shading ----

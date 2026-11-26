@@ -35,6 +35,11 @@ pub struct ScreenshotRequest {
     pub vertical_fov_degrees: Option<f32>,
     pub exposure_stops: f32,
     pub sun_shadows: bool,
+    /// Shadows of the point and spot lights; `area_shadows` adds the area lights (from their centre).
+    pub local_shadows: bool,
+    pub area_shadows: bool,
+    pub local_shadow_lights: Option<u32>,
+    pub redraw_local_shadows: bool,
     pub auto_exposure: bool,
     pub bloom: bool,
     /// Replace the defaults of `ViewerSettings` when set.
@@ -57,6 +62,10 @@ impl Default for ScreenshotRequest {
             vertical_fov_degrees: None,
             exposure_stops: 0.0,
             sun_shadows: true,
+            local_shadows: true,
+            area_shadows: false,
+            local_shadow_lights: None,
+            redraw_local_shadows: false,
             auto_exposure: false,
             bloom: true,
             environment_intensity: None,
@@ -75,6 +84,10 @@ impl ScreenshotRequest {
             .map_or_else(ViewerSettings::default, ViewerSettings::reference_like);
         settings.adjust_exposure(self.exposure_stops * 2.0);
         settings.sun_shadows = self.sun_shadows;
+        settings.local_shadows = self.local_shadows;
+        settings.area_shadows = self.area_shadows;
+        settings.local_shadow_lights = self.local_shadow_lights.unwrap_or(settings.local_shadow_lights);
+        settings.redraw_local_shadows = self.redraw_local_shadows;
         settings.auto_exposure |= self.auto_exposure;
         settings.bloom &= self.bloom;
         settings.brute_force_lights = self.brute_force_lights;

@@ -4,18 +4,20 @@ use pathon_api::glam::Mat4;
 use pathon_api::graph::{GraphTextureDesc, PassDesc, Stage};
 use pathon_api::resources::{UniformRing, UniformSlice};
 use pathon_api::rhi::{
-    Access, AddressMode, BindGroupDesc, BindGroupEntry, BindGroupLayoutDesc, BindGroupLayoutEntry, BindGroupLayoutId,
-    BindingResource, BindingType, BufferDesc, BufferId, BufferUsage, Caps, CompareFunction, DepthAttachment, DepthBias,
-    DepthState, DeviceApi, DrawIndexedIndirectArgs, Features, FilterMode, Format, FormatCaps, PrimitiveState,
-    RenderPassDesc, RenderPipelineDesc, RenderPipelineId, RhiError, SamplerDesc, SamplerId, ShaderModuleDesc,
-    ShaderStage, ShaderStages, StorageAccess, TextureViewDesc, VertexAttribute, VertexBufferLayout, VertexFormat,
-    VertexStepMode,
+    Access, AddressMode, BindGroupDesc, BindGroupEntry, BindGroupId, BindGroupLayoutDesc, BindGroupLayoutEntry,
+    BindGroupLayoutId, BindingResource, BindingType, BufferDesc, BufferId, BufferUsage, Caps, CompareFunction,
+    DepthAttachment, DepthBias, DepthState, DeviceApi, DrawIndexedIndirectArgs, Features, FilterMode, Format,
+    FormatCaps, IndexFormat, PrimitiveState, RenderPassDesc, RenderPassEncoder, RenderPipelineDesc, RenderPipelineId,
+    RhiError, SamplerDesc, SamplerId, ShaderModuleDesc, ShaderStage, ShaderStages, StorageAccess, TextureViewDesc,
+    VertexAttribute, VertexBufferLayout, VertexFormat, VertexStepMode,
 };
 use pathon_api::{Diagnostic, Negotiation, RecordCtx, RenderFeature, Requirements, Role, SetupCtx};
 
 use crate::cascade::{CameraFrustum, LightBasis};
 use crate::frame::{SHADOW_MAP, ShadowFrame, ShadowUniforms};
 use crate::input::{DirectionalShadowLight, ShadowScene};
+use crate::local_feature::LocalState;
+use crate::local_frame::{LocalShadowFrame, LocalShadowReport};
 use crate::plan::{FramePlan, plan_frame};
 use crate::settings::ShadowSettings;
 
@@ -24,17 +26,19 @@ const DEPTH_FORMAT: Format = Format::Depth32Float;
 const MIN_FRAME_BUFFER_BYTES: u64 = 4096;
 
 #[derive(Clone, Copy, Debug)]
-struct ShadowGpu {
-    module: pathon_api::rhi::ShaderModuleId,
-    layout: BindGroupLayoutId,
-    sampler: SamplerId,
+pub(crate) struct ShadowGpu {
+    pub module: pathon_api::rhi::ShaderModuleId,
+    pub layout: BindGroupLayoutId,
+    pub sampler: SamplerId,
+    // Clears the viewport of a render pass at the far plane, to redraw one tile of the local atlas.
+    pub clear_pipeline: RenderPipelineId,
 }
 
 // A buffer the pack fills while it records: every record attempt starts at the front, every write goes behind the
 // previous one (a second view of the same frame must not overwrite the first), and a buffer that is too small is
 // replaced by a larger one, the old one living on for the writes already made to it.
 #[derive(Debug)]
-struct FrameBuffer {
+pub(crate) struct FrameBuffer {
     label: &'static str,
     usage: BufferUsage,
     alignment: u64,
@@ -57,7 +61,7 @@ impl FrameBuffer {
         }
     }
 
-    fn write(&mut self, ctx: &mut RecordCtx<'_>, bytes: &[u8]) -> Result<(BufferId, u64), RhiError> {
+    pub(crate) fn write(&mut self, ctx: &mut RecordCtx<'_>, bytes: &[u8]) -> Result<(BufferId, u64), RhiError> {
         let epoch = ctx.view().record_epoch;
         if self.epoch != Some(epoch) {
             self.epoch = Some(epoch);
@@ -89,15 +93,15 @@ impl FrameBuffer {
 }
 
 #[derive(Debug)]
-struct ShadowBuffers {
+pub(crate) struct ShadowBuffers {
     uniforms: UniformRing,
     uniform_epoch: Option<u64>,
-    models: FrameBuffer,
-    arguments: FrameBuffer,
+    pub models: FrameBuffer,
+    pub arguments: FrameBuffer,
 }
 
 impl ShadowBuffers {
-    fn write_uniform(&mut self, ctx: &mut RecordCtx<'_>, bytes: &[u8]) -> Result<UniformSlice, RhiError> {
+    pub(crate) fn write_uniform(&mut self, ctx: &mut RecordCtx<'_>, bytes: &[u8]) -> Result<UniformSlice, RhiError> {
         let epoch = ctx.view().record_epoch;
         if self.uniform_epoch != Some(epoch) {
             self.uniforms.begin_frame();
@@ -108,18 +112,56 @@ impl ShadowBuffers {
 }
 
 // What the closure that records the depth pass owns: everything it draws, resolved while the graph was built.
-struct CascadePass {
-    uniform: UniformSlice,
-    batches: Vec<PassBatch>,
+pub(crate) struct CascadePass {
+    pub uniform: UniformSlice,
+    pub batches: Vec<PassBatch>,
 }
 
-struct PassBatch {
-    pipeline: RenderPipelineId,
-    vertex_buffer: BufferId,
-    index_buffer: BufferId,
-    draws: Vec<crate::plan::Draw>,
+pub(crate) struct PassBatch {
+    pub pipeline: RenderPipelineId,
+    pub vertex_buffer: BufferId,
+    pub index_buffer: BufferId,
+    pub draws: Vec<crate::plan::Draw>,
     // Where the batch's arguments start in the shared arguments buffer; `None` draws one by one.
-    arguments: Option<(BufferId, u64)>,
+    pub arguments: Option<(BufferId, u64)>,
+}
+
+/// The draws of the batches into the render pass that is open, indirect when the batch has its arguments.
+pub(crate) fn draw_batches(render: &mut RenderPassEncoder<'_>, group: BindGroupId, batches: &[PassBatch]) {
+    for batch in batches {
+        render.set_pipeline(batch.pipeline);
+        render.set_bind_group(0, group);
+        render.set_vertex_buffer(0, batch.vertex_buffer, 0);
+        render.set_index_buffer(batch.index_buffer, IndexFormat::Uint32, 0);
+        match batch.arguments {
+            Some((buffer, offset)) => {
+                let count = u32::try_from(batch.draws.len()).unwrap_or(u32::MAX);
+                render.multi_draw_indexed_indirect(buffer, offset, count);
+            }
+            None => {
+                for draw in &batch.draws {
+                    render.draw_indexed(
+                        draw.first_index..draw.first_index + draw.index_count,
+                        draw.base_vertex,
+                        draw.caster..draw.caster + 1,
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// Hardware bias of the depth pass in the sign of a reverse-Z buffer: away from the light is smaller.
+pub(crate) fn hardware_bias(settings: &ShadowSettings) -> DepthBias {
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "the constant is clamped to 1e6 by the settings"
+    )]
+    DepthBias::new(
+        -(settings.polygon_offset_constant.round() as i32),
+        -settings.polygon_offset_slope,
+        0.0,
+    )
 }
 
 #[derive(Debug, Default)]
@@ -133,10 +175,11 @@ struct Reported {
 /// lighting shader. Holds `Role::SHADOWS`.
 #[derive(Debug, Default)]
 pub struct ShadowFeature {
-    gpu: Option<ShadowGpu>,
-    buffers: Option<ShadowBuffers>,
+    pub(crate) gpu: Option<ShadowGpu>,
+    pub(crate) buffers: Option<ShadowBuffers>,
     pipelines: HashMap<(u32, DepthBias), RenderPipelineId>,
     reported: Reported,
+    pub(crate) local: LocalState,
 }
 
 impl ShadowFeature {
@@ -144,7 +187,12 @@ impl ShadowFeature {
         Self::default()
     }
 
-    fn pipeline(&mut self, device: &dyn DeviceApi, stride: u32, bias: DepthBias) -> Result<RenderPipelineId, RhiError> {
+    pub(crate) fn pipeline(
+        &mut self,
+        device: &dyn DeviceApi,
+        stride: u32,
+        bias: DepthBias,
+    ) -> Result<RenderPipelineId, RhiError> {
         if let Some(pipeline) = self.pipelines.get(&(stride, bias)) {
             return Ok(*pipeline);
         }
@@ -177,7 +225,7 @@ impl ShadowFeature {
         Ok(pipeline)
     }
 
-    fn settings(&mut self, ctx: &mut RecordCtx<'_>) -> ShadowSettings {
+    pub(crate) fn settings(&mut self, ctx: &mut RecordCtx<'_>) -> ShadowSettings {
         let limits = &ctx.device().caps().limits;
         let (max_size, max_layers) = (limits.max_texture_dimension_2d, limits.max_texture_array_layers);
         let requested = ctx.shared().get::<ShadowSettings>().cloned().unwrap_or_default();
@@ -305,14 +353,36 @@ impl RenderFeature for ShadowFeature {
             compare: Some(CompareFunction::GreaterEqual),
             anisotropy_clamp: 1,
         })?;
+        let clear_pipeline = device.create_render_pipeline(&RenderPipelineDesc {
+            label: "shadow tile clear",
+            bind_group_layouts: vec![],
+            vertex: ShaderStage {
+                module,
+                entry_point: "vs_clear",
+                constants: vec![],
+            },
+            vertex_buffers: vec![],
+            fragment: None,
+            color_targets: vec![],
+            primitive: PrimitiveState::default(),
+            depth: Some(DepthState {
+                compare: CompareFunction::Always,
+                ..DepthState::reverse_z(DEPTH_FORMAT)
+            }),
+            sample_count: 1,
+            immediate_size: 0,
+        })?;
         self.gpu = Some(ShadowGpu {
             module,
             layout,
             sampler,
+            clear_pipeline,
         });
         self.pipelines.clear();
+        self.local = LocalState::default();
         self.buffers = Some(ShadowBuffers {
-            uniforms: UniformRing::new(device, "shadow uniforms", 16 << 10)?,
+            // Room for a few views of cascades, the uniforms of the local lights and one uniform per tile drawn.
+            uniforms: UniformRing::new(device, "shadow uniforms", 128 << 10)?,
             uniform_epoch: None,
             models: FrameBuffer::new(
                 "shadow models",
@@ -322,31 +392,37 @@ impl RenderFeature for ShadowFeature {
             arguments: FrameBuffer::new("shadow draw arguments", BufferUsage::INDIRECT, 4),
         });
         ctx.shared().remove::<ShadowFrame>();
+        ctx.shared().remove::<LocalShadowFrame>();
+        ctx.shared().remove::<LocalShadowReport>();
         Ok(())
     }
 
     fn record(&mut self, ctx: &mut RecordCtx<'_>) -> Result<(), RhiError> {
-        let gpu = self.gpu.ok_or(RhiError::Unsupported("shadows used before setup"))?;
         let settings = self.settings(ctx);
-        let Some((plan, light)) = self.plan(ctx, &settings) else {
+        let cascades_drawn = self.record_cascades(ctx, &settings)?;
+        self.record_local(ctx, &settings, cascades_drawn)
+    }
+
+    fn on_device_reset(&mut self, ctx: &mut SetupCtx<'_>) -> Result<(), RhiError> {
+        self.reported = Reported::default();
+        self.setup(ctx)
+    }
+}
+
+impl ShadowFeature {
+    // Whether the pass of the cascades is in the graph of this view.
+    fn record_cascades(&mut self, ctx: &mut RecordCtx<'_>, settings: &ShadowSettings) -> Result<bool, RhiError> {
+        let gpu = self.gpu.ok_or(RhiError::Unsupported("shadows used before setup"))?;
+        let Some((plan, light)) = self.plan(ctx, settings) else {
             ctx.shared_mut().remove::<ShadowFrame>();
-            return Ok(());
+            return Ok(false);
         };
         if plan.cascades.is_empty() {
             ctx.shared_mut().remove::<ShadowFrame>();
-            return Ok(());
+            return Ok(false);
         }
         let indirect = settings.use_indirect_draws && ctx.device().caps().has(Features::INDIRECT_FIRST_INSTANCE);
-        // Hardware bias in the sign of a reverse-Z buffer: away from the light is smaller.
-        #[expect(
-            clippy::cast_possible_truncation,
-            reason = "the constant is clamped to 1e6 by the settings"
-        )]
-        let bias = DepthBias::new(
-            -(settings.polygon_offset_constant.round() as i32),
-            -settings.polygon_offset_slope,
-            0.0,
-        );
+        let bias = hardware_bias(settings);
 
         let mut passes = Vec::with_capacity(plan.cascades.len());
         let mut arguments = Vec::new();
@@ -421,7 +497,7 @@ impl RenderFeature for ShadowFeature {
         }
 
         let direction = plan.basis.forward;
-        let uniforms = ShadowUniforms::new(&plan.cascades, direction, light, &settings);
+        let uniforms = ShadowUniforms::new(&plan.cascades, direction, light, settings);
         let uniform_buffer = {
             let buffers = self
                 .buffers
@@ -474,27 +550,7 @@ impl RenderFeature for ShadowFeature {
                 let Some(group) = group else {
                     continue;
                 };
-                for batch in &cascade.batches {
-                    render.set_pipeline(batch.pipeline);
-                    render.set_bind_group(0, group);
-                    render.set_vertex_buffer(0, batch.vertex_buffer, 0);
-                    render.set_index_buffer(batch.index_buffer, pathon_api::rhi::IndexFormat::Uint32, 0);
-                    match batch.arguments {
-                        Some((buffer, offset)) => {
-                            let count = u32::try_from(batch.draws.len()).unwrap_or(u32::MAX);
-                            render.multi_draw_indexed_indirect(buffer, offset, count);
-                        }
-                        None => {
-                            for draw in &batch.draws {
-                                render.draw_indexed(
-                                    draw.first_index..draw.first_index + draw.index_count,
-                                    draw.base_vertex,
-                                    draw.caster..draw.caster + 1,
-                                );
-                            }
-                        }
-                    }
-                }
+                draw_batches(&mut render, group, &cascade.batches);
             }
             Ok(())
         });
@@ -506,11 +562,6 @@ impl RenderFeature for ShadowFeature {
             cascade_count: layers,
             resolution: settings.resolution,
         });
-        Ok(())
-    }
-
-    fn on_device_reset(&mut self, ctx: &mut SetupCtx<'_>) -> Result<(), RhiError> {
-        self.reported = Reported::default();
-        self.setup(ctx)
+        Ok(true)
     }
 }

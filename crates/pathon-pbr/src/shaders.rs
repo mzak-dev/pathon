@@ -10,7 +10,7 @@ use pathon_gi::GiBindings;
 use pathon_ibl::IblBindings;
 use pathon_material::{AlphaKind, MaterialHooks, MaterialVariant};
 use pathon_shader::{PipelineCache, ShaderError, ShaderKey, ShaderLibrary, reflect_bind_groups};
-use pathon_shadow::ShadowBindings;
+use pathon_shadow::{LocalShadowBindings, ShadowBindings};
 
 pub(crate) const COMMON_MODULE: &str = "pbr::common";
 pub(crate) const LIGHTS_MODULE: &str = "pbr::lights";
@@ -47,6 +47,12 @@ pub const GI_FLAG: &str = "gi";
 /// First binding of the probe volume (uniform, two atlases and a sampler), right after the LTC table; they exist only
 /// in the permutation with the `gi` flag.
 pub const GI_FIRST_BINDING: u32 = LTC_BINDING + 1;
+/// WESL flag of the colour pass: the lights that `pathon-shadow` gave maps in its atlas (points and spots) attenuate
+/// their own light (three bindings, `local_shadow_*`).
+pub const LOCAL_SHADOWS_FLAG: &str = "local_shadows";
+/// First binding of the local shadows (uniform block, atlas, sampler), right after the probe volume: after every binding
+/// of the other flags, so that a permutation without them has the layout it had before.
+pub const LOCAL_SHADOW_FIRST_BINDING: u32 = GI_FIRST_BINDING + GiBindings::COUNT;
 /// The group of the material textures when a `TextureBinder` is present.
 pub const TEXTURE_GROUP: u32 = 1;
 
@@ -85,6 +91,8 @@ pub struct ForwardKey {
     pub area: bool,
     /// Take the diffuse environment from the probe volume (the `gi` flag): four more bindings in group 0.
     pub gi: bool,
+    /// Read the atlas of the shadows of point and spot lights (the `local_shadows` flag): three more bindings in group 0.
+    pub local_shadows: bool,
 }
 
 impl ForwardKey {
@@ -99,6 +107,9 @@ impl ForwardKey {
         key.features
             .set(GI_FLAG, self.gi)
             .expect("the gi flag is a WGSL identifier");
+        key.features
+            .set(LOCAL_SHADOWS_FLAG, self.local_shadows)
+            .expect("the local_shadows flag is a WGSL identifier");
         key
     }
 }
@@ -140,7 +151,8 @@ impl PbrShaders {
             .replace("// IBL_BINDINGS", &ibl)
             .replace("// SHADOW_BINDINGS", &shadow_declarations())
             .replace("// LTC_BINDING", &ltc_declaration())
-            .replace("// GI_BINDINGS", &gi_declarations());
+            .replace("// GI_BINDINGS", &gi_declarations())
+            .replace("// LOCAL_SHADOW_BINDINGS", &local_shadow_declarations());
         library.add_root("forward", &forward);
         library.add_root("prepass", PREPASS_WESL);
         library.add_root("cluster", CLUSTER_WESL);
@@ -395,6 +407,29 @@ fn shadow_declarations() -> String {
         .lines()
         .map(|line| ["@if(", SHADOWS_FLAG, ") ", line, "\n"].concat())
         .collect()
+}
+
+// The atlas of the point and spot lights and the helper that reads it exist only in the permutation with the
+// `local_shadows` flag.
+fn local_shadow_declarations() -> String {
+    let bindings = LocalShadowBindings::starting_at(LOCAL_SHADOW_FIRST_BINDING);
+    let mut text: String = bindings
+        .wgsl_bindings(0)
+        .lines()
+        .map(|line| {
+            [
+                "@if(",
+                LOCAL_SHADOWS_FLAG,
+                ") ",
+                line,
+                "
+",
+            ]
+            .concat()
+        })
+        .collect();
+    text.push_str(&["@if(", LOCAL_SHADOWS_FLAG, ") ", LocalShadowBindings::wgsl_helper()].concat());
+    text
 }
 
 // The probe volume exists only in the permutation with the `gi` flag.

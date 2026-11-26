@@ -5,10 +5,10 @@
     clippy::cast_precision_loss,
     reason = "test images are small and their coordinates fit every integer type"
 )]
-// M4-07 extension: the shadows of point and spot lights through a real renderer. A feature written in the test draws the
-// world and writes either the visibility `local_shadow_factor` returns for a light (so that the assertions measure the
-// shadow and nothing else) or N.L times it. The numbers are the point; the golden image `shadows_local` is what a human
-// looks at. `PATHON_TEST_BACKEND=vulkan|dx12|metal` picks the backend.
+// M4-07 extension: the shadows of point and spot lights through a real renderer. A feature written in the test draws
+// the world and writes either the visibility `local_shadow_factor` returns for a light (so that the assertions measure
+// the shadow and nothing else) or N.L times it. The numbers are the point; the golden image `shadows_local` is what a
+// human looks at. `PATHON_TEST_BACKEND=vulkan|dx12|metal` picks the backend.
 
 mod support;
 
@@ -438,9 +438,9 @@ fn the_shadow_of_a_cube_on_the_seam_between_two_faces_is_whole() {
     };
     let measured = measure_room(&mut scene, &room, 56);
 
-    // The first cube stands at (2, 3, 2), on the plane x = z; its shadow on the walls x = 4 and z = 4 straddles the corner
-    // where those faces of the light's map meet. Receivers within 0.8 m of the diagonal plane that the geometry puts in
-    // shadow must all be dark.
+    // The first cube stands at (2, 3, 2), on the plane x = z; its shadow on the walls x = 4 and z = 4 straddles the
+    // corner where those faces of the light's map meet. Receivers within 0.8 m of the diagonal plane that the
+    // geometry puts in shadow must all be dark.
     let near_seam: Vec<_> = measured
         .iter()
         .filter(|sample| (sample.point.x - sample.point.z).abs() < 0.8 && sample.point.x > 0.0 && !sample.expected_lit)

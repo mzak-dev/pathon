@@ -148,8 +148,8 @@ pub struct LocalShadowReport {
 }
 
 /// The three consecutive bindings of one group a lighting shader needs for local lights: the uniforms, the atlas and a
-/// comparison sampler. Like `ShadowBindings`, the `shadow::sample` module declares none of them: the shader declares them
-/// with [`LocalShadowBindings::wgsl_declarations`] and passes them to `shadow_factor_local`.
+/// comparison sampler. Like `ShadowBindings`, the `shadow::sample` module declares none of them: the shader declares
+/// them with [`LocalShadowBindings::wgsl_declarations`] and passes them to `shadow_factor_local`.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct LocalShadowBindings {
     pub first_binding: u32,

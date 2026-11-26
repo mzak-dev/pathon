@@ -184,10 +184,10 @@ impl ShadowScene {
         self.local_lights.push(light);
     }
 
-    /// Replaces the local lights with those of `world` that pass `filter`. `key` is the light's handle, so a light keeps
-    /// its map from frame to frame; `light_index` is where `pathon-pbr` puts it in its light array (directional lights
-    /// first, then the others in the order `RenderWorld::lights` iterates them), whatever the order in the scene.
-    /// Returns how many lights are offered.
+    /// Replaces the local lights with those of `world` that pass `filter`. `key` is the light's handle, so a light
+    /// keeps its map from frame to frame; `light_index` is where `pathon-pbr` puts it in its light array
+    /// (directional lights first, then the others in the order `RenderWorld::lights` iterates them), whatever the
+    /// order in the scene. Returns how many lights are offered.
     pub fn use_local_lights(&mut self, world: &RenderWorld, filter: LocalLightFilter) -> usize {
         self.local_lights.clear();
         let lights = world.lights();

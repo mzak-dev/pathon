@@ -5,8 +5,8 @@
 )]
 
 // Shading for the shadows of point and spot lights: a feature that draws the `Host`'s world and, per pixel, either the
-// visibility `local_shadow_factor` gives for one light (what the shadow tests measure) or N.L summed over the lights times
-// their visibility (what a human looks at). It declares the bindings and the helper the way `pathon-pbr` does.
+// visibility `local_shadow_factor` gives for one light (what the shadow tests measure) or N.L summed over the lights
+// times their visibility (what a human looks at). It declares the bindings and the helper the way `pathon-pbr` does.
 
 use pathon_api::glam::{Mat4, Vec3};
 use pathon_api::graph::{GraphTextureDesc, PassDesc, Stage};

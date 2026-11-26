@@ -50,8 +50,8 @@ pub const GI_FIRST_BINDING: u32 = LTC_BINDING + 1;
 /// WESL flag of the colour pass: the lights that `pathon-shadow` gave maps in its atlas (points and spots) attenuate
 /// their own light (three bindings, `local_shadow_*`).
 pub const LOCAL_SHADOWS_FLAG: &str = "local_shadows";
-/// First binding of the local shadows (uniform block, atlas, sampler), right after the probe volume: after every binding
-/// of the other flags, so that a permutation without them has the layout it had before.
+/// First binding of the local shadows (uniform block, atlas, sampler), right after the probe volume: after every
+/// binding of the other flags, so that a permutation without them has the layout it had before.
 pub const LOCAL_SHADOW_FIRST_BINDING: u32 = GI_FIRST_BINDING + GiBindings::COUNT;
 /// The group of the material textures when a `TextureBinder` is present.
 pub const TEXTURE_GROUP: u32 = 1;
@@ -91,7 +91,8 @@ pub struct ForwardKey {
     pub area: bool,
     /// Take the diffuse environment from the probe volume (the `gi` flag): four more bindings in group 0.
     pub gi: bool,
-    /// Read the atlas of the shadows of point and spot lights (the `local_shadows` flag): three more bindings in group 0.
+    /// Read the atlas of the shadows of point and spot lights (the `local_shadows` flag): three more bindings in group
+    /// 0.
     pub local_shadows: bool,
 }
 

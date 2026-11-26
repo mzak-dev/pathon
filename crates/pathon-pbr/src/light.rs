@@ -103,7 +103,7 @@ impl GpuLight {
     }
 
     pub fn is_area(&self) -> bool {
-        self.direction_kind[3] == Self::KIND_AREA
+        (self.direction_kind[3] - Self::KIND_AREA).abs() < 0.5
     }
 }
 

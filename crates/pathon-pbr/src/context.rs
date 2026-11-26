@@ -4,8 +4,8 @@ use std::sync::Arc;
 use pathon_api::glam::Mat4;
 use pathon_api::resources::DeferredRelease;
 use pathon_api::rhi::{
-    BufferDesc, BufferId, BufferUsage, DeviceApi, Extent3d, Format, RhiError, SamplerDesc, TexelLayout, TextureCopy, TextureDesc, TextureUsage,
-    TextureViewDesc,
+    BufferDesc, BufferId, BufferUsage, DeviceApi, Extent3d, Format, RhiError, SamplerDesc, TexelLayout, TextureCopy,
+    TextureDesc, TextureUsage, TextureViewDesc,
 };
 use pathon_api::{Diagnostic, RecordCtx, ViewId};
 use pathon_bindless::TextureBinder;
@@ -52,6 +52,10 @@ pub struct PbrContext {
 }
 
 /// Problems that are reported once, not every frame.
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "one flag per problem that is reported once"
+)]
 #[derive(Debug, Default)]
 pub(crate) struct Reported {
     pub(crate) missing_inputs: bool,

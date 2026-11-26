@@ -120,7 +120,10 @@ fn for_each_sample(light: &RectLight, n: usize, mut visit: impl FnMut(DVec3, f64
     let weight = light.area() / (n * n) as f64;
     for i in 0..n {
         for j in 0..n {
-            let (s, t) = (2.0 * (i as f64 + 0.5) / n as f64 - 1.0, 2.0 * (j as f64 + 0.5) / n as f64 - 1.0);
+            let (s, t) = (
+                2.0 * (i as f64 + 0.5) / n as f64 - 1.0,
+                2.0 * (j as f64 + 0.5) / n as f64 - 1.0,
+            );
             visit(light.center + light.half_width * s + light.half_height * t, weight);
         }
     }
@@ -195,10 +198,10 @@ pub fn specular_ltc(
         }
     };
     let bitangent = normal.cross(tangent);
-    let [a, b, c, d] = entry.inverse;
+    let [x_from_x, x_from_z, z_from_x, z_from_z] = entry.inverse;
     let transformed = corners.map(|corner| {
         let (x, y, z) = (corner.dot(tangent), corner.dot(bitangent), corner.dot(normal));
-        DVec3::new(a * x + b * z, y, c * x + d * z)
+        DVec3::new(x_from_x * x + x_from_z * z, y, z_from_x * x + z_from_z * z)
     });
     let lobe = cosine_integral(&transformed, DVec3::Z) / PI;
     (f0 * entry.f0_scale + f90 * entry.f90_scale) * lobe
@@ -267,7 +270,19 @@ mod tests {
     fn a_point_behind_a_one_sided_light_gets_nothing() {
         let light = unit_square_above(1.0);
 
-        assert_eq!(diffuse_cosine_integral(&light, DVec3::new(0.0, 2.0, 0.0), DVec3::NEG_Y), 0.0);
-        assert!(diffuse_cosine_integral(&RectLight { two_sided: true, ..light }, DVec3::new(0.0, 2.0, 0.0), DVec3::NEG_Y) > 0.0);
+        assert_eq!(
+            diffuse_cosine_integral(&light, DVec3::new(0.0, 2.0, 0.0), DVec3::NEG_Y),
+            0.0
+        );
+        assert!(
+            diffuse_cosine_integral(
+                &RectLight {
+                    two_sided: true,
+                    ..light
+                },
+                DVec3::new(0.0, 2.0, 0.0),
+                DVec3::NEG_Y
+            ) > 0.0
+        );
     }
 }

@@ -74,9 +74,7 @@ fn forward_and_prepass_pipelines_exist_for_all_forty_eight_permutations_on_both_
                         &layouts,
                         textures,
                     )
-                    .unwrap_or_else(|error| {
-                        panic!("{variant:?} split {split} shadows {shadows} area {area}: {error}")
-                    });
+                    .unwrap_or_else(|error| panic!("{variant:?} split {split} shadows {shadows} area {area}: {error}"));
             }
         }
         for (masked, full) in [(false, false), (true, false), (false, true), (true, true)] {

@@ -5,7 +5,8 @@
 pub(crate) const LTC_SIZE: usize = 32;
 
 #[rustfmt::skip]
-pub(crate) const LTC_GGX: [[f32; 8]; LTC_SIZE * LTC_SIZE] = [
+#[expect(clippy::unreadable_literal, reason = "generated numbers")]
+pub(crate) static LTC_GGX: [[f32; 8]; LTC_SIZE * LTC_SIZE] = [
     [1.0000014, -8.480337e-10, 1.2855777e-7, 0.002999996, 1.0, 2.452895e-19, 0.0, 0.0],
     [1.0000014, -8.480337e-10, 1.2855777e-7, 0.002999996, 1.0, 2.452895e-19, 0.0, 0.0],
     [0.99999905, 8.118876e-8, 3.5266595e-7, 0.008324382, 1.0, 6.451813e-15, 0.0, 0.0],

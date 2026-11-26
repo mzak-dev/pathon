@@ -281,14 +281,14 @@ pub struct LoadOptions {
 
 /// Loads a `.glb` or `.gltf`. External files are resolved against `base_dir`.
 pub fn load_slice(bytes: &[u8], base_dir: Option<&Path>, manifest: Option<&str>) -> Result<LoadedScene, LoadError> {
-    load_slice_with(bytes, base_dir, manifest, &LoadOptions::default())
+    load_slice_with(bytes, base_dir, manifest, LoadOptions::default())
 }
 
 pub fn load_slice_with(
     bytes: &[u8],
     base_dir: Option<&Path>,
     manifest: Option<&str>,
-    options: &LoadOptions,
+    options: LoadOptions,
 ) -> Result<LoadedScene, LoadError> {
     let gltf::Gltf { document, blob } = gltf::Gltf::from_slice(bytes)?;
     let buffers = load_buffers(&document, blob, base_dir)?;
@@ -341,10 +341,10 @@ pub fn load_slice_with(
 }
 
 pub fn load_path(path: &Path) -> Result<LoadedScene, LoadError> {
-    load_path_with(path, &LoadOptions::default())
+    load_path_with(path, LoadOptions::default())
 }
 
-pub fn load_path_with(path: &Path, options: &LoadOptions) -> Result<LoadedScene, LoadError> {
+pub fn load_path_with(path: &Path, options: LoadOptions) -> Result<LoadedScene, LoadError> {
     let io = |source| LoadError::Io {
         path: path.to_path_buf(),
         source,
@@ -507,7 +507,7 @@ mod tests {
             area_lights: AreaLights::AsSpot,
         };
 
-        let scene = load_slice_with(gltf_with_area_light().as_bytes(), None, None, &options).expect("loads");
+        let scene = load_slice_with(gltf_with_area_light().as_bytes(), None, None, options).expect("loads");
 
         assert!(matches!(scene.lights[0].kind, pathon_scene::LightKind::Spot { .. }));
         assert!((scene.lights[0].intensity - 100.0 * 4.0 * std::f32::consts::PI).abs() < 1e-3);

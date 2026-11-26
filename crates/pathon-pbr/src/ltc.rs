@@ -26,9 +26,14 @@ pub fn lookup(roughness: f64, n_dot_v: f64) -> LtcEntry {
     let v = (1.0 - n_dot_v.clamp(0.0, 1.0)).sqrt() * last;
     let (u0, v0) = (u.floor(), v.floor());
     let (fu, fv) = (u - u0, v - v0);
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "clamped to the table, a small non-negative integer"
+    )]
     let node = |du: f64, dv: f64| {
-        let x = ((u0 + du).min(last)) as usize;
-        let y = ((v0 + dv).min(last)) as usize;
+        let x = (u0 + du).min(last) as usize;
+        let y = (v0 + dv).min(last) as usize;
         LTC_GGX[y * LTC_SIZE + x].map(f64::from)
     };
     let mut blended = [0.0; 6];
@@ -70,7 +75,10 @@ mod tests {
 
         assert!((entry.inverse[0] - 1.0).abs() < 0.2, "{entry:?}");
         assert!((entry.inverse[3] - 1.0).abs() < 0.2, "{entry:?}");
-        assert!(entry.inverse[1].abs() < 0.1 && entry.inverse[2].abs() < 0.1, "{entry:?}");
+        assert!(
+            entry.inverse[1].abs() < 0.1 && entry.inverse[2].abs() < 0.1,
+            "{entry:?}"
+        );
     }
 
     #[test]
@@ -82,6 +90,6 @@ mod tests {
 
         let middle = lookup(node + 0.5 * step, 1.0);
 
-        assert!((middle.f0_scale - 0.5 * (low.f0_scale + high.f0_scale)).abs() < 1e-6);
+        assert!((middle.f0_scale - f64::midpoint(low.f0_scale, high.f0_scale)).abs() < 1e-6);
     }
 }

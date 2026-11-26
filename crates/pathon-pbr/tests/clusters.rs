@@ -10,8 +10,8 @@ use pathon_api::rhi::{BindingResource, PhysicalSize};
 use pathon_material::MaterialHooks;
 use pathon_pbr::reference::{SphereLight, assign_lights};
 use pathon_pbr::{
-    COUNTERS_SIZE, ClusterBuffers, ClusterGrid, ClusterParams, ClusterPipeline, ClusterSettings, GpuLight, PackedLights,
-    PbrShaders, RANGE_SIZE,
+    COUNTERS_SIZE, ClusterBuffers, ClusterGrid, ClusterParams, ClusterPipeline, ClusterSettings, GpuLight,
+    PackedLights, PbrShaders, RANGE_SIZE,
 };
 use pathon_rhi::{BufferUsage, CommandList, DeviceApi, NullDevice};
 use pathon_scene::{Light, Projection};
@@ -76,9 +76,9 @@ fn random_area_scene(seed: u64, lights: usize) -> Scene {
             );
             let rotation = Quat::from_euler(
                 pathon_api::glam::EulerRot::XYZ,
-                random.between(0.0, 6.28),
-                random.between(0.0, 6.28),
-                random.between(0.0, 6.28),
+                random.between(0.0, std::f32::consts::TAU),
+                random.between(0.0, std::f32::consts::TAU),
+                random.between(0.0, std::f32::consts::TAU),
             );
             let size = (random.between(0.2, 8.0), random.between(0.2, 8.0));
             let light = Light::area(
@@ -99,7 +99,11 @@ fn random_area_scene(seed: u64, lights: usize) -> Scene {
         .lights
         .iter()
         .map(|light| SphereLight {
-            position: Vec3::new(light.position_range[0], light.position_range[1], light.position_range[2]),
+            position: Vec3::new(
+                light.position_range[0],
+                light.position_range[1],
+                light.position_range[2],
+            ),
             range: light.position_range[3],
         })
         .collect();
@@ -161,7 +165,12 @@ fn run(device: &dyn DeviceApi, scene: &Scene) -> (ClusterGrid, Assignment) {
     device
         .write_buffer(params_buffer, 0, bytemuck::bytes_of(&params))
         .expect("params");
-    let lights_buffer = buffer(device, "lights", (gpu_lights.len().max(1) * std::mem::size_of::<GpuLight>()) as u64, storage);
+    let lights_buffer = buffer(
+        device,
+        "lights",
+        (gpu_lights.len().max(1) * std::mem::size_of::<GpuLight>()) as u64,
+        storage,
+    );
     if !gpu_lights.is_empty() {
         device
             .write_buffer(lights_buffer, 0, bytemuck::cast_slice(&gpu_lights))

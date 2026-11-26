@@ -198,7 +198,7 @@ fn viewer_config(options: &Options) -> Result<ViewerConfig, String> {
 
 fn run(options: &Options) -> Result<(), String> {
     let started = Instant::now();
-    let scene = load_path_with(&options.scene, &options.load).map_err(|error| error.to_string())?;
+    let scene = load_path_with(&options.scene, options.load).map_err(|error| error.to_string())?;
     log::info!(
         "loaded {} in {:.1} s: {} instances, {} images, {} lights, {} cameras",
         options.scene.display(),

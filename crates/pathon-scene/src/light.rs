@@ -182,7 +182,8 @@ impl Light {
     pub fn influence_radius(&self) -> Option<f32> {
         let candela = self.luminous_intensity_candela()?;
         Some(self.range.unwrap_or_else(|| {
-            (candela * self.color.max_element() / AUTO_RANGE_CUTOFF_LUX).sqrt() + self.area_circumradius().unwrap_or(0.0)
+            (candela * self.color.max_element() / AUTO_RANGE_CUTOFF_LUX).sqrt()
+                + self.area_circumradius().unwrap_or(0.0)
         }))
     }
 
@@ -274,7 +275,10 @@ mod tests {
 
         assert!((luminance * std::f32::consts::PI * 1.0 - 1000.0).abs() < 1e-2);
         let candela = light.luminous_intensity_candela().expect("area light");
-        assert!((candela - 1000.0 / std::f32::consts::PI).abs() < 1e-3, "I(0) = L * A = P / pi");
+        assert!(
+            (candela - 1000.0 / std::f32::consts::PI).abs() < 1e-3,
+            "I(0) = L * A = P / pi"
+        );
         let two_sided = light.with_two_sided();
         assert!((two_sided.luminance_nits().expect("area light") * 2.0 - luminance).abs() < 1e-3);
         assert_eq!(Light::point(Affine3A::IDENTITY, 1.0).luminance_nits(), None);

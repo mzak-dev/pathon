@@ -135,7 +135,12 @@ impl Ltc {
 
     /// `(a, b, c, d)` of the inverse with its middle element scaled to 1: `x' = a x + b z`, `z' = c x + d z`, `y' = y`.
     pub fn inverse_parameters(&self) -> [f64; 4] {
-        let (a, b, c, d) = (self.m11 / self.m22, self.m13 / self.m22, self.m31 / self.m22, 1.0 / self.m22);
+        let (a, b, c, d) = (
+            self.m11 / self.m22,
+            self.m13 / self.m22,
+            self.m31 / self.m22,
+            1.0 / self.m22,
+        );
         let determinant = a * d - b * c;
         [d / determinant, -b / determinant, -c / determinant, a / determinant]
     }
@@ -328,11 +333,7 @@ pub fn fit_entry(cos_view: f64, alpha: f64, start: Ltc) -> Entry {
 fn fit_row(view_index: usize, mut start: Ltc) -> Vec<Entry> {
     let mut row = vec![None; SIZE];
     for roughness_index in (0..SIZE).rev() {
-        let entry = fit_entry(
-            cos_view_of(view_index),
-            alpha_of(roughness_of(roughness_index)),
-            start,
-        );
+        let entry = fit_entry(cos_view_of(view_index), alpha_of(roughness_of(roughness_index)), start);
         start = entry.ltc;
         row[roughness_index] = Some(entry);
     }
@@ -369,6 +370,7 @@ pub fn fit_table() -> Vec<Entry> {
 }
 
 /// The Rust source of `crates/pathon-pbr/src/ltc_table.rs`.
+#[expect(clippy::cast_possible_truncation, reason = "the table is stored as f32")]
 pub fn table_source(entries: &[Entry]) -> String {
     let mut source = String::new();
     source.push_str(
@@ -377,7 +379,8 @@ pub fn table_source(entries: &[Entry]) -> String {
          // `z' = c x + d z`, `y' = y`), the integral of the lobe times `1 - F5` and times `F5` (`F5 = (1 - v.h)^5`), padding.\n\n\
          pub(crate) const LTC_SIZE: usize = 32;\n\n\
          #[rustfmt::skip]\n\
-         pub(crate) const LTC_GGX: [[f32; 8]; LTC_SIZE * LTC_SIZE] = [\n",
+         #[expect(clippy::unreadable_literal, reason = \"generated numbers\")]\n\
+         pub(crate) static LTC_GGX: [[f32; 8]; LTC_SIZE * LTC_SIZE] = [\n",
     );
     for entry in entries {
         let [a, b, c, d] = entry.inverse;
@@ -402,7 +405,10 @@ mod tests {
         let (plain, grazing) = lobe_integrals(view_vector(1.0), 1.0);
 
         assert!((plain - (1.0 - std::f64::consts::LN_2)).abs() < 2.0e-3, "{plain}");
-        assert!(grazing < 0.1 * plain, "the Schlick term of a head-on view is small: {grazing}");
+        assert!(
+            grazing < 0.1 * plain,
+            "the Schlick term of a head-on view is small: {grazing}"
+        );
     }
 
     #[test]

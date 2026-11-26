@@ -218,8 +218,11 @@ fn record_prepass(
         report_once(
             ctx,
             &mut pbr.reported.area_range,
-            Diagnostic::warning("E0001", "an area light has an explicit range shorter than half its diagonal")
-                .with_hint("the range window cuts the rectangle: raise Light::with_range or drop it to derive the range"),
+            Diagnostic::warning(
+                "E0001",
+                "an area light has an explicit range shorter than half its diagonal",
+            )
+            .with_hint("the range window cuts the rectangle: raise Light::with_range or drop it to derive the range"),
         );
     } else {
         pbr.reported.area_range = false;

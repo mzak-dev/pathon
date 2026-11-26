@@ -27,7 +27,12 @@ fn main() -> std::io::Result<()> {
             .chain([SIZE - 1])
             .map(|roughness| format!("{:.3}", entries[view * SIZE + roughness].total_variation))
             .collect();
-        println!("{:>2} ({:.3}): {}", view, pathon_ltc_fit::cos_view_of(view), cells.join(" "));
+        println!(
+            "{:>2} ({:.3}): {}",
+            view,
+            pathon_ltc_fit::cos_view_of(view),
+            cells.join(" ")
+        );
     }
     std::fs::write(&output, table_source(&entries))?;
     println!("wrote {output}");

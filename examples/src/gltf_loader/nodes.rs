@@ -38,7 +38,13 @@ fn area_shape(light: &gltf::khr_lights_punctual::Light<'_>) -> Option<(f32, f32)
         serde_json::Value::String(text) => serde_json::from_str(text).ok()?,
         other => other.clone(),
     };
-    let size = |key: &str| area.get(key)?.as_f64().map(|value| value as f32).filter(|value| *value > 0.0);
+    #[expect(clippy::cast_possible_truncation, reason = "metres, f32 is plenty")]
+    let size = |key: &str| {
+        area.get(key)?
+            .as_f64()
+            .map(|value| value as f32)
+            .filter(|value| *value > 0.0)
+    };
     let (size_x, size_y) = (size("size_x")?, size("size_y").or_else(|| size("size_x"))?);
     // A disk or an ellipse is a rectangle of the same area and proportions.
     let round = matches!(area.get("shape")?.as_str()?, "DISK" | "ELLIPSE");
@@ -50,7 +56,7 @@ fn light_from(
     light: &gltf::khr_lights_punctual::Light<'_>,
     pose: Affine3A,
     scale: Vec3,
-    options: &LoadOptions,
+    options: LoadOptions,
 ) -> Light {
     let color = Vec3::from(light.color());
     let intensity = light.intensity().max(0.0);
@@ -106,7 +112,7 @@ fn camera_from(node: &gltf::Node<'_>, camera: &gltf::Camera<'_>, pose: Affine3A)
     })
 }
 
-pub(super) fn flatten(document: &gltf::Document, primitives: &PrimitiveMeshes, options: &LoadOptions) -> Flattened {
+pub(super) fn flatten(document: &gltf::Document, primitives: &PrimitiveMeshes, options: LoadOptions) -> Flattened {
     let mut flattened = Flattened::default();
     let scene = document.default_scene().or_else(|| document.scenes().next());
     let Some(scene) = scene else {

@@ -3,8 +3,15 @@
 // integration of the same light on the CPU: the diffuse term exactly (it is analytic), the specular one within what
 // the LTC fit allows.
 
-#![cfg_attr(not(feature = "gpu-tests"), allow(unused_imports, dead_code))]
-#![allow(clippy::print_stderr, reason = "the numbers behind the tolerances are worth seeing in the test log")]
+#![cfg_attr(
+    not(feature = "gpu-tests"),
+    allow(unused_imports, dead_code, reason = "the GPU half is compiled only with the feature")
+)]
+#![allow(
+    clippy::print_stderr,
+    clippy::cast_possible_truncation,
+    reason = "the numbers behind the tolerances are worth seeing in the test log; the CPU model is f64, the scene f32"
+)]
 
 mod support;
 
@@ -93,6 +100,23 @@ fn a_floor_under_an_area_light_validates_on_the_null_device() {
     assert!(errors_of(&diagnostics).is_empty(), "{:?}", errors_of(&diagnostics));
 }
 
+#[test]
+fn an_explicit_range_shorter_than_half_the_diagonal_is_reported_once() {
+    let mut harness = null_harness(SIZE, Format::Rgba8Unorm, |builder| builder.with_pack(PbrPack::new()));
+    add_floor(&mut harness, 0.4);
+    add_lights(
+        &mut harness,
+        &[Light::area(facing_down(Vec3::new(0.0, 1.6, 0.0)), 900.0, 3.0, 4.0).with_range(2.0)],
+    );
+
+    let first = harness.render(camera());
+    let second = harness.render(camera());
+
+    let count = |diagnostics: &[pathon_api::Diagnostic]| diagnostics.iter().filter(|d| d.code == "E0001").count();
+    assert_eq!(count(&first), 1);
+    assert_eq!(count(&second), 0, "reported once");
+}
+
 // A rectangle of side `w` seen from ten times its size is a point source whose intensity is the Lambertian lobe:
 // I(theta) = P / pi cos(theta) (ADR-0048). The analytic diffuse integral must converge to the point light.
 #[test]
@@ -103,7 +127,12 @@ fn a_distant_rectangle_is_the_point_light_of_the_same_power() {
         for (offset, tilt) in [(0.0, 0.0), (0.3, 0.2), (1.5, 0.5)] {
             let center = Vec3::new(0.0, (10.0 * size) as f32, 0.0);
             let rotation = Quat::from_rotation_x(tilt) * Quat::from_rotation_arc(Vec3::NEG_Z, Vec3::NEG_Y);
-            let light = Light::area(Affine3A::from_rotation_translation(rotation, center), power, width, height);
+            let light = Light::area(
+                Affine3A::from_rotation_translation(rotation, center),
+                power,
+                width,
+                height,
+            );
             let rect = RectLight::from_light(&light).expect("an area light");
             let point = DVec3::new(offset * size, 0.0, 0.0);
             let normal = DVec3::Y;
@@ -116,7 +145,8 @@ fn a_distant_rectangle_is_the_point_light_of_the_same_power() {
             let emission_cosine = (-direction).dot(rect.normal);
             // Point source: intensity P/pi * cos(emission) over the squared distance, times the cosine at the receiver.
             let luminance = f64::from(light.luminance_nits().expect("an area light"));
-            let point_irradiance = luminance * rect.area() * emission_cosine * normal.dot(direction) / (distance * distance);
+            let point_irradiance =
+                luminance * rect.area() * emission_cosine * normal.dot(direction) / (distance * distance);
             let area_irradiance = luminance * integral;
 
             let error = (area_irradiance / point_irradiance - 1.0).abs();
@@ -140,7 +170,8 @@ fn a_distant_rectangle_has_the_specular_of_the_point_light() {
                 let light_angle = view_angle + off_mirror;
                 let direction = DVec3::new(-light_angle.sin(), light_angle.cos(), 0.0);
                 let center = direction * 12.0;
-                let facing = Quat::from_rotation_arc(Vec3::NEG_Z, Vec3::new(-direction.x as f32, -direction.y as f32, 0.0));
+                let facing =
+                    Quat::from_rotation_arc(Vec3::NEG_Z, Vec3::new(-direction.x as f32, -direction.y as f32, 0.0));
                 let light = Light::area(
                     Affine3A::from_rotation_translation(facing, Vec3::new(center.x as f32, center.y as f32, 0.0)),
                     800.0,
@@ -160,7 +191,10 @@ fn a_distant_rectangle_has_the_specular_of_the_point_light() {
                 eprintln!(
                     "roughness {roughness} view {view_angle} off mirror {off_mirror}: ltc {ltc:.6e} point {point_specular:.6e} error {error:.4}"
                 );
-                assert!(error < 0.16, "roughness {roughness} view {view_angle} off mirror {off_mirror}: {error}");
+                assert!(
+                    error < 0.16,
+                    "roughness {roughness} view {view_angle} off mirror {off_mirror}: {error}"
+                );
             }
         }
     }
@@ -189,8 +223,8 @@ fn the_diffuse_integral_agrees_with_quadrature_to_a_hundredth_of_a_percent() {
 #[cfg(feature = "gpu-tests")]
 mod gpu {
     use pathon_golden::{Tolerance, assert_golden, read_texture};
-    use pathon_pbr::PbrSettings;
     use pathon_pbr::LightAssignment;
+    use pathon_pbr::PbrSettings;
     use pathon_post::{BloomSettings, ExposureMode, ExposureSettings, PostPack, PostSettings};
     use pathon_rhi::Access;
     use support::probe::half_to_f32;
@@ -208,7 +242,10 @@ mod gpu {
         reader
             .texels(device, 0)
             .chunks(8)
-            .map(|texel| [0, 1, 2, 3].map(|channel| half_to_f32(u16::from_le_bytes([texel[channel * 2], texel[channel * 2 + 1]]))))
+            .map(|texel| {
+                [0, 1, 2, 3]
+                    .map(|channel| half_to_f32(u16::from_le_bytes([texel[channel * 2], texel[channel * 2 + 1]])))
+            })
             .collect()
     }
 
@@ -299,7 +336,8 @@ mod gpu {
                 let fresnel = DIELECTRIC_F0 + (1.0 - DIELECTRIC_F0) * (1.0 - view.dot(half).clamp(0.0, 1.0)).powi(5);
                 let irradiance = diffuse_cosine_integral_numeric(&rect, point, DVec3::Y, 400);
                 for (channel, base) in BASE_COLOR.iter().enumerate() {
-                    let expected = luminance * window * f64::from(*base) * (1.0 - fresnel) / std::f64::consts::PI * irradiance;
+                    let expected =
+                        luminance * window * f64::from(*base) * (1.0 - fresnel) / std::f64::consts::PI * irradiance;
                     let got = f64::from(images.diffuse[index][channel]);
                     if expected > 0.02 {
                         comparison.diffuse_worst = comparison.diffuse_worst.max((got / expected - 1.0).abs());
@@ -342,7 +380,12 @@ mod gpu {
         let test = "the_floor_under_a_rectangle_matches_numeric_integration";
         let tilt = Quat::from_rotation_x(0.5) * Quat::from_rotation_arc(Vec3::NEG_Z, Vec3::NEG_Y);
         let lights = [
-            Light::area(facing_down(Vec3::new(0.0, 1.6, -0.5)), 3.0 * std::f32::consts::PI * 1.92, 2.4, 0.8),
+            Light::area(
+                facing_down(Vec3::new(0.0, 1.6, -0.5)),
+                3.0 * std::f32::consts::PI * 1.92,
+                2.4,
+                0.8,
+            ),
             Light::area(
                 Affine3A::from_rotation_translation(tilt, Vec3::new(-0.5, 1.0, -1.5)),
                 3.0 * std::f32::consts::PI * 4.5,
@@ -350,12 +393,18 @@ mod gpu {
                 0.75,
             ),
         ];
-        for (light, roughness) in lights.iter().flat_map(|light| [0.9, 0.5, 0.25].map(|roughness| (light, roughness))) {
+        for (light, roughness) in lights
+            .iter()
+            .flat_map(|light| [0.9, 0.5, 0.25].map(|roughness| (light, roughness)))
+        {
             let Some(images) = render_floor(test, roughness, std::slice::from_ref(light)) else {
                 return;
             };
             assert!(
-                images.hdr.iter().all(|texel| texel.iter().all(|value| value.is_finite())),
+                images
+                    .hdr
+                    .iter()
+                    .all(|texel| texel.iter().all(|value| value.is_finite())),
                 "NaN or infinity in hdr"
             );
 
@@ -371,9 +420,21 @@ mod gpu {
                 comparison.table_vs_numeric_mean
             );
             assert!(comparison.checked > 250, "the floor fills the lower image");
-            assert!(comparison.diffuse_worst < 0.01, "diffuse is analytic: {}", comparison.diffuse_worst);
-            assert!(comparison.specular_mean < SPECULAR_MEAN_TOLERANCE, "specular {}", comparison.specular_mean);
-            assert!(comparison.specular_worst < SPECULAR_WORST_TOLERANCE, "specular {}", comparison.specular_worst);
+            assert!(
+                comparison.diffuse_worst < 0.01,
+                "diffuse is analytic: {}",
+                comparison.diffuse_worst
+            );
+            assert!(
+                comparison.specular_mean < SPECULAR_MEAN_TOLERANCE,
+                "specular {}",
+                comparison.specular_mean
+            );
+            assert!(
+                comparison.specular_worst < SPECULAR_WORST_TOLERANCE,
+                "specular {}",
+                comparison.specular_worst
+            );
         }
     }
 
@@ -403,7 +464,11 @@ mod gpu {
         };
 
         let brightest = |images: &Images| images.hdr.iter().map(|texel| texel[1]).fold(0.0_f32, f32::max);
-        assert!(brightest(&one_sided) > 0.05, "the lit floor is visible: {}", brightest(&one_sided));
+        assert!(
+            brightest(&one_sided) > 0.05,
+            "the lit floor is visible: {}",
+            brightest(&one_sided)
+        );
         assert_eq!(brightest(&away), 0.0, "a light facing away lights nothing");
         assert_eq!(brightest(&under), 0.0, "a light under the floor lights nothing");
         let worst = one_sided
@@ -412,21 +477,26 @@ mod gpu {
             .zip(&two_sided.hdr)
             .map(|(a, b)| (a[1] - b[1]).abs() / a[1].abs().max(0.02))
             .fold(0.0_f32, f32::max);
-        assert!(worst < 0.01, "two sides with twice the power light the floor like one side: {worst}");
+        assert!(
+            worst < 0.01,
+            "two sides with twice the power light the floor like one side: {worst}"
+        );
     }
 
     #[test]
     fn rectangles_through_the_surface_and_grazing_it_leave_no_nan() {
         let test = "rectangles_through_the_surface_and_grazing_it_leave_no_nan";
-        let vertical = |position: Vec3, yaw: f32| {
-            Affine3A::from_rotation_translation(Quat::from_rotation_y(yaw), position)
-        };
+        let vertical =
+            |position: Vec3, yaw: f32| Affine3A::from_rotation_translation(Quat::from_rotation_y(yaw), position);
         let lights = [
             // Standing on the floor and cutting it, facing +Z.
             Light::area(vertical(Vec3::new(0.0, 0.0, -0.5), 0.0), 400.0, 2.0, 1.0),
             // Lying in the floor plane.
             Light::area(
-                Affine3A::from_rotation_translation(Quat::from_rotation_arc(Vec3::NEG_Z, Vec3::Y), Vec3::new(1.5, 0.0, 0.5)),
+                Affine3A::from_rotation_translation(
+                    Quat::from_rotation_arc(Vec3::NEG_Z, Vec3::Y),
+                    Vec3::new(1.5, 0.0, 0.5),
+                ),
                 400.0,
                 1.0,
                 1.0,
@@ -441,9 +511,15 @@ mod gpu {
             let Some(images) = render_floor(test, roughness, &lights) else {
                 return;
             };
-            for (name, image) in [("hdr", &images.hdr), ("diffuse", &images.diffuse), ("specular", &images.specular)] {
+            for (name, image) in [
+                ("hdr", &images.hdr),
+                ("diffuse", &images.diffuse),
+                ("specular", &images.specular),
+            ] {
                 assert!(
-                    image.iter().all(|texel| texel.iter().all(|value| value.is_finite() && *value >= 0.0)),
+                    image
+                        .iter()
+                        .all(|texel| texel.iter().all(|value| value.is_finite() && *value >= 0.0)),
                     "roughness {roughness}: {name} has NaN, infinity or negative values"
                 );
             }
@@ -494,7 +570,12 @@ mod gpu {
         );
         add_lights(
             &mut harness,
-            &[Light::area(facing_down(Vec3::new(0.0, 2.2, -0.3)), 5.0 * std::f32::consts::PI * 4.0, 4.0, 1.0)],
+            &[Light::area(
+                facing_down(Vec3::new(0.0, 2.2, -0.3)),
+                5.0 * std::f32::consts::PI * 4.0,
+                4.0,
+                1.0,
+            )],
         );
 
         let diagnostics = harness.render(Camera::look_at(
@@ -518,12 +599,16 @@ mod gpu {
         let mut random = support::Lcg(8);
         let lights: Vec<Light> = (0..100)
             .map(|_| {
-                let position = Vec3::new(random.between(-5.0, 5.0), random.between(0.4, 2.0), random.between(-4.0, 4.0));
+                let position = Vec3::new(
+                    random.between(-5.0, 5.0),
+                    random.between(0.4, 2.0),
+                    random.between(-4.0, 4.0),
+                );
                 let rotation = Quat::from_euler(
                     pathon_api::glam::EulerRot::XYZ,
-                    random.between(0.0, 6.28),
-                    random.between(0.0, 6.28),
-                    random.between(0.0, 6.28),
+                    random.between(0.0, std::f32::consts::TAU),
+                    random.between(0.0, std::f32::consts::TAU),
+                    random.between(0.0, std::f32::consts::TAU),
                 );
                 Light::area(
                     Affine3A::from_rotation_translation(rotation, position),
@@ -558,21 +643,29 @@ mod gpu {
         many_area_lights(&mut harness);
         let device = std::sync::Arc::clone(harness.renderer.device());
 
-        assert!(errors_of(&harness.render(camera())).is_empty());
+        assert_eq!(errors_of(&harness.render(camera())).len(), 0);
         let clustered = halves(&reader, &*device);
         harness.renderer.shared_mut().insert(PbrSettings {
             light_assignment: LightAssignment::BruteForce,
             ..PbrSettings::default()
         });
-        assert!(errors_of(&harness.render(camera())).is_empty());
+        assert_eq!(errors_of(&harness.render(camera())).len(), 0);
         let brute_force = halves(&reader, &*device);
 
         let differing = clustered
             .iter()
             .zip(&brute_force)
-            .filter(|(a, b)| (0..3).any(|channel| (a[channel] - b[channel]).abs() > 1.0e-3 * a[channel].abs().max(0.05)))
+            .filter(|(a, b)| {
+                (0..3).any(|channel| (a[channel] - b[channel]).abs() > 1.0e-3 * a[channel].abs().max(0.05))
+            })
             .count();
-        assert_eq!(differing, 0, "{differing} pixels differ between clustered and brute-force lights");
-        assert!(clustered.iter().filter(|texel| texel[0] > 0.05).count() > 1000, "the lights light the floor");
+        assert_eq!(
+            differing, 0,
+            "{differing} pixels differ between clustered and brute-force lights"
+        );
+        assert!(
+            clustered.iter().filter(|texel| texel[0] > 0.05).count() > 1000,
+            "the lights light the floor"
+        );
     }
 }

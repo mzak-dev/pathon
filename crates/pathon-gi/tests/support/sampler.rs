@@ -13,8 +13,8 @@ use pathon_api::glam::Vec3;
 use pathon_api::graph::{PassDesc, Stage};
 use pathon_api::rhi::{
     Access, BindGroupDesc, BindGroupEntry, BindGroupLayoutDesc, BindGroupLayoutEntry, BindingResource, BindingType,
-    BufferDesc, BufferId, BufferUsage, ComputePassDesc, ComputePipelineDesc, ComputePipelineId, DeviceApi,
-    RhiError, ShaderStage, ShaderStages, StorageAccess,
+    BufferDesc, BufferId, BufferUsage, ComputePassDesc, ComputePipelineDesc, ComputePipelineId, DeviceApi, RhiError,
+    ShaderStage, ShaderStages, StorageAccess,
 };
 use pathon_api::{RecordCtx, RenderFeature};
 use pathon_gi::GiBindings;
@@ -167,18 +167,29 @@ impl RenderFeature for Sampler {
         let (points_buffer, results_buffer, readback) = self.buffers.expect("made above");
         let bytes: Vec<f32> = points
             .iter()
-            .flat_map(|(position, normal)| [position.x, position.y, position.z, 0.0, normal.x, normal.y, normal.z, 0.0])
+            .flat_map(|(position, normal)| {
+                [
+                    position.x, position.y, position.z, 0.0, normal.x, normal.y, normal.z, 0.0,
+                ]
+            })
             .collect();
-        ctx.device().write_buffer(points_buffer, 0, bytemuck::cast_slice(&bytes))?;
+        ctx.device()
+            .write_buffer(points_buffer, 0, bytemuck::cast_slice(&bytes))?;
         self.requests.lock().expect("mutex").answer = Some((readback, count));
 
         let size = (count as u64 * 32).max(256);
         let resting = Access::STORAGE_READ;
-        let points_handle = ctx.graph().import_buffer("gi sample points", points_buffer, size, resting, resting);
-        let results_handle = ctx.graph().import_buffer("gi sample results", results_buffer, size, resting, resting);
-        let mut pass = ctx
+        let points_handle = ctx
             .graph()
-            .add_pass(PassDesc::new("gi sample test", Stage::Overlay).priority(-1).side_effect());
+            .import_buffer("gi sample points", points_buffer, size, resting, resting);
+        let results_handle = ctx
+            .graph()
+            .import_buffer("gi sample results", results_buffer, size, resting, resting);
+        let mut pass = ctx.graph().add_pass(
+            PassDesc::new("gi sample test", Stage::Overlay)
+                .priority(-1)
+                .side_effect(),
+        );
         let points_handle = pass.modify_buffer(points_handle, Access::STORAGE_READ | Access::STORAGE_WRITE);
         let results_handle = pass.modify_buffer(results_handle, Access::STORAGE_READ | Access::STORAGE_WRITE);
         let irradiance = pass.read(frame.irradiance, Access::SAMPLED);
@@ -208,9 +219,11 @@ impl RenderFeature for Sampler {
             compute.dispatch(u32::try_from(count).expect("few points").div_ceil(64), 1, 1);
             Ok(())
         });
-        let mut copy = ctx
-            .graph()
-            .add_pass(PassDesc::new("gi sample copy", Stage::Overlay).priority(-1).side_effect());
+        let mut copy = ctx.graph().add_pass(
+            PassDesc::new("gi sample copy", Stage::Overlay)
+                .priority(-1)
+                .side_effect(),
+        );
         let results_handle = copy.read_buffer(results_handle, Access::COPY_SRC);
         copy.record(move |pass| {
             let source = pass.buffer(results_handle);

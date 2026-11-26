@@ -7,6 +7,7 @@ use pathon_api::rhi::{
 };
 use pathon_api::{Negotiation, RecordCtx, RenderFeature, Slot};
 use pathon_bindless::TextureBinder;
+use pathon_gi::{GI_TEXTURE_ACCESS, GiBindings, GiFrame};
 use pathon_ibl::{IblBindings, IblEnvironment};
 use pathon_material::{AlphaKind, MaterialHooks, MaterialVariant};
 use pathon_shadow::{SHADOW_MAP, SHADOW_MAP_ACCESS, ShadowBindings, ShadowFrame};
@@ -14,7 +15,9 @@ use pathon_shadow::{SHADOW_MAP, SHADOW_MAP_ACCESS, ShadowBindings, ShadowFrame};
 use crate::cluster::{COUNTERS_SIZE, ClusterBuffers, ClusterParams, ClusterPipeline, RANGE_SIZE};
 use crate::context::PbrContext;
 use crate::prepass::{draw_list, with_context};
-use crate::shaders::{ForwardKey, IBL_FIRST_BINDING, LTC_BINDING, RenderPipeline, SHADOW_FIRST_BINDING};
+use crate::shaders::{
+    ForwardKey, GI_FIRST_BINDING, IBL_FIRST_BINDING, LTC_BINDING, RenderPipeline, SHADOW_FIRST_BINDING,
+};
 
 /// Assigns the lights to clusters in compute, then draws the opaque and masked meshes (`Stage::Opaque`) and the blended
 /// ones, farthest first (`Stage::Transparent`), into `hdr`; `diffuse` and `specular` are written too when another pack
@@ -87,6 +90,9 @@ fn record_lighting(
     let shadow_frame = ctx.shared().get::<ShadowFrame>().copied();
     let shadow_map = ctx.slot(SHADOW_MAP).zip(shadow_frame);
     let shadows = shadow_map.is_some();
+    // The probe volume of this frame, when `GiPack` published one.
+    let gi_frame = ctx.shared().get::<GiFrame>().copied();
+    let gi = gi_frame.is_some();
     pbr.shaders(hooks.as_ref(), binder)
         .map_err(|error| RhiError::validation("L0006", error.to_string()))?;
     let cluster = if let Some(cluster) = pbr.cluster {
@@ -112,6 +118,7 @@ fn record_lighting(
                         split: split && item.variant.alpha != AlphaKind::Transparent,
                         shadows,
                         area,
+                        gi,
                     },
                     &frame.draws.vertex_buffers,
                     texture_layout,
@@ -200,6 +207,13 @@ fn record_lighting(
     let ranges_read = pass.read_buffer(ranges, Access::STORAGE_READ);
     let indices_read = pass.read_buffer(indices, Access::STORAGE_READ);
     let shadow_read = shadow_map.map(|(map, frame)| (pass.read(map, SHADOW_MAP_ACCESS), frame));
+    let gi_read = gi_frame.map(|frame| {
+        (
+            frame,
+            pass.read(frame.irradiance, GI_TEXTURE_ACCESS),
+            pass.read(frame.visibility, GI_TEXTURE_ACCESS),
+        )
+    });
     let hdr = pass.write(hdr, Access::COLOR_ATTACHMENT);
     let split_slots = split_slots.map(|(diffuse, specular)| {
         (
@@ -225,6 +239,7 @@ fn record_lighting(
         let ranges = pass.buffer(ranges_read);
         let indices = pass.buffer(indices_read);
         let shadows = shadow_bindings(pass, shadow_read.as_ref())?;
+        let gi = gi_bindings(pass, gi_read)?;
         let groups = frame_groups(
             pass,
             &opaque_pipelines,
@@ -238,6 +253,7 @@ fn record_lighting(
                 environment,
                 shadows,
                 ltc_table,
+                gi,
             },
         )?;
         let mut render = pass.commands().render_pass(RenderPassDesc {
@@ -269,6 +285,13 @@ fn record_lighting(
     let ranges_read = pass.read_buffer(ranges, Access::STORAGE_READ);
     let indices_read = pass.read_buffer(indices, Access::STORAGE_READ);
     let shadow_read = shadow_map.map(|(map, frame)| (pass.read(map, SHADOW_MAP_ACCESS), frame));
+    let gi_read = gi_frame.map(|frame| {
+        (
+            frame,
+            pass.read(frame.irradiance, GI_TEXTURE_ACCESS),
+            pass.read(frame.visibility, GI_TEXTURE_ACCESS),
+        )
+    });
     let hdr = pass.modify(hdr, Access::COLOR_ATTACHMENT);
     let draws = Arc::clone(&frame.draws);
     pass.record(move |pass| {
@@ -276,6 +299,7 @@ fn record_lighting(
         let ranges = pass.buffer(ranges_read);
         let indices = pass.buffer(indices_read);
         let shadows = shadow_bindings(pass, shadow_read.as_ref())?;
+        let gi = gi_bindings(pass, gi_read)?;
         let groups = frame_groups(
             pass,
             &variants,
@@ -289,6 +313,7 @@ fn record_lighting(
                 environment,
                 shadows,
                 ltc_table,
+                gi,
             },
         )?;
         let hdr_view = pass.view(hdr)?;
@@ -331,6 +356,8 @@ struct FrameBindings {
     shadows: Option<(ShadowFrame, TextureViewId)>,
     /// The table of the area lights, when the permutation has the `area_lights` flag.
     ltc_table: Option<pathon_api::rhi::BufferId>,
+    /// The volume of the probes and the views of its atlases, when the permutation has the `gi` flag.
+    gi: Option<(GiFrame, TextureViewId, TextureViewId)>,
 }
 
 fn shadow_bindings(
@@ -339,6 +366,18 @@ fn shadow_bindings(
 ) -> Result<Option<(ShadowFrame, TextureViewId)>, RhiError> {
     read.copied()
         .map(|(map, frame)| Ok((frame, pass.view_with(map, &ShadowBindings::map_view_desc())?)))
+        .transpose()
+}
+
+fn gi_bindings(
+    pass: &mut pathon_api::graph::PassContext<'_>,
+    read: Option<(
+        GiFrame,
+        pathon_api::graph::TextureHandle,
+        pathon_api::graph::TextureHandle,
+    )>,
+) -> Result<Option<(GiFrame, TextureViewId, TextureViewId)>, RhiError> {
+    read.map(|(frame, irradiance, visibility)| Ok((frame, pass.view(irradiance)?, pass.view(visibility)?)))
         .transpose()
 }
 
@@ -396,6 +435,11 @@ fn frame_groups(
                         binding: LTC_BINDING,
                         resource: BindingResource::whole_buffer(table),
                     });
+                }
+                if let Some((frame, irradiance, visibility)) = bindings.gi {
+                    entries.extend(
+                        GiBindings::starting_at(GI_FIRST_BINDING).bind_group_entries(&frame, irradiance, visibility),
+                    );
                 }
                 let group = pass.create_bind_group(&BindGroupDesc {
                     label: "pbr forward frame",

@@ -2232,6 +2232,7 @@ dependencies = [
  "pathon-api",
  "pathon-bindless",
  "pathon-core",
+ "pathon-gi",
  "pathon-golden",
  "pathon-ibl",
  "pathon-material",

@@ -1,5 +1,8 @@
 // Forward colour pass: the standard material under the directional lights, the clustered point and spot lights and the
 // image-based environment. Writes `hdr` (linear, no exposure) and, in `fs_split`, the `diffuse` and `specular` parts.
+import package::gi::common::GiVolume;
+import package::gi::sample::gi_sample;
+import package::ibl::sample::{ibl_brdf, ibl_split_sum};
 import package::ibl::shading::{IblInput, ibl_evaluate};
 import package::material::standard::{MaterialData, evaluate, load_surface, output_alpha, passes_alpha_test};
 import package::material::surface::{LightSample, Surface, SurfaceInput};
@@ -19,6 +22,7 @@ import package::shadow::sample::{ShadowCascades, shadow_factor_directional};
 // IBL_BINDINGS
 // SHADOW_BINDINGS
 // LTC_BINDING
+// GI_BINDINGS
 
 // What `shadow_factor_directional` needs about the fragment besides its position; `shade` fills it once so that the
 // light loop keeps its signature.
@@ -199,10 +203,30 @@ fn shade(in: Varying, front_facing: bool) -> Shaded {
     // Ambient occlusion darkens the diffuse environment, and the specular one through Lagarde's term (2014), both with
     // the multi-bounce correction of Jimenez et al. (2016) so bright surfaces do not go black in creases.
     let specular_occlusion = specular_ao_lagarde(n_dot_v, surface.occlusion, surface.roughness);
-    diffuse += environment.diffuse * gtao_multi_bounce(surface.occlusion, surface.diffuse_color)
-        * frame.environment_intensity;
-    specular += environment.specular * gtao_multi_bounce(specular_occlusion, surface.f0)
-        * frame.environment_intensity;
+    var diffuse_environment = environment.diffuse * frame.environment_intensity;
+    var specular_environment = environment.specular * frame.environment_intensity;
+    // With a probe volume the diffuse environment is what the probes saw (the sky only through the openings, the
+    // walls and the lights bounced), and the specular one reaches only as far as the sky does.
+    @if(gi) {
+        let reflected = reflect(-view, surface.normal);
+        let probes = gi_sample(
+            gi_volume,
+            gi_irradiance_atlas,
+            gi_visibility_atlas,
+            gi_atlas_sampler,
+            in.position,
+            surface.normal,
+            view,
+            reflected,
+        );
+        let brdf = ibl_brdf(ibl_brdf_lut, ibl_sampler, n_dot_v, surface.roughness);
+        let reflectance = ibl_split_sum(surface.f0, surface.f90, brdf);
+        let diffuse_weight = surface.diffuse_color * max(vec3<f32>(1.0) - reflectance, vec3<f32>(0.0));
+        diffuse_environment = mix(diffuse_environment, probes.irradiance * diffuse_weight, probes.confidence);
+        specular_environment = specular_environment * mix(1.0, probes.sky_visibility, probes.confidence * gi_volume.tuning.x);
+    }
+    diffuse += diffuse_environment * gtao_multi_bounce(surface.occlusion, surface.diffuse_color);
+    specular += specular_environment * gtao_multi_bounce(specular_occlusion, surface.f0);
 
     var out: Shaded;
     out.diffuse = diffuse;

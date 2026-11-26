@@ -6,6 +6,7 @@ use pathon_api::rhi::{
     ComputePipelineId, CullMode, DepthBias, DepthState, DeviceApi, Format, PrimitiveState, RenderPipelineDesc,
     RenderPipelineId, RhiError, ShaderStage, VertexBufferLayout,
 };
+use pathon_gi::GiBindings;
 use pathon_ibl::IblBindings;
 use pathon_material::{AlphaKind, MaterialHooks, MaterialVariant};
 use pathon_shader::{PipelineCache, ShaderError, ShaderKey, ShaderLibrary, reflect_bind_groups};
@@ -41,6 +42,11 @@ pub const AREA_LIGHTS_FLAG: &str = "area_lights";
 /// Binding of the LTC table (`crate::ltc`), right after the shadow bindings; it exists only with the `area_lights`
 /// flag.
 pub const LTC_BINDING: u32 = SHADOW_FIRST_BINDING + ShadowBindings::COUNT;
+/// WESL flag of the colour pass: the diffuse environment comes from the probe volume of `pathon-gi` (four bindings).
+pub const GI_FLAG: &str = "gi";
+/// First binding of the probe volume (uniform, two atlases and a sampler), right after the LTC table; they exist only
+/// in the permutation with the `gi` flag.
+pub const GI_FIRST_BINDING: u32 = LTC_BINDING + 1;
 /// The group of the material textures when a `TextureBinder` is present.
 pub const TEXTURE_GROUP: u32 = 1;
 
@@ -76,6 +82,8 @@ pub struct ForwardKey {
     pub shadows: bool,
     /// Shade area lights (the `area_lights` flag): one more binding in group 0, the LTC table.
     pub area: bool,
+    /// Take the diffuse environment from the probe volume (the `gi` flag): four more bindings in group 0.
+    pub gi: bool,
 }
 
 impl ForwardKey {
@@ -87,6 +95,9 @@ impl ForwardKey {
         key.features
             .set(AREA_LIGHTS_FLAG, self.area)
             .expect("the area_lights flag is a WGSL identifier");
+        key.features
+            .set(GI_FLAG, self.gi)
+            .expect("the gi flag is a WGSL identifier");
         key
     }
 }
@@ -111,6 +122,9 @@ impl PbrShaders {
         for (path, source) in pathon_shadow::modules() {
             library.add_module(path, source)?;
         }
+        for (path, source) in pathon_gi::modules() {
+            library.add_module(path, source)?;
+        }
         for (path, source) in [
             (COMMON_MODULE, COMMON_WESL),
             (LIGHTS_MODULE, LIGHTS_WESL),
@@ -124,7 +138,8 @@ impl PbrShaders {
         let forward = FORWARD_WESL
             .replace("// IBL_BINDINGS", &ibl)
             .replace("// SHADOW_BINDINGS", &shadow_declarations())
-            .replace("// LTC_BINDING", &ltc_declaration());
+            .replace("// LTC_BINDING", &ltc_declaration())
+            .replace("// GI_BINDINGS", &gi_declarations());
         library.add_root("forward", &forward);
         library.add_root("prepass", PREPASS_WESL);
         library.add_root("cluster", CLUSTER_WESL);
@@ -378,6 +393,21 @@ fn shadow_declarations() -> String {
         .wgsl_declarations(0)
         .lines()
         .map(|line| ["@if(", SHADOWS_FLAG, ") ", line, "\n"].concat())
+        .collect()
+}
+
+// The probe volume exists only in the permutation with the `gi` flag.
+fn gi_declarations() -> String {
+    GiBindings::starting_at(GI_FIRST_BINDING)
+        .wgsl_declarations(0)
+        .lines()
+        .map(|line| {
+            [
+                "@if(", GI_FLAG, ") ", line, "
+",
+            ]
+            .concat()
+        })
         .collect()
 }
 

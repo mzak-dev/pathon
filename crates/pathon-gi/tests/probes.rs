@@ -105,7 +105,10 @@ mod gpu {
         for texel in atlases.irradiance.iter().chain(&atlases.visibility) {
             assert!(texel.iter().all(|value| value.is_finite()), "{texel:?}");
         }
-        assert!(atlases.irradiance.iter().any(|texel| texel[0] > 0.0), "the atlas is not empty");
+        assert!(
+            atlases.irradiance.iter().any(|texel| texel[0] > 0.0),
+            "the atlas is not empty"
+        );
     }
 
     #[test]
@@ -119,7 +122,11 @@ mod gpu {
             Vec3::new(-0.2, 3.0, 2.0),
             [Wall::glowing(0.5, 1.0); 6],
         );
-        rig.add_room(Vec3::new(0.2, 0.0, -2.0), Vec3::new(4.0, 3.0, 2.0), [Wall::grey(0.2); 6]);
+        rig.add_room(
+            Vec3::new(0.2, 0.0, -2.0),
+            Vec3::new(4.0, 3.0, 2.0),
+            [Wall::grey(0.2); 6],
+        );
         rig.frames(90);
 
         let normal_into_b = Vec3::X;
@@ -135,19 +142,31 @@ mod gpu {
 
         for (index, sampled) in dark.iter().enumerate() {
             eprintln!("dark room, {index}: {:?}", sampled);
-            assert!(sampled.irradiance.x < 0.06, "light leaked into the dark room: {sampled:?}");
+            assert!(
+                sampled.irradiance.x < 0.06,
+                "light leaked into the dark room: {sampled:?}"
+            );
         }
         for (index, sampled) in bright.iter().enumerate() {
             eprintln!("bright room, {index}: {:?}", sampled);
-            assert!((sampled.irradiance.x / 2.0 - 1.0).abs() < 0.12, "the lit room is not lit: {sampled:?}");
+            assert!(
+                (sampled.irradiance.x / 2.0 - 1.0).abs() < 0.12,
+                "the lit room is not lit: {sampled:?}"
+            );
         }
     }
 
     fn cornell_walls() -> [Wall; 6] {
         let grey = Wall::grey(0.7);
         let (red, green) = (
-            Wall { albedo: [0.7, 0.1, 0.1], emission: [0.0; 3] },
-            Wall { albedo: [0.1, 0.6, 0.1], emission: [0.0; 3] },
+            Wall {
+                albedo: [0.7, 0.1, 0.1],
+                emission: [0.0; 3],
+            },
+            Wall {
+                albedo: [0.1, 0.6, 0.1],
+                emission: [0.0; 3],
+            },
         );
         // +x green, -x red, then ceiling, floor, back and front.
         [green, red, grey, grey, grey, grey]
@@ -207,8 +226,10 @@ mod gpu {
         }
         let bias = bias_sum / receivers.len() as f32;
         eprintln!("cornell: mean relative bias {bias:+.3}, worst channel error {worst:.3}");
-        assert!(bias.abs() < 0.08, "bias {bias}");
-        assert!(worst < 0.25, "worst channel error {worst}");
+        // The conservative voxel walls stand up to a cell (10 cm) inside the room: the surfaces are nearer the light, so
+        // the field is a few percent brighter than the ideal room.
+        assert!(bias > 0.0 && bias < 0.10, "bias {bias}");
+        assert!(worst < 0.18, "worst channel error {worst}");
     }
 
     #[test]

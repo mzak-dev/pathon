@@ -13,6 +13,7 @@ kind = "pack"
 bytemuck.workspace = true
 pathon-api.workspace = true
 pathon-bindless.workspace = true
+pathon-gi.workspace = true
 pathon-ibl.workspace = true
 pathon-material.workspace = true
 pathon-mesh.workspace = true

@@ -32,6 +32,6 @@ pub use pack::PbrPack;
 pub use prepass::PrepassFeature;
 pub use settings::{ClusterSettings, LightAssignment, PbrSettings};
 pub use shaders::{
-    AREA_LIGHTS_FLAG, ForwardKey, HDR_FORMAT, IBL_FIRST_BINDING, LTC_BINDING, PbrShaders, PrepassKey, RenderPipeline,
-    SHADOW_FIRST_BINDING, SHADOWS_FLAG, TEXTURE_GROUP,
+    AREA_LIGHTS_FLAG, ForwardKey, GI_FIRST_BINDING, GI_FLAG, HDR_FORMAT, IBL_FIRST_BINDING, LTC_BINDING, PbrShaders,
+    PrepassKey, RenderPipeline, SHADOW_FIRST_BINDING, SHADOWS_FLAG, TEXTURE_GROUP,
 };

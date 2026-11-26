@@ -251,16 +251,16 @@ fn local_shadows_alone_validate_without_a_sun_and_the_same_way_after_a_second_vi
     lights(&mut harness);
     shadow_the_local_lights(&mut harness);
 
-    assert!(harness.render(golden_camera()).is_empty());
-    assert!(
-        harness
-            .render(pathon_api::Camera::look_at(
-                Vec3::new(-4.0, 2.0, 5.0),
-                Vec3::new(0.0, -0.4, 0.0),
-                50.0_f32.to_radians(),
-                1.0,
-            ))
-            .is_empty()
+    let none: [pathon_api::Diagnostic; 0] = [];
+    assert_eq!(harness.render(golden_camera()), none);
+    assert_eq!(
+        harness.render(pathon_api::Camera::look_at(
+            Vec3::new(-4.0, 2.0, 5.0),
+            Vec3::new(0.0, -0.4, 0.0),
+            50.0_f32.to_radians(),
+            1.0,
+        )),
+        none
     );
 }
 

@@ -92,7 +92,8 @@ fn read_linear_texture(
     Ok(LinearImage { width, height, rgb })
 }
 
-/// Averages `factor` x `factor` blocks: the box filter of one output pixel, which is the pixel filter of the Cycles reference.
+/// Averages `factor` x `factor` blocks: the box filter of one output pixel, which is the pixel filter of the Cycles
+/// reference.
 pub fn box_downsample(image: &LinearImage, factor: u32) -> LinearImage {
     if factor <= 1 {
         return image.clone();

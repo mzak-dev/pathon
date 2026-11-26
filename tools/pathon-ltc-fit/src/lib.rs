@@ -4,8 +4,8 @@
 //! Transformed Cosines"), not from its code: a distribution `D(l) = D_o(M^-1 l / |M^-1 l|) |det M^-1| / |M^-1 l|^3`
 //! with `D_o` the clamped cosine over pi, a matrix `M` per (roughness, view angle), found by minimising the L1
 //! distance `|D_brdf - D_ltc|` (lower total variation than an L3 error in our trials) with Nelder-Mead on stratified
-//! samples of both distributions (multiple importance sampling). Also the two scale factors that turn the normalised lobe into radiance: the integral of the lobe
-//! times the Schlick Fresnel weights, for `f0` and `f90`.
+//! samples of both distributions (multiple importance sampling). Also the two scale factors that turn the normalised
+//! lobe into radiance: the integral of the lobe times the Schlick Fresnel weights, for `f0` and `f90`.
 
 use std::f64::consts::{PI, TAU};
 use std::fmt::Write as _;

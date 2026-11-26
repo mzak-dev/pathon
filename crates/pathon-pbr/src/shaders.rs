@@ -38,7 +38,8 @@ pub const SHADOW_FIRST_BINDING: u32 = IBL_FIRST_BINDING + IblBindings::COUNT;
 pub const SHADOWS_FLAG: &str = "shadows";
 /// WESL flag of the colour pass: the scene has area lights, so the shader carries their code and reads the LTC table.
 pub const AREA_LIGHTS_FLAG: &str = "area_lights";
-/// Binding of the LTC table (`crate::ltc`), right after the shadow bindings; it exists only with the `area_lights` flag.
+/// Binding of the LTC table (`crate::ltc`), right after the shadow bindings; it exists only with the `area_lights`
+/// flag.
 pub const LTC_BINDING: u32 = SHADOW_FIRST_BINDING + ShadowBindings::COUNT;
 /// The group of the material textures when a `TextureBinder` is present.
 pub const TEXTURE_GROUP: u32 = 1;

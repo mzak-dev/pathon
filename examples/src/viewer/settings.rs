@@ -14,7 +14,8 @@ pub enum LightingMode {
 /// transform does not.
 pub const DEFAULT_EXPOSURE: f32 = 2.0 / 683.0;
 const EXPOSURE_STEP_STOPS: f32 = 0.5;
-/// Blender's radiance is the pathon radiance divided by 683 lm/W, so this exposure makes the two equal (docs/porownanie-obrazu.md).
+/// Blender's radiance is the pathon radiance divided by 683 lm/W, so this exposure makes the two equal
+/// (docs/porownanie-obrazu.md).
 pub const REFERENCE_EXPOSURE: f32 = 1.0 / 683.0;
 /// Scale of an environment picture in W/m2/sr (Blender) to the photometric units of the lights.
 const REFERENCE_ENVIRONMENT_INTENSITY: f32 = 683.0;

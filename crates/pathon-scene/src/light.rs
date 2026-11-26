@@ -16,8 +16,9 @@ pub enum LightKind {
         inner_angle: f32,
         outer_angle: f32,
     },
-    // A flat rectangle in the local XY plane, `width` along X and `height` along Y, emitting like a Lambertian surface
-    // towards local -Z (and towards +Z too when `two_sided`). `intensity` is its total luminous power (ADR-0048).
+    // A flat rectangle in the local XY plane, `width` along X and `height` along Y, emitting like a Lambertian
+    // surface towards local -Z (and towards +Z too when `two_sided`). `intensity` is its total luminous power
+    // (ADR-0048).
     Area {
         width: f32,
         height: f32,

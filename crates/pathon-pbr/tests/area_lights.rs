@@ -223,8 +223,7 @@ fn the_diffuse_integral_agrees_with_quadrature_to_a_hundredth_of_a_percent() {
 #[cfg(feature = "gpu-tests")]
 mod gpu {
     use pathon_golden::{Tolerance, assert_golden, read_texture};
-    use pathon_pbr::LightAssignment;
-    use pathon_pbr::PbrSettings;
+    use pathon_pbr::{LightAssignment, PbrSettings};
     use pathon_post::{BloomSettings, ExposureMode, ExposureSettings, PostPack, PostSettings};
     use pathon_rhi::Access;
     use support::probe::half_to_f32;

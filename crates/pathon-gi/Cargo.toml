@@ -1,0 +1,32 @@
+[package]
+name = "pathon-gi"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+# ADR-0049: pbr reads the probe field through `Shared` and the WGSL module `gi::sample`, so the crate has to be visible to other packs.
+[package.metadata.pathon]
+kind = "pack-lib"
+
+[dependencies]
+bytemuck.workspace = true
+pathon-api.workspace = true
+pathon-bindless.workspace = true
+pathon-ibl.workspace = true
+pathon-material.workspace = true
+pathon-mesh.workspace = true
+pathon-scene.workspace = true
+pathon-shader.workspace = true
+
+[dev-dependencies]
+pathon-core.workspace = true
+pathon-golden.workspace = true
+pathon-rhi.workspace = true
+
+[features]
+gpu-tests = []
+
+[lints]
+workspace = true

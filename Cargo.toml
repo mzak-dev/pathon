@@ -19,6 +19,7 @@ pathon-bindless = { path = "crates/pathon-bindless" }
 pathon-core = { path = "crates/pathon-core" }
 pathon-debug = { path = "crates/pathon-debug" }
 pathon-diag = { path = "crates/pathon-diag" }
+pathon-gi = { path = "crates/pathon-gi" }
 pathon-golden = { path = "crates/pathon-golden" }
 pathon-ibl = { path = "crates/pathon-ibl" }
 pathon-graph = { path = "crates/pathon-graph" }

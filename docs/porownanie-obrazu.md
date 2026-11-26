@@ -336,6 +336,14 @@ W pozostałych kamerach zacienione 0,37 → 0,65 (`pathon_wide`) i 0,31 → 0,60
 
 Środowisko `Garage.hdr` dodawało do `bias` 27% (0,70 wobec 0,55 w średniej), po GI +1% (0,79 wobec 0,78): sondy widzą niebo tylko przez otwory, a ściany go zasłaniają. Podłoga w `ibl` wobec `lights-only` (`renderCam`): przed 1,57 wobec 0,97, po 1,11 wobec 1,00. Progi wariantu `ibl` mają teraz sens.
 
+### Obrazy
+
+![renderCam z GI: Cycles, pathon, ΔE, stosunek](scenes/reference/k12-compare-reference-lights-only-renderCam-gi.png)
+
+Pudełko Cornella z `gi_cornell` (kolejno: samo środowisko, z sondami; wymiana koloru z czerwonej i zielonej ściany i oświetlenie sufitu istnieją tylko po prawej):
+
+![Cornell bez GI](scenes/reference/k12-cornell-environment.png) ![Cornell z GI](scenes/reference/k12-cornell-gi.png)
+
 ### Stan względem progów
 
 | Metryka | Próg zielony | Przed | Po (5 cm) | Pasmo |
